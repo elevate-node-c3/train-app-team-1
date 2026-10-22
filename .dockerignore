@@ -1,0 +1,38 @@
+# Keeping node_modules out is what makes the cache on package*.json work —
+# the build stage installs from the lockfile instead of copying a host install.
+node_modules
+**/node_modules
+
+# Build output: the image builds its own.
+dist
+
+# Version control and agent scratch.
+.git
+.gitignore
+.gitattributes
+.claude
+.superpowers
+
+# Docs and plans are not inputs to a build.
+docs
+README.md
+
+# Tests never run in the image; the app tsconfigs exclude them from the build.
+test
+**/*.spec.ts
+
+# Local environment. Compose passes configuration in as environment variables.
+.env
+.env.*
+!.env.example
+
+# Editor and tooling noise.
+.vscode
+.idea
+*.log
+npm-debug.log*
+coverage
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
