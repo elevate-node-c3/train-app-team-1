@@ -5,4 +5,7 @@ async function bootstrap() {
   const app = await NestFactory.create(InventoryModule);
   await app.listen(process.env.PORT ?? 3000);
 }
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  console.error('inventory failed to start', error);
+  process.exit(1);
+});

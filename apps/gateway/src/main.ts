@@ -5,4 +5,7 @@ async function bootstrap() {
   const app = await NestFactory.create(GatewayModule);
   await app.listen(process.env.PORT ?? 3000);
 }
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  console.error('gateway failed to start', error);
+  process.exit(1);
+});

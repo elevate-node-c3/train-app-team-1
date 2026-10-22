@@ -5,4 +5,7 @@ async function bootstrap() {
   const app = await NestFactory.create(NotificationModule);
   await app.listen(process.env.PORT ?? 3000);
 }
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  console.error('notification failed to start', error);
+  process.exit(1);
+});
