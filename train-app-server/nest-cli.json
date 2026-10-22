@@ -5,6 +5,7 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
+    "builder": "rspack",
     "tsConfigPath": "apps/train-app-server/tsconfig.app.json"
   },
   "monorepo": true,

@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package Identity;
+
+message Test {
+    string t1 = 1;
+}
