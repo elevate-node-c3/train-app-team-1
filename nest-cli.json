@@ -1,31 +1,76 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/train-app-server/src",
+  "sourceRoot": "apps/gateway/src",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/train-app-server/tsconfig.app.json"
+    "tsConfigPath": "apps/gateway/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/train-app-server",
+  "root": "apps/gateway",
   "projects": {
-    "my-app": {
+    "catalog": {
       "type": "application",
-      "root": "apps/my-app",
+      "root": "apps/catalog",
       "entryFile": "main",
-      "sourceRoot": "apps/my-app/src",
+      "sourceRoot": "apps/catalog/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/my-app/tsconfig.app.json"
+        "tsConfigPath": "apps/catalog/tsconfig.app.json"
       }
     },
-    "train-app-server": {
+    "gateway": {
       "type": "application",
-      "root": "apps/train-app-server",
+      "root": "apps/gateway",
       "entryFile": "main",
-      "sourceRoot": "apps/train-app-server/src",
+      "sourceRoot": "apps/gateway/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/train-app-server/tsconfig.app.json"
+        "tsConfigPath": "apps/gateway/tsconfig.app.json"
+      }
+    },
+    "identity": {
+      "type": "application",
+      "root": "apps/identity",
+      "entryFile": "main",
+      "sourceRoot": "apps/identity/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/identity/tsconfig.app.json"
+      }
+    },
+    "inventory": {
+      "type": "application",
+      "root": "apps/inventory",
+      "entryFile": "main",
+      "sourceRoot": "apps/inventory/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/inventory/tsconfig.app.json"
+      }
+    },
+    "booking": {
+      "type": "application",
+      "root": "apps/booking",
+      "entryFile": "main",
+      "sourceRoot": "apps/booking/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/booking/tsconfig.app.json"
+      }
+    },
+    "payment": {
+      "type": "application",
+      "root": "apps/payment",
+      "entryFile": "main",
+      "sourceRoot": "apps/payment/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/payment/tsconfig.app.json"
+      }
+    },
+    "notification": {
+      "type": "application",
+      "root": "apps/notification",
+      "entryFile": "main",
+      "sourceRoot": "apps/notification/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notification/tsconfig.app.json"
       }
     }
   }
