@@ -7,5 +7,8 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 .dockerignore text eol=lf
+# Copied to .env and parsed by Compose; a trailing CR would ride along inside
+# every value, so a password would silently fail to authenticate.
+.env.example text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf

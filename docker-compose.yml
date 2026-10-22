@@ -1,5 +1,24 @@
 name: train-app
 
+# Every service is built from the one root Dockerfile, selected by the APP
+# build arg. Only `args.APP` and `DATABASE_URL` differ between them, so the
+# shared parts live in these anchors rather than seven times over.
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+
+x-service: &service
+  restart: unless-stopped
+  depends_on: &service-deps
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+  environment: &service-env
+    NODE_ENV: ${NODE_ENV:-development}
+    PORT: 3000
+    REDIS_URL: redis://redis:6379
+    RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -63,6 +82,85 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  catalog:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: catalog
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog
+
+  # The only service reachable from outside the Compose network.
+  gateway:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: gateway
+    ports:
+      - '${GATEWAY_PORT:-3000}:3000'
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/gateway
+
+  identity:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: identity
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/identity
+
+  inventory:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: inventory
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/inventory
+
+  booking:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: booking
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/booking
+
+  payment:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: payment
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payment
+
+  notification:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: notification
+    # The one service that sends mail, so the only one that waits for Mailpit.
+    depends_on:
+      <<: *service-deps
+      mailpit: { condition: service_healthy }
+    environment:
+      <<: *service-env
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/notification
 
 volumes:
   postgres_data:
