@@ -1,0 +1,11 @@
+# This repo is developed on Windows. Anything a Linux container or the Docker
+# daemon reads must be checked out with LF, or it fails inside the container in
+# ways that look like a defect in the image.
+* text=auto
+
+*.sql text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
