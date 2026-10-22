@@ -18,20 +18,26 @@
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false,
-    "types": [
-      "vitest/globals",
-      "node"
-    ],
+    "types": ["vitest/globals", "node"],
     // "baseUrl": "./",
     "paths": {}
   },
   "files": [],
   "references": [
     {
-      "path": "./apps/train-app-server/tsconfig.app.json"
+      "path": "./apps/api_gateway/tsconfig.app.json"
     },
     {
-      "path": "./apps/my-app/tsconfig.app.json"
+      "path": "./apps/catalog/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/identity/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/inventory/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/bookings/tsconfig.app.json"
     }
   ]
 }

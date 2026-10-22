@@ -20,22 +20,40 @@
         "tsConfigPath": "apps/api_gateway/tsconfig.app.json"
       }
     },
-    "my-app": {
+    "bookings": {
       "type": "application",
-      "root": "apps/my-app",
+      "root": "apps/bookings",
       "entryFile": "main",
-      "sourceRoot": "apps/my-app/src",
+      "sourceRoot": "apps/bookings/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/my-app/tsconfig.app.json"
+        "tsConfigPath": "apps/bookings/tsconfig.app.json"
       }
     },
-    "train-app-server": {
+    "catalog": {
       "type": "application",
-      "root": "apps/train-app-server",
+      "root": "apps/identity/catalog",
       "entryFile": "main",
-      "sourceRoot": "apps/train-app-server/src",
+      "sourceRoot": "apps/identity/catalog/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/train-app-server/tsconfig.app.json"
+        "tsConfigPath": "apps/identity/catalog/tsconfig.app.json"
+      }
+    },
+    "identity": {
+      "type": "application",
+      "root": "apps/identity",
+      "entryFile": "main",
+      "sourceRoot": "apps/identity/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/identity/tsconfig.app.json"
+      }
+    },
+    "inventory": {
+      "type": "application",
+      "root": "apps/inventory",
+      "entryFile": "main",
+      "sourceRoot": "apps/inventory/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/inventory/tsconfig.app.json"
       }
     }
   }
