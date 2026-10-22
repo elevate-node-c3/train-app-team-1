@@ -24,5 +24,14 @@
     ],
     // "baseUrl": "./",
     "paths": {}
-  }
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/train-app-server/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/my-app/tsconfig.app.json"
+    }
+  ]
 }

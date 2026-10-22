@@ -11,6 +11,15 @@
   "monorepo": true,
   "root": "apps/train-app-server",
   "projects": {
+    "api_gateway": {
+      "type": "application",
+      "root": "apps/api_gateway",
+      "entryFile": "main",
+      "sourceRoot": "apps/api_gateway/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/api_gateway/tsconfig.app.json"
+      }
+    },
     "my-app": {
       "type": "application",
       "root": "apps/my-app",
