@@ -38,6 +38,18 @@ describe('shared libs are importable from a service build', () => {
     // silently relocates the entry point and the container exits immediately.
     expect(existsSync('dist/apps/gateway/src/main.js')).toBe(true);
     expect(existsSync('dist/libs/contracts/src/index.js')).toBe(true);
+
+    // Importing the compiled output is the only assertion that covers runtime
+    // alias resolution. tsc does not keep `@app/*` specifiers in the emit — it
+    // rewrites them to relative paths — and there is no `imports` map, no npm
+    // workspace and no `node_modules/@app` to fall back on. If that emit
+    // behaviour ever changes, type-checking still passes and every container
+    // that imports a lib dies instantly on ERR_MODULE_NOT_FOUND. `main.js`
+    // cannot cover this, because no app's main.ts imports a lib.
+    execSync(
+      'node --input-type=module -e "await import(\'./dist/apps/gateway/src/alias-import-probe.js\')"',
+      { stdio: 'pipe' },
+    );
   }, 180_000);
 
   it('runs the compiled entry from the path the Dockerfile uses', () => {

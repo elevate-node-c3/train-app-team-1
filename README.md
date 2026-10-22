@@ -87,6 +87,13 @@ npm run build <service>         # omitting the name builds only the gateway,
                                 # which is the default project
 ```
 
+`dist/` holds **one app at a time**: the build wipes the output directory
+first, and all ten projects emit into the same root `dist/`. That is what the
+images want — one app per image, built fresh — but on the host it means
+`npm run build booking` followed by `npm run start:prod` fails with a missing
+module, because `start:prod` runs the gateway and the booking build removed it.
+Build the app you intend to run.
+
 A service run this way still expects its infrastructure, so leave the
 infrastructure containers up while you do it:
 

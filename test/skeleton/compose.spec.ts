@@ -21,6 +21,19 @@ describe('compose infrastructure', () => {
     expect(svc.image).not.toMatch(/latest|^[^:]+$/);
   });
 
+  // `toBeDefined()` above would accept `['CMD', 'true']`. This pins the one
+  // probe whose exact spelling is load-bearing: Compose interpolates `$VAR`
+  // itself, so a single-`$` `pg_isready -U $POSTGRES_USER` is substituted at
+  // parse time, reaches the container empty, and Postgres never reports
+  // healthy — leaving all seven services waiting on service_healthy forever.
+  // CMD-SHELL is required too: exec form has no shell to expand anything.
+  it('probes Postgres with a command that resolves inside the container', () => {
+    const [form, script] = compose.services.postgres.healthcheck.test;
+    expect(form).toBe('CMD-SHELL');
+    expect(script).toMatch(/\$\$POSTGRES_USER/);
+    expect(script).not.toMatch(/[^$]\$[A-Z]/);
+  });
+
   it('creates one database per service', () => {
     for (const service of SERVICES) {
       expect(initSql).toMatch(new RegExp(`CREATE DATABASE ${service}\\b`, 'i'));
@@ -73,6 +86,28 @@ describe('compose services', () => {
   it('publishes a host port for the gateway and for nothing else', () => {
     const published = SERVICES.filter((n) => compose.services[n].ports?.length);
     expect(published).toEqual(['gateway']);
+  });
+
+  // The assertion above only looks at the seven app services, so publishing
+  // Postgres on 5432 or Redis on 6379 would pass it while breaking spec point
+  // 7. This one covers every service in the file, infra included.
+  it('exposes nothing to the host beyond the gateway and the two dev UIs', () => {
+    const publishing = Object.keys(compose.services).filter(
+      (n) => compose.services[n].ports?.length,
+    );
+    expect(publishing.sort()).toEqual(['gateway', 'mailpit', 'rabbitmq']);
+  });
+
+  // Review Focus #5: a reviewer must be able to move a colliding port without
+  // editing compose. Sourcing every published port from a variable is what
+  // makes that true; hardcoding '3000:3000' would otherwise pass the suite,
+  // since the .env.example test would simply stop finding GATEWAY_PORT.
+  it('sources every published host port from an environment variable', () => {
+    for (const name of Object.keys(compose.services)) {
+      for (const mapping of compose.services[name].ports ?? []) {
+        expect(mapping).toMatch(/^\$\{[A-Z0-9_]+(:-\d+)?\}:\d+$/);
+      }
+    }
   });
 
   it('documents every variable compose interpolates', () => {
