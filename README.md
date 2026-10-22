@@ -51,6 +51,10 @@ docker compose up
 That is the whole setup. The first run builds seven images and takes a few
 minutes; later runs are cached.
 
+Every variable also has the same default baked into `docker-compose.yml`, so
+`docker compose up` on its own works too — copying `.env` is what lets you
+change ports or credentials.
+
 ### What comes up
 
 Compose starts four infrastructure containers, waits for each to report
@@ -59,8 +63,8 @@ healthy, and only then starts the seven services.
 | | Host address | Notes |
 | --- | --- | --- |
 | Gateway | <http://localhost:3000> | Returns 404 — it has no routes yet. That the port answers is the point. |
-| RabbitMQ management | <http://localhost:15672> | Sign in with `RABBITMQ_USER` / `RABBITMQ_PASSWORD` from `.env`. |
-| Mailpit inbox | <http://localhost:8025> | Every mail the stack sends lands here instead of being delivered. |
+| RabbitMQ management | <http://localhost:15672> | Sign in with `RABBITMQ_USER` / `RABBITMQ_PASSWORD` from `.env`. Bound to localhost only. |
+| Mailpit inbox | <http://localhost:8025> | Every mail the stack sends lands here instead of being delivered. Bound to localhost only. |
 | Postgres | *not published* | Reachable only from inside the Compose network. |
 | Redis | *not published* | Reachable only from inside the Compose network. |
 
@@ -73,10 +77,29 @@ owns 3000, 15672 or 8025 locally, change `GATEWAY_PORT`,
 `RABBITMQ_MANAGEMENT_PORT` or `MAILPIT_UI_PORT` there rather than editing
 `docker-compose.yml`.
 
-### One database per service
+### One database — and one set of credentials — per service
 
 There is one Postgres container holding seven databases, one per service, each
-named after its service. A service's `DATABASE_URL` points only at its own.
+named after its service. Each service also has **its own login role**, which
+owns its own database and **cannot open any other one**. A service's
+`DATABASE_URL` therefore carries only its own credentials, so a bug or a
+compromise in one service cannot read another's data.
+
+Two details worth knowing, because neither is obvious:
+
+- Creating a role per service is not sufficient on its own. Postgres grants
+  `CONNECT` on a new database to `PUBLIC`, so the init script also has to
+  `REVOKE CONNECT ... FROM PUBLIC` on each one. Without that line every role
+  can open every database.
+- Each role **owns** its database, so it has full DDL rights there and can run
+  its own migrations without any extra grant. No service can touch another's
+  schema.
+
+The Postgres superuser (`POSTGRES_USER`) is used only for administration, the
+healthcheck, and creating the above. No service holds those credentials.
+
+Changing a service's password after the first start needs
+`docker compose down -v`, because the roles are created once (see below).
 
 ## Working on the host
 
@@ -109,11 +132,20 @@ path is the supported one.
 ## Tests
 
 ```bash
-npm test          # the suite
+npm test          # the suite — no Docker needed
 npm run test:cov  # with coverage
 npm run lint
 npm run format
 ```
+
+```bash
+npm run test:e2e  # needs Docker, and RESETS the local database volumes
+```
+
+The e2e suite proves the per-service database credentials really are isolated,
+which can only be checked against a live Postgres created from an empty data
+directory — so it runs `docker compose down -v` before and after. Don't run it
+against a stack whose data you want to keep.
 
 The suite is the skeleton's own guard rail. It asserts that the seven apps and
 three libs stay registered, that the path aliases really resolve, that every
@@ -124,14 +156,15 @@ and that every variable `docker-compose.yml` interpolates is documented in
 
 ## Resetting the databases
 
-**Postgres runs `docker/postgres/init/01-create-databases.sql` exactly once:
+**Postgres runs `docker/postgres/init/01-create-databases.sh` exactly once:
 against an empty data directory.** Once the volume exists, the script is never
 run again — so if you add a service after having already started the stack, its
-database will not exist, and it will fail to connect for a reason that looks
-nothing like the cause.
+database and role will not exist, and it will fail to connect for a reason that
+looks nothing like the cause. The same applies to changing a password in
+`.env`: the role already exists with the old one.
 
-Adding a service, or any other change to that init script, means destroying the
-volume:
+Adding a service, changing a service password, or any other change to that init
+script means destroying the volume:
 
 ```bash
 docker compose down -v    # -v is the part that matters: it drops the volumes

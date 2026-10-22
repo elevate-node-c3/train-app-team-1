@@ -25,12 +25,16 @@ describe('shared libs', () => {
     expect(tsconfig.compilerOptions.paths[`@app/${lib}`]).toEqual([
       `./libs/${lib}/src/index.ts`,
     ]);
-    expect(tsconfig.compilerOptions.paths[`@app/${lib}/*`]).toEqual([`./libs/${lib}/src/*`]);
+    expect(tsconfig.compilerOptions.paths[`@app/${lib}/*`]).toEqual([
+      `./libs/${lib}/src/*`,
+    ]);
   });
 
   it('resolves each alias to a module export', async () => {
     const [contracts, messaging, common] = await Promise.all([
-      import('@app/contracts'), import('@app/messaging'), import('@app/common'),
+      import('@app/contracts'),
+      import('@app/messaging'),
+      import('@app/common'),
     ]);
     expect(contracts.ContractsModule).toBeDefined();
     expect(messaging.MessagingModule).toBeDefined();

@@ -2,7 +2,13 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const APPS = [
-  'catalog', 'gateway', 'identity', 'inventory', 'booking', 'payment', 'notification',
+  'catalog',
+  'gateway',
+  'identity',
+  'inventory',
+  'booking',
+  'payment',
+  'notification',
 ] as const;
 const LIBS = ['contracts', 'messaging', 'common'] as const;
 
@@ -63,14 +69,21 @@ describe('shared libs are importable from a service build', () => {
   // The build test above covers gateway only, because each `nest build` run
   // costs ~10s. These assertions stop the other nine configs from drifting
   // away from the one that is actually exercised.
-  it.each([...APPS])('apps/%s emits from the repo root so libs are in scope', (app) => {
-    const cfg = JSON.parse(readFileSync(`apps/${app}/tsconfig.app.json`, 'utf8'));
-    expect(cfg.compilerOptions.rootDir).toBe('../..');
-    expect(cfg.compilerOptions.outDir).toBe('../../dist');
-  });
+  it.each([...APPS])(
+    'apps/%s emits from the repo root so libs are in scope',
+    (app) => {
+      const cfg = JSON.parse(
+        readFileSync(`apps/${app}/tsconfig.app.json`, 'utf8'),
+      );
+      expect(cfg.compilerOptions.rootDir).toBe('../..');
+      expect(cfg.compilerOptions.outDir).toBe('../../dist');
+    },
+  );
 
   it.each([...LIBS])('libs/%s emits from the repo root too', (lib) => {
-    const cfg = JSON.parse(readFileSync(`libs/${lib}/tsconfig.lib.json`, 'utf8'));
+    const cfg = JSON.parse(
+      readFileSync(`libs/${lib}/tsconfig.lib.json`, 'utf8'),
+    );
     expect(cfg.compilerOptions.rootDir).toBe('../..');
     expect(cfg.compilerOptions.outDir).toBe('../../dist');
   });
