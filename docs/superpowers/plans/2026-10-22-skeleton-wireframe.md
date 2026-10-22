@@ -35,7 +35,7 @@ Part 1 of a two-part effort. Part 1 is the repo wireframe only. Part 2 (the even
 
 - Node 24 (`@types/node` is `^24`); all images pinned to a major tag, never `latest`.
 - The workspace is ESM: `package.json` has `"type": "module"`, `tsconfig` uses `module: nodenext`. Do not introduce CommonJS `require`.
-- `nest-cli.json` keeps `"monorepo": true` and `"webpack": true`.
+- `nest-cli.json` keeps `"monorepo": true`. ~~and `"webpack": true`~~ — **withdrawn during execution (Ruling R1):** `"webpack": true` is incompatible with `"type": "module"`, and `nest build` failed with "The webpack compiler does not support ESM projects". ESM is kept; webpack is disabled and the tsc builder is used instead.
 - The seven service names, spelled exactly and used identically in `nest-cli.json`, `docker-compose.yml`, and directory names: `catalog`, `gateway`, `identity`, `inventory`, `booking`, `payment`, `notification`.
 - Lib aliases, spelled exactly: `@app/contracts`, `@app/messaging`, `@app/common`.
 - No health endpoints, config validation, envelope, or logging in part 1.
