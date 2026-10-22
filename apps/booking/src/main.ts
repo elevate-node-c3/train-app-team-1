@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { BookingModule } from './booking.module';
+import { BookingModule } from './booking.module.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(BookingModule);

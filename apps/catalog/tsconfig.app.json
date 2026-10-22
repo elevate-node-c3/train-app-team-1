@@ -1,7 +1,9 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "declaration": false,
+    "rootDir": "src",
     "outDir": "../../dist/apps/catalog"
   },
   "include": ["src/**/*"],
