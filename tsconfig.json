@@ -22,7 +22,13 @@
       "vitest/globals",
       "node"
     ],
-    "baseUrl": "./",
-    "paths": {}
+    "paths": {
+      "@app/contracts": ["./libs/contracts/src"],
+      "@app/contracts/*": ["./libs/contracts/src/*"],
+      "@app/messaging": ["./libs/messaging/src"],
+      "@app/messaging/*": ["./libs/messaging/src/*"],
+      "@app/common": ["./libs/common/src"],
+      "@app/common/*": ["./libs/common/src/*"]
+    }
   }
 }
