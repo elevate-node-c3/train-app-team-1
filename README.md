@@ -83,7 +83,8 @@ named after its service. A service's `DATABASE_URL` points only at its own.
 ```bash
 npm install
 npm run start:dev <service>     # e.g. npm run start:dev booking
-npm run build <service>         # omit the name to build everything
+npm run build <service>         # omitting the name builds only the gateway,
+                                # which is the default project
 ```
 
 A service run this way still expects its infrastructure, so leave the

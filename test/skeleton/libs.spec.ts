@@ -16,8 +16,15 @@ describe('shared libs', () => {
   // (TS5090) requires `paths` entries to be explicitly relative once `baseUrl`
   // is unset — resolution is still relative to this tsconfig's own directory,
   // just spelled out syntactically.
+  //
+  // The bare alias names index.ts rather than the directory: `nodenext` has no
+  // directory/index resolution, so a directory target resolves under Vite (and
+  // therefore passes the next test) while failing every `nest build`. See
+  // lib-imports.spec.ts, which builds for real.
   it.each(LIBS)('declares both tsconfig paths for @app/%s', (lib) => {
-    expect(tsconfig.compilerOptions.paths[`@app/${lib}`]).toEqual([`./libs/${lib}/src`]);
+    expect(tsconfig.compilerOptions.paths[`@app/${lib}`]).toEqual([
+      `./libs/${lib}/src/index.ts`,
+    ]);
     expect(tsconfig.compilerOptions.paths[`@app/${lib}/*`]).toEqual([`./libs/${lib}/src/*`]);
   });
 

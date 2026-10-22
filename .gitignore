@@ -3,6 +3,10 @@
 /node_modules
 /build
 
+# Written and removed by test/skeleton/lib-imports.spec.ts; ignored so an
+# interrupted run can never commit it.
+apps/*/src/alias-import-probe.ts
+
 # TypeScript build cache
 *.tsbuildinfo
 

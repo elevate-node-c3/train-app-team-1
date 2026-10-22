@@ -19,9 +19,11 @@ ARG APP
 RUN test -n "$APP" || (echo "APP build arg is required (e.g. --build-arg APP=gateway)" >&2; exit 1)
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY . .
-# The workspace is ESM, so nest-cli builds with tsc; output lands at
-# dist/apps/<APP>/main.js.
-RUN npx nest build "$APP" && test -f "dist/apps/$APP/main.js"
+# The workspace is ESM, so nest-cli builds with tsc; each app's rootDir is the
+# repo root (so that libs/ is in scope), which puts the entry at
+# dist/apps/<APP>/src/main.js. The `test -f` is a guard: without it a layout
+# change produces an image that builds and then exits instantly at runtime.
+RUN npx nest build "$APP" && test -f "dist/apps/$APP/src/main.js"
 
 # ---- runtime: production dependencies plus the compiled app -------------
 FROM node:24-alpine AS runtime
@@ -40,4 +42,4 @@ ENV PORT=3000
 
 USER node
 EXPOSE 3000
-CMD ["sh", "-c", "node dist/apps/$APP/main"]
+CMD ["sh", "-c", "node dist/apps/$APP/src/main"]
