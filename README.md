@@ -233,3 +233,16 @@ in `docker-compose.yml`, and nothing else.
    ```
    *Expected:* Service stops accepting new traffic, finishes in-flight requests, closes connections, and exits cleanly with code 0.
 
+## Postman Collection
+
+A complete Postman Collection and Environment are provided in `postman/`:
+
+- **Collection**: [`postman/train-app-platform.postman_collection.json`](file:///d:/Elevate/Projects/train-app-team-1/postman/train-app-platform.postman_collection.json)
+- **Environment**: [`postman/train-app-local.postman_environment.json`](file:///d:/Elevate/Projects/train-app-team-1/postman/train-app-local.postman_environment.json)
+
+### Importing into Postman
+1. Open Postman -> click **Import**.
+2. Select both JSON files from the `postman/` folder.
+3. Select the **Train App - Local Environment** active environment.
+4. Execute queries against Gateway (`/health`, `/health/ready`, `/health/live`, `/api/ping-all`) or standalone microservice health endpoints. Built-in test scripts validate status codes, bilingual envelopes, and extract the correlation ID header automatically.
+
