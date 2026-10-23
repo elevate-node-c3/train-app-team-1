@@ -23,7 +23,7 @@ COPY . .
 # repo root (so that libs/ is in scope), which puts the entry at
 # dist/apps/<APP>/src/main.js. The `test -f` is a guard: without it a layout
 # change produces an image that builds and then exits instantly at runtime.
-RUN npx nest build "$APP" && test -f "dist/apps/$APP/src/main.js"
+RUN npx nest build "$APP" && mkdir -p dist/libs/contracts/src/proto && cp libs/contracts/src/proto/*.proto dist/libs/contracts/src/proto/ && test -f "dist/apps/$APP/src/main.js"
 
 # ---- runtime: production dependencies plus the compiled app -------------
 FROM node:24-alpine AS runtime
@@ -33,6 +33,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /usr/src/app/dist ./dist
+COPY libs/contracts/src/proto ./libs/contracts/src/proto
 
 # ARG does not interpolate in exec-form CMD. Promote it to an ENV and use shell
 # form so the app name survives into the running container.

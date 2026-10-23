@@ -16,6 +16,7 @@ x-service: &service
   environment: &service-env
     NODE_ENV: ${NODE_ENV:-development}
     PORT: 3000
+    GRPC_PORT: 50051
     REDIS_URL: redis://redis:6379
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}@rabbitmq:5672
 
@@ -118,6 +119,12 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://gateway:${GATEWAY_DB_PASSWORD:-gateway_dev}@postgres:5432/gateway
+      CATALOG_GRPC_URL: ${CATALOG_GRPC_URL:-catalog:50051}
+      IDENTITY_GRPC_URL: ${IDENTITY_GRPC_URL:-identity:50051}
+      INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
+      BOOKING_GRPC_URL: ${BOOKING_GRPC_URL:-booking:50051}
+      PAYMENT_GRPC_URL: ${PAYMENT_GRPC_URL:-payment:50051}
+      NOTIFICATION_GRPC_URL: ${NOTIFICATION_GRPC_URL:-notification:50051}
 
   identity:
     <<: *service

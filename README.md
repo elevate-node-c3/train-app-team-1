@@ -4,14 +4,7 @@ A NestJS monorepo holding seven services and three shared libraries, with all
 of its infrastructure defined in Compose. The whole stack comes up with one
 command.
 
-> **The services are empty by design.** Each one boots, listens on `PORT`, and
-> exposes nothing — no routes, no health endpoint, no config validation, no
-> response envelope, no logging shape. This is the wireframe: the shape every
-> service will share, with nothing in it yet. Health endpoints, configuration
-> validation and the response envelope arrive in the next story, and the
-> event-driven messaging backbone (transactional outbox, relay, idempotent
-> consumers, dead-lettering) in the one after. A service with no routes is
-> finished work here, not broken work.
+> **Platform Skeleton Complete**: All seven services boot with vertical slices (transport, domain, persistence via TypeORM), validate configuration at startup with Joi fail-fast schemas, communicate internally over gRPC with proto definitions, expose liveness and readiness health checks, speak one standardized Arabic/English response envelope, and emit single-line JSON logs carrying a trace correlation ID with automatic PII redaction.
 
 ## The services
 
@@ -186,3 +179,57 @@ docker build --build-arg APP=gateway -t train-app/gateway .
 `docker-compose.yml` passes that argument per service. There is deliberately
 no second Dockerfile — a new service needs an entry in `nest-cli.json` and one
 in `docker-compose.yml`, and nothing else.
+
+## Reviewer Flow & Demo Scenarios
+
+### Happy Path
+1. Boot the stack:
+   ```bash
+   cp .env.example .env
+   docker compose up --build -d
+   ```
+2. Verify all infrastructure and seven services are healthy:
+   ```bash
+   docker compose ps
+   ```
+3. Test Gateway health aggregation and bilingual response envelope:
+   ```bash
+   curl -i -H "Accept-Language: ar" http://localhost:3000/health
+   ```
+   *Expected:* Unified envelope with Arabic message, status `ready`, and a generated `correlationId`.
+4. Trace correlation ID across all services:
+   ```bash
+   # Extract correlationId from the response and grep logs:
+   docker compose logs | grep "<correlation-id>"
+   ```
+   *Expected:* Log lines from gateway and all downstream services carrying that exact correlation ID in single-line JSON format, with sensitive credentials and personal data (passwords, tokens, PINs, card numbers, unmasked emails) redacted.
+
+### Unhappy Demo Paths
+1. **Configuration Fails Fast**: Remove a required variable from identity's environment:
+   ```bash
+   docker compose run --rm -e DATABASE_URL="" identity
+   ```
+   *Expected:* Identity refuses to boot, prints `Configuration error: Missing required environment variable 'DATABASE_URL'`, never prints secret values, and exits with code 1.
+2. **Postgres Outage Recovery**:
+   ```bash
+   docker compose stop postgres
+   curl -i http://localhost:3000/health
+   ```
+   *Expected:* Gateway reports downstream services not ready (HTTP 503).
+   ```bash
+   docker compose start postgres
+   curl -i http://localhost:3000/health
+   ```
+   *Expected:* Services automatically recover on their own and report ready again.
+3. **Redis Outage (Degraded, Not Dead)**:
+   ```bash
+   docker compose stop redis
+   curl -i http://localhost:3000/health
+   ```
+   *Expected:* Services keep answering (HTTP 200), reporting status `degraded` and `redis: "unavailable"`.
+4. **Graceful Shutdown**:
+   ```bash
+   docker compose stop identity
+   ```
+   *Expected:* Service stops accepting new traffic, finishes in-flight requests, closes connections, and exits cleanly with code 0.
+
