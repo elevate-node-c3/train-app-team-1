@@ -45,9 +45,7 @@ export function redactPii<T>(
   }
 
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(
-    data as Record<string, unknown>,
-  )) {
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (SENSITIVE_KEY_REGEX.test(key)) {
       result[key] = '[REDACTED]';
     } else {
@@ -56,4 +54,3 @@ export function redactPii<T>(
   }
   return result as T;
 }
-
