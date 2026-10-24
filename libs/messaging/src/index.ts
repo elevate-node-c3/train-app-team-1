@@ -18,4 +18,7 @@ export * from './consumer/typeorm-processed-event.store.js';
 export * from './consumer/event-handler.port.js';
 export * from './consumer/event-subscription.js';
 export * from './consumer/parse-envelope.js';
+export * from './consumer/consumer-config.js';
+export * from './consumer/message-republisher.js';
+export * from './consumer/event-failure-router.js';
 export * from './consumer/event-consumer.service.js';

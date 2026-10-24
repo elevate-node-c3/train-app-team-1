@@ -242,9 +242,12 @@ export function deliveredCount(stats: QueueStats): number {
 }
 
 /**
- * `/health/ready` checks Postgres and the broker, not whether the subscription
- * actually attached. A consumer that failed to bind is healthy-looking, so the
- * specs that need delivery gate on the broker's own consumer count.
+ * The broker's own answer to "is anyone reading this queue".
+ *
+ * `/health/ready` now folds in the consumer's liveness, so it no longer reports
+ * `ready` while nothing is subscribed. This is still the stronger gate for
+ * specs that need delivery: it is measured from the broker's side rather than
+ * from the service's own view of itself.
  */
 export async function waitForConsumer(
   queue: string,

@@ -8,6 +8,8 @@ import {
   type EventSubscription,
 } from '@app/messaging/consumer/event-subscription.js';
 import { EventConsumerService } from '@app/messaging/consumer/event-consumer.service.js';
+import { EventFailureRouter } from '@app/messaging/consumer/event-failure-router.js';
+import { MessageRepublisher } from '@app/messaging/consumer/message-republisher.js';
 import { PROCESSED_EVENT_STORE } from '@app/messaging/consumer/processed-event.port.js';
 import { TypeOrmProcessedEventStore } from '@app/messaging/consumer/typeorm-processed-event.store.js';
 import { MessagingModule } from '@app/messaging';
@@ -66,6 +68,8 @@ export function createVerificationEmailSubscriptions(
       useFactory: createVerificationEmailSubscriptions,
       inject: [HandleVerificationCodeIssuedUseCase],
     },
+    MessageRepublisher,
+    EventFailureRouter,
     EventConsumerService,
   ],
   exports: [HandleVerificationCodeIssuedUseCase],

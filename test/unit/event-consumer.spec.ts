@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ConsumeMessage } from 'amqplib';
+import type { Channel, ConsumeMessage } from 'amqplib';
 import {
   CLAIM_PROCESSED_EVENT_SQL,
   DEAD_LETTER_EXCHANGE,
   EVENT_SUBSCRIPTIONS,
   EventConsumerService,
+  EventFailureRouter,
   InvalidEventPayloadError,
+  MessageRepublisher,
   RETRY_EXCHANGE,
   type EventSubscription,
 } from '@app/messaging';
@@ -113,6 +115,8 @@ function harness(
   const amqp = {
     ensureChannel: async () => plainChannel,
     ensureConfirmChannel: async () => confirmChannel,
+    onReconnect: () => () => {},
+    registerLivenessProbe: () => () => {},
   } as any;
 
   const markHandled = vi.fn(async () => {
@@ -144,16 +148,24 @@ function harness(
     set: vi.fn(),
   } as any;
 
+  // The real republisher and router over the fake channel and store: the
+  // assertions below are about which exchange a failure lands on, which is a
+  // collaboration between all three.
+  const republisher = new MessageRepublisher(amqp);
   const consumer = new EventConsumerService(
     [subscription(handler)],
     amqp,
     store,
     cls,
+    new EventFailureRouter(republisher, store),
   );
 
   return {
     consumer,
     sub: subscription(handler),
+    // The channel a delivery would have arrived on. Passed explicitly into
+    // `handleMessage` because that is where acks must land.
+    plainChannel: plainChannel as unknown as Channel,
     calls,
     publishes,
     ack,
@@ -170,7 +182,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     const handler = { handle: vi.fn() } as any;
     const h = harness({ attempt: null, handler });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     expect(handler.handle).not.toHaveBeenCalled();
     expect(h.ack).toHaveBeenCalledTimes(1);
@@ -186,7 +198,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
       },
     });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     expect(h.publishes).toHaveLength(1);
     expect(h.publishes[0].exchange).toBe(DEAD_LETTER_EXCHANGE);
@@ -210,7 +222,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
       },
     });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     expect(h.calls).toEqual([
       'claim',
@@ -232,7 +244,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
       },
     });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     const headers = h.publishes[0].options.headers;
     // Superset of inbound — Sprint 5's replay depends on it.
@@ -255,7 +267,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     });
     const msg = message();
 
-    await h.consumer.handleMessage(h.sub, msg);
+    await h.consumer.handleMessage(h.sub, msg, h.plainChannel);
 
     expect(h.markFailed).toHaveBeenCalledTimes(1);
     expect(h.nack).toHaveBeenCalledWith(msg, false, true);
@@ -272,7 +284,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
       },
     });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     expect(h.publishes[0].exchange).toBe(DEAD_LETTER_EXCHANGE);
     expect(h.publishes[0].options.headers['x-death-reason']).toBe(
@@ -291,7 +303,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
       },
     });
 
-    await h.consumer.handleMessage(h.sub, message());
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     expect(h.markSkipped).toHaveBeenCalledWith(ENVELOPE.id, 'code_expired');
     expect(h.markHandled).not.toHaveBeenCalled();

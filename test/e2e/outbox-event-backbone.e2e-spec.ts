@@ -21,10 +21,13 @@ import {
  * The three review demos from the README's "Unhappy Demo Paths", run
  * non-interactively against the real Compose stack.
  *
- * Order is load-bearing: demo 1b stops the broker, and the notification
- * consumer does not re-subscribe on its own after a channel closes, so it runs
- * last. Each demo proves one failure mode of the backbone rather than the happy
+ * Each demo proves one failure mode of the backbone rather than the happy
  * path, which the latency spec covers.
+ *
+ * Demo 1b stops the broker. That used to make the order load-bearing, because
+ * the consumer never re-subscribed afterwards and every later demo would have
+ * found a deaf notification; the client now redials and the consumer
+ * re-attaches, which `broker-restart.e2e-spec.ts` covers directly.
  */
 
 const RUN = `${Date.now()}`;
