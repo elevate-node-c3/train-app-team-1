@@ -11,6 +11,7 @@ export const SECRET_KEYS = new Set([
   'BOOKING_DB_PASSWORD',
   'PAYMENT_DB_PASSWORD',
   'NOTIFICATION_DB_PASSWORD',
+  'IDENTITY_CODE_HMAC_SECRET',
 ]);
 
 export const commonEnvSchema = Joi.object({
@@ -60,6 +61,16 @@ export const notificationEnvSchema = commonEnvSchema.keys({
   SMTP_PORT: Joi.number().integer().min(1).max(65535).required().messages({
     'number.base': "Variable 'SMTP_PORT' must be a valid integer port",
     'any.required': "Missing required environment variable 'SMTP_PORT'",
+  }),
+});
+
+export const identityEnvSchema = commonEnvSchema.keys({
+  // Keys the digest of verification and password-reset codes at rest.
+  IDENTITY_CODE_HMAC_SECRET: Joi.string().min(32).required().messages({
+    'string.min':
+      "Variable 'IDENTITY_CODE_HMAC_SECRET' must be at least 32 characters",
+    'any.required':
+      "Missing required environment variable 'IDENTITY_CODE_HMAC_SECRET'",
   }),
 });
 

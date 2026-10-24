@@ -18,6 +18,7 @@ import {
   resolveMessage,
   SupportedLanguage,
 } from './catalogue.js';
+import { DomainErrorMeta, DomainException } from './domain.exception.js';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -46,8 +47,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code: string = ErrorCode.INTERNAL_SERVER_ERROR;
     let details: ValidationErrorDetail[] | undefined;
+    let meta: DomainErrorMeta | undefined;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof DomainException) {
+      // Domain errors name their own code; the status alone cannot tell
+      // e.g. ACCOUNT_LOCKED from any other 4xx.
+      status = exception.getStatus();
+      code = exception.code;
+      meta = exception.meta;
+      const retryAfter = exception.retryAfterSeconds;
+      if (retryAfter !== undefined) {
+        res.setHeader('Retry-After', String(retryAfter));
+      }
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const response = exception.getResponse();
 
@@ -101,6 +113,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         code,
         message: localizedMessage,
         ...(details && details.length > 0 ? { details } : {}),
+        ...(meta && Object.keys(meta).length > 0 ? { meta } : {}),
       },
       correlationId,
       timestamp: new Date().toISOString(),

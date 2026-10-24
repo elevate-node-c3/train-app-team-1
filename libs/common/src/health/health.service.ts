@@ -11,6 +11,7 @@ import {
   ServiceDependencyHealth,
   ServiceHealthReport,
 } from '@app/contracts';
+import { ensureDataSourceInitialized } from '../persistence/data-source-ready.js';
 import { GracefulShutdownService } from '../shutdown/graceful-shutdown.service.js';
 import { RedisHealthService } from './redis-health.service.js';
 
@@ -44,9 +45,7 @@ export class HealthService {
     // 1. Check PostgreSQL Database
     if (this.dataSource) {
       try {
-        if (!this.dataSource.isInitialized) {
-          await this.dataSource.initialize();
-        }
+        await ensureDataSourceInitialized(this.dataSource);
         const queryPromise = this.dataSource.query('SELECT 1');
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Database query timed out')), 2000),

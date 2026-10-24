@@ -11,6 +11,8 @@ export interface ApiErrorDetail {
   code: ErrorCode | string;
   message: string;
   details?: ValidationErrorDetail[];
+  /** Client-safe metadata from a domain error, e.g. `retryAfterSeconds`. */
+  meta?: Record<string, string | number | boolean>;
 }
 
 export interface ApiResponse<T = unknown> {

@@ -43,6 +43,34 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'حدث خطأ غير متوقع في الخادم، يرجى المحاولة لاحقاً',
     en: 'An unexpected internal server error occurred, please try again later',
   },
+  [ErrorCode.TOO_MANY_REQUESTS]: {
+    ar: 'عدد كبير جداً من الطلبات، يرجى الانتظار قبل المحاولة مرة أخرى',
+    en: 'Too many requests, please wait before trying again',
+  },
+  [ErrorCode.INVALID_CREDENTIALS]: {
+    ar: 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+    en: 'The email or password is incorrect',
+  },
+  [ErrorCode.ACCOUNT_LOCKED]: {
+    ar: 'تم قفل الحساب مؤقتاً بسبب كثرة محاولات تسجيل الدخول الفاشلة، يرجى المحاولة لاحقاً',
+    en: 'The account is temporarily locked after too many failed sign-in attempts, please try again later',
+  },
+  [ErrorCode.VERIFICATION_REQUIRED]: {
+    ar: 'لم يتم تفعيل الحساب بعد، يرجى إدخال رمز التحقق المرسل إلى بريدك الإلكتروني',
+    en: 'The account is not verified yet, please enter the verification code sent to your email',
+  },
+  [ErrorCode.INVALID_RESET_CODE]: {
+    ar: 'رمز إعادة التعيين غير صالح أو منتهي الصلاحية',
+    en: 'The reset code is invalid or has expired',
+  },
+  [ErrorCode.PASSWORD_MISMATCH]: {
+    ar: 'كلمة المرور وتأكيدها غير متطابقين',
+    en: 'The password and its confirmation do not match',
+  },
+  [ErrorCode.PASSWORD_REUSED]: {
+    ar: 'يجب أن تختلف كلمة المرور الجديدة عن كلمة المرور الحالية',
+    en: 'The new password must be different from the current one',
+  },
 };
 
 /**

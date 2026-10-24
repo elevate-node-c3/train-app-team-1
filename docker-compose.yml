@@ -135,6 +135,7 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
+      IDENTITY_CODE_HMAC_SECRET: ${IDENTITY_CODE_HMAC_SECRET:-identity_dev_code_hmac_secret_change_me_0123456789}
 
   inventory:
     <<: *service

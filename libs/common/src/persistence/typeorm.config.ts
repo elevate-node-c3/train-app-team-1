@@ -10,7 +10,8 @@ export function createTypeOrmAsyncOptions(
       type: 'postgres',
       url: process.env.DATABASE_URL || 'postgres://localhost:5432/postgres',
       autoLoadEntities: true,
-      synchronize: false,
+      // The schema follows the entities; there are no migrations.
+      synchronize: true,
       manualInitialization: true,
       extra: {
         connectionTimeoutMillis: 5000,

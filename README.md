@@ -233,6 +233,44 @@ in `docker-compose.yml`, and nothing else.
    ```
    *Expected:* Service stops accepting new traffic, finishes in-flight requests, closes connections, and exits cleanly with code 0.
 
+## Identity: sign-in and password recovery
+
+| Route | Success | Body |
+| --- | --- | --- |
+| `POST /auth/sign-in` | 200 with the session | `email`, `password` |
+| `POST /auth/password/forgot` | 202, the same for every email | `email` |
+| `POST /auth/password/reset` | 200 (no session is created) | `email`, `code`, `newPassword`, `confirmPassword` |
+
+The gateway does not proxy these routes yet.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `INVALID_CREDENTIALS` | 401 | Wrong password, unknown email, or wrong password on an unverified account. All three get the same response. |
+| `ACCOUNT_LOCKED` | 423 | 10 failed sign-ins within 15 minutes lock the email for 15 minutes. `meta.retryAfterSeconds` holds the time left. |
+| `VERIFICATION_REQUIRED` | 403 | Correct password, but the account is not verified. |
+| `PASSWORD_MISMATCH` | 400 | `confirmPassword` differs from `newPassword`. |
+| `INVALID_RESET_CODE` | 400 | Wrong, expired or already used code. 5 wrong tries kill the code. |
+| `PASSWORD_REUSED` | 400 | The new password is the current one. |
+
+- **Passwords** are hashed with `bcryptjs`. The strength rules (BR-02) are in
+  `domain/password/password-policy.ts`. They are applied with class-validator's
+  `@IsStrongPassword` on the DTO.
+- **Lockout** lives in Redis (`identity:signin:fail:{emailHash}` and
+  `identity:signin:lock:{emailHash}`). A Lua script counts each attempt
+  *before* the password check, so even parallel requests on several instances
+  get at most 10 checks.
+- **Reset codes** are 6 random digits, stored in Postgres as
+  `HMAC(IDENTITY_CODE_HMAC_SECRET, purpose|accountId|code)`. Using the code and
+  saving the new password happen in one transaction, so a code works only once.
+- **Events** go to the `train.domain-events` exchange: `traveller.signed_in`,
+  `account.locked`, `password_reset_code.issued` (carries the code for the
+  email) and `password.reset`.
+- **Tables** are created by TypeORM from the entities (`synchronize: true`).
+  There are no migrations.
+- **Not provided yet:** `SESSION_SERVICE`, `ACCOUNT_REVOCATION_SERVICE` and
+  `VERIFICATION_CODE_ISSUER`. Identity does not start until the modules that
+  implement them are imported into `identity.module.ts`.
+
 ## Postman Collection
 
 A complete Postman Collection and Environment are provided in `postman/`:

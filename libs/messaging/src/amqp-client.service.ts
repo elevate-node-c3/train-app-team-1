@@ -50,6 +50,25 @@ export class AmqpClientService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Opens a confirm channel on the shared connection, connecting first if
+   * needed. The caller owns the channel.
+   * @returns the new confirm channel
+   */
+  async createConfirmChannel(): Promise<amqp.ConfirmChannel> {
+    if (!this.connection) {
+      const url = process.env.RABBITMQ_URL;
+      if (!url) {
+        throw new Error('RABBITMQ_URL is not configured');
+      }
+      await this.connect(url);
+    }
+    if (!this.connection) {
+      throw new Error('RabbitMQ connection is not open');
+    }
+    return this.connection.createConfirmChannel();
+  }
+
   async checkHealth(): Promise<{
     status: 'ready' | 'not_ready';
     message?: string;
