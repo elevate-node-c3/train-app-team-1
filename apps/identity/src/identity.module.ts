@@ -3,19 +3,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
 import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
-import { IdentityController } from './transport/identity.controller.js';
-import { IdentityService } from './domain/identity.service.js';
-import { IdentityRepository } from './persistence/identity.repository.js';
+import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them (ADR-0007).
+ */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
     CommonModule,
     ContractsModule,
     MessagingModule,
+    ServiceInfoModule,
   ],
-  controllers: [IdentityController],
-  providers: [IdentityService, IdentityRepository],
-  exports: [IdentityService],
 })
 export class IdentityModule {}

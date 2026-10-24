@@ -3,19 +3,21 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
 import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
-import { GatewayController } from './transport/gateway.controller.js';
-import { GatewayService } from './domain/gateway.service.js';
-import { GatewayRepository } from './persistence/gateway.repository.js';
+import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
+import { HealthAggregationModule } from './modules/health-aggregation/health-aggregation.module.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them (ADR-0007).
+ */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
     CommonModule,
     ContractsModule,
     MessagingModule,
+    ServiceInfoModule,
+    HealthAggregationModule,
   ],
-  controllers: [GatewayController],
-  providers: [GatewayService, GatewayRepository],
-  exports: [GatewayService],
 })
 export class GatewayModule {}
