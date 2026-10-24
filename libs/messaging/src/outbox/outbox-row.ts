@@ -96,6 +96,6 @@ export function fromDbRow(raw: Record<string, unknown>): OutboxRow {
       : null,
     attemptCount: Number(raw.attempt_count),
     nextAttemptAt: toIsoString(raw.next_attempt_at as Date | string),
-    lastError: raw.last_error === null ? null : String(raw.last_error),
+    lastError: raw.last_error == null ? null : (raw.last_error as string),
   };
 }
