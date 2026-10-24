@@ -19,4 +19,8 @@ export * from './shutdown/graceful-shutdown.service.js';
 export * from './persistence/typeorm.config.js';
 export * from './persistence/unit-of-work.port.js';
 export * from './persistence/typeorm-unit-of-work.js';
+export * from './persistence/data-source-initializer.js';
+export * from './persistence/persistence.module.js';
+export * from './persistence/migration-runner.service.js';
+export * from './persistence/migration.module.js';
 export * from './setup.js';

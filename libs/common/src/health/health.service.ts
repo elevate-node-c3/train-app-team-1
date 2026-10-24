@@ -12,6 +12,7 @@ import {
   ServiceHealthReport,
 } from '@app/contracts';
 import { GracefulShutdownService } from '../shutdown/graceful-shutdown.service.js';
+import { DataSourceInitializer } from '../persistence/data-source-initializer.js';
 import { RedisHealthService } from './redis-health.service.js';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class HealthService {
     private readonly redisHealth: RedisHealthService,
     @Optional() private readonly dataSource?: DataSource,
     @Optional() private readonly amqpClient?: AmqpClientService,
+    @Optional() private readonly initializer?: DataSourceInitializer,
   ) {}
 
   checkLiveness(): { status: 'live'; timestamp: string } {
@@ -44,7 +46,14 @@ export class HealthService {
     // 1. Check PostgreSQL Database
     if (this.dataSource) {
       try {
-        if (!this.dataSource.isInitialized) {
+        // Through the shared initializer, not `dataSource.initialize()`
+        // directly: a readiness probe arriving while a use-case is opening the
+        // same DataSource would otherwise race it and throw
+        // CannotConnectAlreadyConnectedError, reporting a healthy database as
+        // not ready.
+        if (this.initializer) {
+          await this.initializer.ensureInitialized();
+        } else if (!this.dataSource.isInitialized) {
           await this.dataSource.initialize();
         }
         const queryPromise = this.dataSource.query('SELECT 1');
