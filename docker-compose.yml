@@ -1,0 +1,188 @@
+name: train-app
+
+# Every service is built from the one root Dockerfile, selected by the APP
+# build arg. Only `args.APP` and the database credentials differ between them,
+# so the shared parts live in these anchors rather than seven times over.
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+
+x-service: &service
+  restart: unless-stopped
+  depends_on: &service-deps
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+  environment: &service-env
+    NODE_ENV: ${NODE_ENV:-development}
+    PORT: 3000
+    GRPC_PORT: 50051
+    REDIS_URL: redis://redis:6379
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}@rabbitmq:5672
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      # Superuser, used for administration and the healthcheck only. No service
+      # holds these credentials.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      # Read by docker/postgres/init/01-create-databases.sh on first start, to
+      # create one login role per service.
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog_dev}
+      GATEWAY_DB_PASSWORD: ${GATEWAY_DB_PASSWORD:-gateway_dev}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-identity_dev}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:-inventory_dev}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD:-booking_dev}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_dev}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    # No published port: Postgres is reachable only from inside the network.
+    healthcheck:
+      # `$$` escapes the interpolation so Compose leaves it alone and the shell
+      # inside the container reads the container's own environment.
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-train_app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-train_app}
+    ports:
+      # The management UI publishes because the project's demos require it,
+      # bound to the loopback interface so default credentials are not exposed
+      # to the rest of the network.
+      - '127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      # The web inbox publishes for the same reason as RabbitMQ's UI.
+      - '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  catalog:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: catalog
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://catalog:${CATALOG_DB_PASSWORD:-catalog_dev}@postgres:5432/catalog
+
+  # The only service reachable from outside the Compose network.
+  gateway:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: gateway
+    ports:
+      - '${GATEWAY_PORT:-3000}:3000'
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://gateway:${GATEWAY_DB_PASSWORD:-gateway_dev}@postgres:5432/gateway
+      CATALOG_GRPC_URL: ${CATALOG_GRPC_URL:-catalog:50051}
+      IDENTITY_GRPC_URL: ${IDENTITY_GRPC_URL:-identity:50051}
+      INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
+      BOOKING_GRPC_URL: ${BOOKING_GRPC_URL:-booking:50051}
+      PAYMENT_GRPC_URL: ${PAYMENT_GRPC_URL:-payment:50051}
+      NOTIFICATION_GRPC_URL: ${NOTIFICATION_GRPC_URL:-notification:50051}
+
+  identity:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: identity
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
+
+  inventory:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: inventory
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://inventory:${INVENTORY_DB_PASSWORD:-inventory_dev}@postgres:5432/inventory
+
+  booking:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: booking
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://booking:${BOOKING_DB_PASSWORD:-booking_dev}@postgres:5432/booking
+
+  payment:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: payment
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://payment:${PAYMENT_DB_PASSWORD:-payment_dev}@postgres:5432/payment
+
+  notification:
+    <<: *service
+    build:
+      <<: *build
+      args:
+        APP: notification
+    # The one service that sends mail, so the only one that waits for Mailpit.
+    depends_on:
+      <<: *service-deps
+      mailpit: { condition: service_healthy }
+    environment:
+      <<: *service-env
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:-notification_dev}@postgres:5432/notification
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

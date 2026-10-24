@@ -1,0 +1,513 @@
+{
+  "info": {
+    "_postman_id": "c1f7b8a2-94d3-4f90-a7d1-e6a8d7a4e921",
+    "name": "Train App - Platform Skeleton & Health",
+    "description": "Postman collection covering health, readiness, liveness, and unified envelope testing across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Gateway (External Entrypoint)",
+      "description": "Endpoints served by the Gateway on host port 3000.",
+      "item": [
+        {
+          "name": "Aggregated Health (Arabic Default)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Standard Arabic response envelope\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.eql(\"تمت العملية بنجاح\");",
+                  "    pm.expect(json.error).to.be.null;",
+                  "    pm.expect(json.correlationId).to.be.a('string');",
+                  "    pm.expect(json.timestamp).to.be.a('string');",
+                  "    pm.expect(json.data.status).to.be.oneOf(['ready', 'degraded']);",
+                  "});",
+                  "",
+                  "pm.test(\"Capture correlation ID\", function () {",
+                  "    const corrId = pm.response.headers.get('x-correlation-id');",
+                  "    pm.expect(corrId).to.be.ok;",
+                  "    pm.environment.set(\"lastCorrelationId\", corrId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "description": "Defaults to 'ar' for Arabic envelope",
+                "type": "text"
+              },
+              {
+                "key": "x-correlation-id",
+                "value": "{{customCorrelationId}}",
+                "description": "Optional custom correlation ID",
+                "type": "text",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Returns the aggregated readiness status of the Gateway and all six downstream services via gRPC."
+          },
+          "response": []
+        },
+        {
+          "name": "Aggregated Health (English)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"English response envelope message\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.eql(\"Operation completed successfully\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Tests language negotiation returning English message envelope."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness Probe (/health/ready)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Readiness report structure\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.gateway).to.be.an('object');",
+                  "    pm.expect(json.data.services).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["health", "ready"]
+            },
+            "description": "Standard Kubernetes/Docker readiness probe endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Liveness Probe (/health/live)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Liveness report\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.status).to.eql(\"live\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/live",
+              "host": ["{{baseUrl}}"],
+              "path": ["health", "live"]
+            },
+            "description": "Standard Kubernetes/Docker liveness probe endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Ping All Microservices (/api/ping-all)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"All seven services reported\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.gateway).to.be.ok;",
+                  "    const services = json.data.services;",
+                  "    pm.expect(services).to.have.property('catalog');",
+                  "    pm.expect(services).to.have.property('identity');",
+                  "    pm.expect(services).to.have.property('inventory');",
+                  "    pm.expect(services).to.have.property('booking');",
+                  "    pm.expect(services).to.have.property('payment');",
+                  "    pm.expect(services).to.have.property('notification');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ping-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ping-all"]
+            },
+            "description": "Dispatches gRPC health queries to all microservices carrying the correlation ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway Root (/)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Gateway service metadata endpoint."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Standalone Microservices (Host Dev Mode)",
+      "description": "Direct endpoints when running individual services locally on host (e.g. npm run start:dev identity).",
+      "item": [
+        {
+          "name": "Identity Service",
+          "item": [
+            {
+              "name": "Identity Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{identityPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{identityPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Identity Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{identityPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{identityPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Identity Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{identityPort}}/identity",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{identityPort}}",
+                  "path": ["identity"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalog Service",
+          "item": [
+            {
+              "name": "Catalog Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{catalogPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{catalogPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Catalog Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{catalogPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{catalogPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Catalog Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{catalogPort}}/catalog",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{catalogPort}}",
+                  "path": ["catalog"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inventory Service",
+          "item": [
+            {
+              "name": "Inventory Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{inventoryPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{inventoryPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Inventory Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{inventoryPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{inventoryPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Inventory Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{inventoryPort}}/inventory",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{inventoryPort}}",
+                  "path": ["inventory"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Booking Service",
+          "item": [
+            {
+              "name": "Booking Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{bookingPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{bookingPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Booking Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{bookingPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{bookingPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Booking Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{bookingPort}}/booking",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{bookingPort}}",
+                  "path": ["booking"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment Service",
+          "item": [
+            {
+              "name": "Payment Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{paymentPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{paymentPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Payment Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{paymentPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{paymentPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Payment Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{paymentPort}}/payment",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{paymentPort}}",
+                  "path": ["payment"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Notification Service",
+          "item": [
+            {
+              "name": "Notification Health",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{notificationPort}}/health",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{notificationPort}}",
+                  "path": ["health"]
+                }
+              }
+            },
+            {
+              "name": "Notification Liveness",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{notificationPort}}/health/live",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{notificationPort}}",
+                  "path": ["health", "live"]
+                }
+              }
+            },
+            {
+              "name": "Notification Root",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{notificationPort}}/notification",
+                  "protocol": "http",
+                  "host": ["localhost"],
+                  "port": "{{notificationPort}}",
+                  "path": ["notification"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
