@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package train.accounts.v1;
+
+service AccountsService {
+  rpc SignUp (SignUpRequest) returns (SignUpResponse);
+}
+
+message SignUpRequest {
+  string email = 1;
+  // Empty means "use the platform fallback" (Arabic, BR-56).
+  string language = 2;
+}
+
+message SignUpResponse {
+  string accountId = 1;
+  string email = 2;
+  string language = 3;
+}
