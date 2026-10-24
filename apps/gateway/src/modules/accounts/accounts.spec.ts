@@ -25,7 +25,6 @@ import {
   ACCOUNTS_CLIENT,
   type AccountsClientPort,
 } from './application/ports/accounts.port.js';
-import { SignUpUseCase } from './application/use-cases/sign-up.use-case.js';
 import {
   ACCOUNTS_CALL_TIMEOUT_MS,
   IdentityAccountsGrpcAdapter,
@@ -85,7 +84,7 @@ function fakeClient(
   return { client, captured: () => captured! };
 }
 
-describe('Gateway sign-up (ADR-0001, BR-03, BR-56)', () => {
+describe('Gateway sign-up (BR-03, BR-56)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -95,15 +94,17 @@ describe('Gateway sign-up (ADR-0001, BR-03, BR-56)', () => {
     vi.useRealTimers();
   });
 
-  it('forwards the DTO through the use-case unchanged', async () => {
+  it('forwards the DTO to the port unchanged', async () => {
     const signUp = vi.fn(async () => RESPONSE);
-    const useCase = new SignUpUseCase({ signUp } as AccountsClientPort);
+    const controller = new AccountsHttpController({
+      signUp,
+    } as AccountsClientPort);
 
     const input: SignUpRequestDto = {
       email: 'user@example.com',
       language: 'en',
     };
-    await expect(useCase.execute(input)).resolves.toBe(RESPONSE);
+    await expect(controller.signUp(input)).resolves.toBe(RESPONSE);
     expect(signUp).toHaveBeenCalledWith(input);
   });
 
@@ -176,7 +177,6 @@ describe('Gateway sign-up HTTP contract', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [AccountsHttpController],
       providers: [
-        SignUpUseCase,
         { provide: ACCOUNTS_CLIENT, useClass: IdentityAccountsGrpcAdapter },
         { provide: ClsService, useValue: fakeCls() },
       ],

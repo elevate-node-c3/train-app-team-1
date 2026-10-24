@@ -5,15 +5,14 @@ import {
   MigrationModule,
   createTypeOrmAsyncOptions,
 } from '@app/common';
-import { ContractsModule } from '@app/contracts';
 import { MessagingModule, OutboxModule } from '@app/messaging';
 import { migrations } from './database/migrations/index.js';
 import { AccountsModule } from './modules/accounts/accounts.module.js';
-import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
+import { ServiceInfoController } from './service-info.controller.js';
 
 /**
  * Root module: infrastructure wiring and feature modules only. Business
- * providers belong to the feature module that owns them (ADR-0007).
+ * providers belong to the feature module that owns them.
  *
  * The migration list is passed to the same DataSource the unit of work uses;
  * `MigrationRunnerService` applies it at bootstrap and no provider connects in
@@ -25,12 +24,11 @@ import { ServiceInfoModule } from './modules/service-info/service-info.module.js
       createTypeOrmAsyncOptions(undefined, { migrations }),
     ),
     CommonModule,
-    ContractsModule,
     MessagingModule,
     OutboxModule,
     MigrationModule,
     AccountsModule,
-    ServiceInfoModule,
   ],
+  controllers: [ServiceInfoController],
 })
 export class IdentityModule {}

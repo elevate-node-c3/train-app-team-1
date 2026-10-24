@@ -56,18 +56,10 @@ export class ResponseInterceptor<T> implements NestInterceptor<
           };
         }
 
-        let data = result;
-        let message = resolveMessage(ErrorCode.SUCCESS, lang);
-
-        if (result && typeof result === 'object' && result.__envelope) {
-          data = result.data;
-          message = result.message || message;
-        }
-
         return {
           success: true,
-          data,
-          message,
+          data: result,
+          message: resolveMessage(ErrorCode.SUCCESS, lang),
           error: null,
           correlationId,
           timestamp: new Date().toISOString(),

@@ -47,6 +47,31 @@ describe('service apps', () => {
     expect(nestCli.sourceRoot).toBe('apps/gateway/src');
   });
 
+  // `postman/` and the README document `GET /<service>` on every app and `GET /`
+  // on the gateway. These used to come from a three-file feature module per
+  // app; they are now one controller on the root module, and this is what keeps
+  // the documented surface from moving. 'path' and 'controllers' are the
+  // metadata keys Nest's own decorators write.
+  it.each(SERVICES)('%s serves its documented identity route', (service) => {
+    const pascal = service[0].toUpperCase() + service.slice(1);
+    const moduleClass = MODULES[service][`${pascal}Module`] as object;
+
+    const controllers =
+      (Reflect.getMetadata('controllers', moduleClass) as
+        | (new () => Record<string, () => { service: string }>)[]
+        | undefined) ?? [];
+    const controller = controllers.find(
+      (candidate) => candidate.name === 'ServiceInfoController',
+    );
+    expect(controller).toBeDefined();
+
+    const path = Reflect.getMetadata('path', controller!);
+    expect(path).toBe(service === 'gateway' ? '/' : service);
+
+    const method = service === 'gateway' ? 'getRoot' : 'getInfo';
+    expect(new controller!()[method]().service).toBe(service);
+  });
+
   it.each(SERVICES)(
     '%s has a module that compiles on its own',
     async (service) => {
