@@ -3,19 +3,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
 import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
-import { NotificationController } from './transport/notification.controller.js';
-import { NotificationService } from './domain/notification.service.js';
-import { NotificationRepository } from './persistence/notification.repository.js';
+import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them (ADR-0007).
+ */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
     CommonModule,
     ContractsModule,
     MessagingModule,
+    ServiceInfoModule,
   ],
-  controllers: [NotificationController],
-  providers: [NotificationService, NotificationRepository],
-  exports: [NotificationService],
 })
 export class NotificationModule {}

@@ -3,19 +3,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
 import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
-import { CatalogController } from './transport/catalog.controller.js';
-import { CatalogService } from './domain/catalog.service.js';
-import { CatalogRepository } from './persistence/catalog.repository.js';
+import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them (ADR-0007).
+ */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
     CommonModule,
     ContractsModule,
     MessagingModule,
+    ServiceInfoModule,
   ],
-  controllers: [CatalogController],
-  providers: [CatalogService, CatalogRepository],
-  exports: [CatalogService],
 })
 export class CatalogModule {}

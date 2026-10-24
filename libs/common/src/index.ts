@@ -17,4 +17,6 @@ export * from './health/health.grpc.controller.js';
 export * from './health/health.module.js';
 export * from './shutdown/graceful-shutdown.service.js';
 export * from './persistence/typeorm.config.js';
+export * from './persistence/unit-of-work.port.js';
+export * from './persistence/typeorm-unit-of-work.js';
 export * from './setup.js';
