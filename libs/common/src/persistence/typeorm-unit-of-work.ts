@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 import type {
   TransactionContext,
   UnitOfWorkPort,
 } from './unit-of-work.port.js';
+import { DataSourceInitializer } from './data-source-initializer.js';
 
 const DRIVER = 'typeorm';
 
@@ -37,44 +38,17 @@ export function entityManagerOf(ctx: TransactionContext): EntityManager {
 
 @Injectable()
 export class TypeOrmUnitOfWork implements UnitOfWorkPort {
-  private readonly logger = new Logger(TypeOrmUnitOfWork.name);
-
-  /**
-   * Serialises concurrent first-use. `manualInitialization: true` means Nest
-   * never connects the DataSource, so whoever needs it first must — and two
-   * callers racing to `initialize()` throws CannotConnectAlreadyConnectedError.
-   * One shared promise makes every caller after the first await the same
-   * attempt. It is cleared on failure so a Postgres outage is retried rather
-   * than cached forever.
-   */
-  private initializing: Promise<void> | null = null;
-
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(private readonly initializer: DataSourceInitializer) {}
 
   async withTransaction<T>(
     work: (ctx: TransactionContext) => Promise<T>,
   ): Promise<T> {
-    await this.ensureInitialized();
-    return this.dataSource.transaction((manager) =>
+    // Connecting is shared with the readiness probe and the migration runner,
+    // because two callers racing to initialize() throws
+    // CannotConnectAlreadyConnectedError.
+    const dataSource = await this.initializer.ensureInitialized();
+    return dataSource.transaction((manager) =>
       work(new TypeOrmTransactionContext(manager)),
     );
-  }
-
-  private async ensureInitialized(): Promise<void> {
-    if (this.dataSource.isInitialized) {
-      return;
-    }
-    this.initializing ??= this.dataSource
-      .initialize()
-      .then(() => undefined)
-      .catch((error: unknown) => {
-        this.initializing = null;
-        this.logger.error(
-          { err: error },
-          'failed to initialize the data source',
-        );
-        throw error;
-      });
-    await this.initializing;
   }
 }
