@@ -4,7 +4,6 @@
   "sourceRoot": "apps/train-app-server/src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "webpack": true,
     "builder": "rspack",
     "tsConfigPath": "apps/train-app-server/tsconfig.app.json"
   },
@@ -44,6 +43,7 @@
       "entryFile": "main",
       "sourceRoot": "apps/identity/src",
       "compilerOptions": {
+          "builder": "rspack",
         "tsConfigPath": "apps/identity/tsconfig.app.json"
       }
     },
