@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
+import { identityEnvSchema, setupApp, validateEnv } from '@app/common';
 import { getHealthProtoPath, HEALTH_PACKAGE_NAME } from '@app/contracts';
 import { IdentityModule } from './identity.module.js';
 
 // 1. Fail-fast configuration validation at boot (§2.1)
-validateEnv(commonEnvSchema, process.env, 'identity');
+validateEnv(identityEnvSchema, process.env, 'identity');
 
 async function bootstrap() {
   const app = await NestFactory.create(IdentityModule, { bufferLogs: true });
