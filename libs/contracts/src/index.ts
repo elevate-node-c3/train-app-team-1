@@ -1,4 +1,3 @@
-export * from './contracts.module.js';
 export * from './proto-path.js';
 export * from './error-codes.enum.js';
 export * from './envelope.dto.js';

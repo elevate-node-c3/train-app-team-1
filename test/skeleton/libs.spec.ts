@@ -36,7 +36,9 @@ describe('shared libs', () => {
       import('@app/messaging'),
       import('@app/common'),
     ]);
-    expect(contracts.ContractsModule).toBeDefined();
+    // `@app/contracts` is types and constants only, so a runtime value from it
+    // rather than a Nest module is what proves the alias resolved.
+    expect(contracts.EVENT_TYPES).toBeDefined();
     expect(messaging.MessagingModule).toBeDefined();
     expect(common.CommonModule).toBeDefined();
   });

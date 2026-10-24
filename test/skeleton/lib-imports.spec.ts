@@ -29,10 +29,10 @@ describe('shared libs are importable from a service build', () => {
       PROBE,
       [
         "import { CommonModule } from '@app/common';",
-        "import { ContractsModule } from '@app/contracts';",
+        "import { EVENT_TYPES } from '@app/contracts';",
         "import { MessagingModule } from '@app/messaging';",
         '',
-        'export const probe = [CommonModule, ContractsModule, MessagingModule];',
+        'export const probe = [CommonModule, EVENT_TYPES, MessagingModule];',
         '',
       ].join('\n'),
     );
