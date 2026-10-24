@@ -35,10 +35,10 @@ await this.unitOfWork.withTransaction(async (ctx) => {
 
 **Lives in**
 `apps/identity/src/modules/accounts/application/use-cases/sign-up.use-case.ts`,
-with the `outbox_event` table and its adapter under
-`apps/identity/src/modules/accounts/infrastructure/persistence/`. The
-`TransactionContext` is opaque to the use-case — see
-[Ports and Adapters](#ports-and-adapters) below.
+with the `outbox_event` table created by identity's migration under
+`apps/identity/src/database/migrations/` and the append/claim adapter in
+`libs/messaging/src/outbox/`. The `TransactionContext` is opaque to the
+use-case — see [Ports and Adapters](#ports-and-adapters) below.
 
 **How it fails.** A repository that opens its own transaction instead of
 joining the caller's: you are back to a dual write that merely *looks*
@@ -78,10 +78,10 @@ steps over the locked rows instead of blocking on them, so two relays make
 progress on disjoint batches without coordination, a leader election, or a
 distributed lock.
 
-**Lives in**
-`apps/identity/src/modules/accounts/infrastructure/persistence/outbox-relay.service.ts`.
-The relay is infrastructure, not a use-case: it implements a delivery
-mechanism and talks to both Postgres and the broker directly.
+**Lives in** `libs/messaging/src/outbox/outbox-relay.service.ts`, exported by
+`OutboxModule`; identity imports that module and gets the relay as a singleton.
+The relay is infrastructure, not a use-case: it implements a delivery mechanism
+and talks to both Postgres and the broker directly.
 
 **How it fails.**
 
@@ -197,10 +197,11 @@ redeliveries. This single predicate is what lets "crash mid-handling ⇒
 redelivery works" and "two instances, same duplicate, same instant ⇒ one email"
 both be true.
 
-**Lives in** `apps/notification/src/modules/verification-emails/`:
-`infrastructure/persistence/typeorm-processed-event.repository.ts` behind
-`application/ports/processed-event.repository.port.ts`, driven by
-`application/use-cases/handle-verification-code-issued.use-case.ts`.
+**Lives in** `libs/messaging/src/consumer/`: `processed-event.sql.ts` is the
+statement, `processed-event.port.ts` the application-facing interface, and
+`typeorm-processed-event.store.ts` the adapter. The notification feature binds
+`PROCESSED_EVENT_STORE` to that adapter and supplies the handler in
+`apps/notification/src/modules/verification-emails/application/use-cases/handle-verification-code-issued.use-case.ts`.
 
 **How it fails.** `SELECT` then `INSERT` — two instances both read "not
 handled" and both send. Or: forgetting to **release the claim on a transient
@@ -227,12 +228,14 @@ chose that over the inverse (record first, then send), which turns every crash
 into a silently lost sign-up. For a verification code, missing is far worse than
 duplicate — see [ADR-0003](adr/0003-duplicate-email-over-missing-email.md).
 
-**Lives in** `libs/messaging/src/event-consumer.service.ts`.
+**Lives in** `libs/messaging/src/consumer/event-consumer.service.ts`.
 
-**How it fails.** Draining in `onModuleDestroy` instead of
-`onApplicationShutdown`: Nest fires `onModuleDestroy` later, the channel is
-already closed, every in-flight ack fails silently, and a clean deploy becomes a
-batch of duplicate emails.
+**How it fails.** Draining in `onModuleDestroy` or `onApplicationShutdown`
+instead of `beforeApplicationShutdown`: `onModuleDestroy` runs first, before the
+drain, and `onApplicationShutdown` runs last, after `dispose()` and after the
+channel has closed — every in-flight ack then fails silently, and a clean deploy
+becomes a batch of duplicate emails. The consumer drains, and the AMQP client
+closes, in that order.
 
 ---
 
@@ -258,7 +261,7 @@ topic redelivery would fan one consumer's retry out to every other consumer
 later bound to that key.
 
 **Lives in** `libs/messaging/src/amqp-topology.ts` (the declarations) and
-`event-consumer.service.ts` (the classification).
+`libs/messaging/src/consumer/event-consumer.service.ts` (the classification).
 
 **How it fails.** `nack(requeue: true)` as the retry mechanism: the message
 returns to the head of the queue instantly, with no delay and no attempt count,
@@ -294,6 +297,13 @@ every boot (AMQP asserts are idempotent). Nothing is created by hand in the
 management console, so a rebuilt broker is identical and the topology is
 reviewable in a diff.
 
+A consumer also re-asserts `train.events` with the producer's exact parameters.
+That duplicate assertion is what makes startup order irrelevant: binding to a
+not-yet-declared exchange fails with `404 no exchange 'train.events'`, after
+which the consumer would sit subscribed to nothing. Ownership does not move —
+the producer still declares the exchange, and the consumer declares only its
+retry/requeue/DLX exchanges and its own queues.
+
 **`mandatory` is deliberately not set on publish.** Publishing an event that no
 queue is bound to must succeed and be dropped — otherwise "add a consumer
 later" would require the producer to tolerate unroutable returns. The
@@ -311,9 +321,9 @@ Not a mechanism — a constraint, enforced by tests.
 
 `identity` publishes "a verification code was issued" and stops. It has no
 notification client, no email template, no SMTP configuration, and no knowledge
-that email exists. `test/unit/architecture-boundaries.spec.ts` asserts no file
-under `apps/identity` imports `nodemailer`, `EventConsumerService`, or reads
-`SMTP_*`; the sign-up use-case test asserts its constructor injects no
+that email exists. `test/unit/producer-consumer-decoupling.spec.ts` asserts no
+file under `apps/identity` imports `nodemailer`, `EventConsumerService`, or
+reads `SMTP_*`; the sign-up use-case test asserts its constructor injects no
 publisher.
 
 The payoff is testable: adding a second consumer of this event touches zero

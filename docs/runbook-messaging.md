@@ -4,12 +4,12 @@ Operating the event backbone: inspecting the outbox, reading and replaying the
 dead-letter queue, measuring the BR-03 latency, and running the three review
 demos.
 
-> **Status.** This runbook describes the backbone defined in
-> [the implementation plan](design-patterns.md) and the [ADRs](adr/). Sections
-> marked **[pending]** document behaviour whose implementation task has not
-> landed yet; everything unmarked works against the current repo. Each pending
-> section names the task that delivers it, so this file becomes the acceptance
-> checklist as the work lands.
+> **Status.** The backbone is landed: identity's outbox and relay, the shared
+> retry/DLQ topology, notification's idempotent consumer, the BR-03 gate and the
+> three demos all run against the current repo. `npm run test:e2e` drives the
+> demos and the latency run non-interactively. The only piece that is **not**
+> here is the automated replay tool, which remains Sprint 5; the manual shovel
+> below works today.
 
 ---
 
@@ -21,7 +21,7 @@ docker compose up -d --build
 docker compose ps            # 11 containers: 7 services + postgres, redis, rabbitmq, mailpit
 ```
 
-Three UIs and nothing else is exposed to the host:
+Three host addresses, and nothing else:
 
 | What | URL | Credentials |
 |---|---|---|
@@ -32,23 +32,23 @@ Three UIs and nothing else is exposed to the host:
 Postgres and Redis publish no port at all — reach them with
 `docker compose exec`.
 
+**`--wait` is not an app-readiness gate.** Compose only understands the four
+infrastructure healthchecks; the seven app containers declare none, so
+`docker compose up --wait` can return before a consumer has attached.
+
 ### Shell helpers
 
 Paste these into your shell first; every command below uses them.
 
 ```bash
-# identity publishes no host port (and adding one fails test/skeleton/compose.spec.ts),
-# so requests are made from inside the compose network.
+# The gateway is the only app port published to the host, so sign-up is a plain
+# curl; `-w` prints the status and total time used by the demo timing claims.
 signup () {   # signup <correlation-id> <email> [language]
-  docker compose exec -T identity node -e "
-    const t0 = Date.now();
-    const r = await fetch('http://localhost:3000/identity/sign-up', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-correlation-id': process.argv[1] },
-      body: JSON.stringify({ email: process.argv[2], language: process.argv[3] ?? 'ar' }),
-    });
-    console.log(r.status, (Date.now() - t0) + 'ms', await r.text());
-  " -- "$1" "$2" "${3:-ar}"
+  curl -sS -w '\n%{http_code} %{time_total}s\n' \
+    -X POST "http://localhost:${GATEWAY_PORT:-3000}/identity/sign-up" \
+    -H 'content-type: application/json' \
+    -H "x-correlation-id: $1" \
+    -d "{\"email\":\"$2\",\"language\":\"${3:-ar}\"}"
 }
 
 psql_id () { docker compose exec -T postgres psql -U postgres -d identity     -At -c "$1"; }
@@ -59,17 +59,43 @@ rmq () {     # rmq <api-path>   e.g. rmq queues/%2F
     "http://127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}/api/$1"
 }
 
-mailpit_count () { curl -s http://127.0.0.1:8025/api/v1/messages | jq '.messages | length'; }
-mailpit_clear () { curl -sX DELETE http://127.0.0.1:8025/api/v1/messages; }
+delivered () {  # delivered <queue> -> broker counter; management stats lag a few seconds
+  rmq "queues/%2F/$1" | jq '.message_stats.deliver_get // .message_stats.deliver // 0'
+}
+
+mailpit_count () { curl -s "http://127.0.0.1:${MAILPIT_UI_PORT:-8025}/api/v1/messages" | jq '.messages | length'; }
+mailpit_clear () { curl -sX DELETE "http://127.0.0.1:${MAILPIT_UI_PORT:-8025}/api/v1/messages"; }
 ```
 
 `psql` here uses the **superuser** deliberately: it is an operator tool and
 needs to read either database. The services themselves hold only their own
 credentials, which `test/e2e/database-isolation.e2e-spec.ts` proves.
 
+### Wait for readiness
+
+Now that the helpers are defined, wait for the two things Compose cannot tell
+you:
+
+```bash
+until [ "$(curl -s http://localhost:3000/health/ready | jq -r '.status')" = "ready" ]; do
+  sleep 1
+done
+until [ "$(rmq 'queues/%2F/notification.verification-code-issued' | jq '.consumers')" = "1" ]; do
+  sleep 1
+done
+```
+
+The gateway's `/health/ready` **reports** aggregate status; it does not return
+`503` when a downstream is down, so `curl -f` only proves the gateway is
+listening. Check the `status` field. A `ready` report proves every service's own
+Postgres/broker check passed, but it does **not** prove the subscription bound —
+a consumer that failed to bind still reports healthy, which is why
+`test/e2e/support/stack.ts` checks the queue's `consumers` count separately
+before running a demo.
+
 ---
 
-## Inspecting the outbox  **[pending — task B8/B10]**
+## Inspecting the outbox
 
 **Is there a backlog?** Anything with a non-null `published_at` is done; the
 relay only ever looks at the rest.
@@ -117,7 +143,7 @@ already handled, zero.
 
 ---
 
-## Reading the dead-letter queue  **[pending — task B5/B11]**
+## Reading the dead-letter queue
 
 **Queue depths at a glance:**
 
@@ -140,7 +166,7 @@ puts it back:
 curl -su "${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}" \
   -H 'content-type: application/json' \
   -d '{"count":5,"ackmode":"reject_requeue_true","encoding":"auto"}' \
-  "http://127.0.0.1:15672/api/queues/%2F/notification.verification-code-issued.dlq/get" \
+  "http://127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}/api/queues/%2F/notification.verification-code-issued.dlq/get" \
   | jq -r '.[] | {reason: .properties.headers["x-death-reason"],
                   attempt: .properties.headers["x-attempt"],
                   correlationId: .properties.headers["x-correlation-id"],
@@ -168,32 +194,38 @@ That is correct behaviour, not a failure: an email containing a dead code is
 worse than no email. For these, the user re-requests. Replay matters for the
 events that are *not* time-bounded, which is most of the catalogue.
 
-### Replaying  **[pending — Sprint 5]**
+### Replaying (manual today)
 
-An automated replay tool arrives in Sprint 5. What exists **now** is the
-guarantee that makes it possible: every dead-lettered message retains its full
-envelope, its `x-death-reason`, its `x-attempt` count and its
-`x-correlation-id`, so nothing is lost by waiting.
+An automated replay tool is **not** part of this delivery; it remains Sprint 5.
+What exists now is the guarantee that makes it possible: every dead-lettered
+message retains its full envelope, its `x-death-reason`, its `x-attempt` count
+and its `x-correlation-id`, so nothing is lost by waiting.
 
 Manual replay in the meantime — shovel from the DLQ back to the main queue via
 the requeue exchange:
 
 ```bash
+RMQ_URI="amqp://${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}@rabbitmq/%2F"
 curl -su "${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}" \
   -H 'content-type: application/json' \
-  -d '{"value":{"src-uri":"amqp:///","src-queue":"notification.verification-code-issued.dlq",
-                "dest-uri":"amqp:///","dest-exchange":"train.events.requeue",
-                "dest-exchange-key":"notification.verification-code-issued",
-                "src-delete-after":"queue-length","ack-mode":"on-confirm"}}' \
-  -X PUT "http://127.0.0.1:15672/api/parameters/shovel/%2F/replay-verification-codes"
+  -d "{\"value\":{\"src-uri\":\"$RMQ_URI\",
+                \"src-queue\":\"notification.verification-code-issued.dlq\",
+                \"dest-uri\":\"$RMQ_URI\",
+                \"dest-exchange\":\"train.events.requeue\",
+                \"dest-exchange-key\":\"notification.verification-code-issued\",
+                \"src-delete-after\":\"queue-length\",\"ack-mode\":\"on-confirm\"}}" \
+  -X PUT "http://127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}/api/parameters/shovel/%2F/replay-verification-codes"
 ```
 
+The shovel runs inside the RabbitMQ node, so `rabbitmq` is the broker hostname
+and the URI carries the same credentials as the management call.
 `src-delete-after: queue-length` drains exactly what was there when the shovel
 started, so messages that fail again and land back in the DLQ are not
 re-shovelled into a loop. Delete the shovel when it is done:
 
 ```bash
-curl -su "..." -X DELETE "http://127.0.0.1:15672/api/parameters/shovel/%2F/replay-verification-codes"
+curl -su "${RABBITMQ_USER:-train_app}:${RABBITMQ_PASSWORD:-train_app}" \
+  -X DELETE "http://127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}/api/parameters/shovel/%2F/replay-verification-codes"
 ```
 
 Replay is always safe to attempt: idempotency means an already-handled event
@@ -201,7 +233,7 @@ produces no second email.
 
 ---
 
-## Measuring BR-03 latency  **[pending — task B14/B15]**
+## Measuring BR-03 latency
 
 **The target.** OTP delivery within 30 seconds, reported as the worst case and
 the 95th percentile over a run.
@@ -226,8 +258,9 @@ psql_nt "
    where outcome = 'accepted'"
 ```
 
-Expect `p50 ≈ 600ms` on a laptop. The 30-second target exists for the *retry*
-path, whose arithmetic is bounded at 25.5s:
+Expect `p50` in the low hundreds of milliseconds on a laptop: the relay polls
+every 500ms and Mailpit accepts immediately. The 30-second target exists for the
+*retry* path, whose arithmetic is bounded at 25.5s:
 
 ```
 OUTBOX_POLL_INTERVAL_MS   =  500   worst-case wait for the relay to see a committed row
@@ -252,10 +285,13 @@ psql_nt "select status, skip_reason, count(*) from processed_event group by 1,2"
 
 ---
 
-## The three demos  **[pending — task B15]**
+## The three demos
 
 The happy path is uninteresting. These are the demos for review, and
-`test/e2e/outbox-event-backbone.e2e-spec.ts` runs them non-interactively.
+`test/e2e/outbox-event-backbone.e2e-spec.ts` runs them non-interactively. The
+commands poll with `until` rather than sleeping a fixed time, so they wait
+indefinitely on a broken stack — Ctrl-C and run the inspection queries above if
+one does not settle.
 
 ### Demo 1 — the consumer is down, and nothing is lost
 
@@ -269,16 +305,26 @@ docker compose stop notification
 signup demo-1 user1@example.com en
 #   -> 201, comfortably under 1000ms. identity never called notification.
 
+until [ "$(psql_id "select published_at is not null from outbox_event order by occurred_at desc limit 1")" = "t" ]; do
+  sleep 1
+done
 psql_id "select published_at is not null as published from outbox_event
           order by occurred_at desc limit 1"
 #   -> t    the relay published while the consumer was down
 
+until [ "$(rmq 'queues/%2F/notification.verification-code-issued' | jq '.messages')" -ge 1 ]; do
+  sleep 1
+done
 rmq 'queues/%2F/notification.verification-code-issued' | jq .messages
 #   -> 1    parked in the durable queue, waiting
 
 docker compose start notification
-sleep 5
-curl -s http://127.0.0.1:8025/api/v1/messages | jq '.messages[0] | {To, Subject}'
+# wait for the subscription to attach, not a fixed sleep:
+until [ "$(rmq 'queues/%2F/notification.verification-code-issued' | jq '.consumers')" = "1" ]; do
+  sleep 1
+done
+until [ "$(mailpit_count)" -ge 1 ]; do sleep 1; done
+curl -s "http://127.0.0.1:${MAILPIT_UI_PORT:-8025}/api/v1/messages" | jq '.messages[0] | {To, Subject}'
 #   -> the email, in English because the account's language was 'en'
 ```
 
@@ -294,15 +340,26 @@ docker compose stop rabbitmq
 signup demo-1b user1b@example.com ar
 #   -> still 201, still fast. the commit does not depend on the broker.
 
-psql_id "select published_at, attempt_count, left(last_error,40) from outbox_event
-          order by occurred_at desc limit 1"
-#   -> NULL | climbing | a connection error
+psql_id "select published_at is not null as published, attempt_count,
+                left(coalesce(last_error,''),40)
+           from outbox_event order by occurred_at desc limit 1"
+#   -> f|n|connect ECONNREFUSED ...    the commit succeeded; publish is retrying
 
 docker compose start rabbitmq
-sleep 8
+# the broker takes a few seconds to accept connections; the relay then retries
+# on its backoff (capped at 5s), so poll rather than sleeping a fixed time.
+until [ "$(psql_id "select published_at is not null from outbox_event order by occurred_at desc limit 1")" = "t" ]; do
+  sleep 1
+done
 psql_id "select published_at is not null from outbox_event order by occurred_at desc limit 1"
-#   -> t    published within ~5s of recovery (the backoff cap)
+#   -> t
 ```
+
+**Run this demo last, or restart `notification` afterwards.** When the broker
+itself restarts, the consumer's channel closes and the consumer does not
+re-subscribe on its own; `docker compose restart notification` reattaches it
+(the queue's `consumers` count returns to 1). `test/e2e/outbox-event-backbone.e2e-spec.ts`
+orders the specs so demo 1b runs last for exactly this reason.
 
 ### Demo 2 — the same event twice, exactly one email
 
@@ -313,28 +370,49 @@ crashed relay would do.
 ```bash
 mailpit_clear
 signup demo-2 user2@example.com ar
-sleep 3
+until [ "$(mailpit_count)" -ge 1 ]; do sleep 1; done
 mailpit_count                 # -> 1
 
 ID=$(psql_id "select id from outbox_event order by occurred_at desc limit 1")
+BEFORE=$(delivered notification.verification-code-issued)
 psql_id "update outbox_event set published_at = null, next_attempt_at = now() where id = '$ID'"
-sleep 3
+
+# wait for the relay to re-publish, then for the broker's counter to move.
+# Management stats lag the broker by a few seconds, hence the poll.
+until [ "$(psql_id "select published_at is not null from outbox_event where id = '$ID'")" = "t" ]; do
+  sleep 1
+done
+until [ "$(delivered notification.verification-code-issued)" -gt "$BEFORE" ]; do
+  sleep 1
+done
+# and wait for the consumer to ack it, so the next read sees a settled queue
+until [ "$(rmq 'queues/%2F/notification.verification-code-issued' | jq '.messages')" = "0" ]; do
+  sleep 1
+done
 
 mailpit_count                 # -> still 1
 psql_nt "select status, attempt_count from processed_event where event_id = '$ID'"
-#   -> handled|2    claimed twice, sent once
+#   -> handled|1
 ```
 
-`attempt_count = 2` is the proof the second delivery really arrived and really
-was evaluated — a `1` would mean the duplicate never reached the consumer and
-the demo proved nothing.
+`attempt_count = 1` is **expected**, and it is not a failed demo. The claim
+statement only re-claims a `failed` row, or a `processing` row whose lease
+expired; a `handled` row is refused, so the duplicate is acknowledged without
+being handled a second time and the counter does not move.
+
+The proof that the second delivery really reached the consumer is the broker's
+own `message_stats.deliver_get`, which incremented while `mailpit_count` stayed
+at 1. A duplicate that never arrived would leave both unchanged.
+`test/e2e/outbox-event-backbone.e2e-spec.ts` asserts exactly this: `deliver_get`
+grows, `processed_event.attempt_count` stays `1`, and Mailpit holds one
+message.
 
 ### Demo 3 — the latency report
 
 ```bash
 mailpit_clear
 for i in $(seq 1 25); do signup "lat-$i" "lat$i@example.com" en; done
-sleep 10
+until [ "$(mailpit_count)" -ge 25 ]; do sleep 1; done
 mailpit_count                 # -> 25
 ```
 
@@ -351,13 +429,26 @@ BR-03 is a build gate, not a paragraph in a report.
 retry queues entirely:
 
 ```bash
-# [pending] via the relay, by inserting a crafted outbox row with event_version = 99
+psql_id "
+  insert into outbox_event
+    (id, event_type, event_version, routing_key, payload,
+     correlation_id, producer, occurred_at)
+  values
+    (gen_random_uuid(), 'identity.verification-code.issued', 99,
+     'identity.verification-code.issued', '{}'::jsonb,
+     'poison-demo', 'identity', now())"
+
+until [ "$(rmq 'queues/%2F/notification.verification-code-issued.dlq' | jq '.messages')" = "1" ]; do
+  sleep 1
+done
 rmq 'queues/%2F/notification.verification-code-issued.dlq' | jq .messages   # -> 1
 rmq 'queues/%2F/notification.verification-code-issued'     | jq .messages   # -> 0, head is free
 ```
 
 Both numbers matter: it dead-lettered *and* it did not block the queue behind
-it.
+it. The dead letter's `x-death-reason` is `unsupported-version` (print it with
+the read command above); a version mismatch is classified as permanent, so it
+never touched a retry queue.
 
 **The consumer was down for twenty minutes.** The queued messages are delivered
 and every one is *skipped*, not emailed:
@@ -389,6 +480,14 @@ Declared in code by its owner
 (`libs/messaging/src/amqp-topology.ts`), asserted idempotently on every boot.
 **Nothing here is created by hand in the management console** — a rebuilt broker
 is identical, and a topology change is reviewable in a diff.
+
+Ownership matters: the producer owns `train.events` and declares no queues; each
+consumer owns its retry/requeue/DLX exchanges and its own queues. A consumer
+also **re-asserts `train.events` with the producer's exact parameters** so
+startup order is irrelevant — binding to an exchange that does not exist yet
+fails with `404 no exchange 'train.events'`, which would leave the consumer
+subscribed to nothing. The duplicate assertion is not a transfer of ownership;
+the exchange's definition is still the producer's.
 
 ```
 train.events          topic    <- identity publishes here

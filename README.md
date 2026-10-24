@@ -5,6 +5,8 @@ of its infrastructure defined in Compose. The whole stack comes up with one
 command.
 
 > **Platform Skeleton Complete**: All seven services boot with vertical slices (transport, domain, persistence via TypeORM), validate configuration at startup with Joi fail-fast schemas, communicate internally over gRPC with proto definitions, expose liveness and readiness health checks, speak one standardized Arabic/English response envelope, and emit single-line JSON logs carrying a trace correlation ID with automatic PII redaction.
+>
+> **Event backbone complete**: `POST /identity/sign-up` commits the account, the code hash, and an outbox event in one Postgres transaction. A relay publishes to RabbitMQ; notification consumes idempotently and sends the email through Mailpit, with TTL retry queues, a dead-letter queue, and a 30-second BR-03 latency gate.
 
 ## The services
 
@@ -22,12 +24,12 @@ Three shared libraries back them, importable by path alias:
 
 | Alias | Holds |
 | --- | --- |
-| `@app/contracts` | Event and message shapes shared between services. |
-| `@app/messaging` | Broker plumbing: publishing, consuming, retry. |
-| `@app/common` | Cross-cutting pieces that are not domain-specific. |
+| `@app/contracts` | Shapes crossing a service boundary: the HTTP `ApiResponse`, `ErrorCode`, health DTOs, the protobuf contracts, and event envelopes/payloads. No logic, no DI, no I/O. |
+| `@app/messaging` | RabbitMQ plumbing: connection, topology, transactional outbox and relay, publishing, the idempotent consumer runtime, TTL retry queues and the DLQ. |
+| `@app/common` | Cross-cutting: `setupApp`, Joi env validation, correlation (CLS + `x-correlation-id`), pino + PII redaction, the response envelope and exception filter, i18n, health, TypeORM config, the unit of work and the migration runner. |
 
-They are empty modules with barrel exports for now, so that the import paths
-are real before there is anything to import.
+Contracts holds only shapes; the other two carry implementations, so a service
+can add a consumer without depending on another service.
 
 ## Prerequisites
 
@@ -55,7 +57,7 @@ healthy, and only then starts the seven services.
 
 | | Host address | Notes |
 | --- | --- | --- |
-| Gateway | <http://localhost:3000> | Returns 404 — it has no routes yet. That the port answers is the point. |
+| Gateway | <http://localhost:3000> | `POST /identity/sign-up`, `GET /health`, `/health/live`, `/health/ready`, `GET /api/ping-all`. The only app port. |
 | RabbitMQ management | <http://localhost:15672> | Sign in with `RABBITMQ_USER` / `RABBITMQ_PASSWORD` from `.env`. Bound to localhost only. |
 | Mailpit inbox | <http://localhost:8025> | Every mail the stack sends lands here instead of being delivered. Bound to localhost only. |
 | Postgres | *not published* | Reachable only from inside the Compose network. |
@@ -69,6 +71,37 @@ Every published port comes from a variable in `.env` — if something already
 owns 3000, 15672 or 8025 locally, change `GATEWAY_PORT`,
 `RABBITMQ_MANAGEMENT_PORT` or `MAILPIT_UI_PORT` there rather than editing
 `docker-compose.yml`.
+
+The four infrastructure containers have healthchecks; the seven app containers
+do not. `docker compose up --wait` therefore says nothing about application
+readiness. Poll `/health/ready` before using the stack, and for the event
+backbone also confirm the consumer attached — see the
+[messaging runbook](docs/runbook-messaging.md#setup).
+
+### How sign-up works
+
+`POST /identity/sign-up` crosses the gateway synchronously, then becomes
+asynchronous:
+
+1. The gateway validates `{ email, language? }` and calls identity over gRPC.
+2. Identity commits three rows in one Postgres transaction: the account, the
+   verification-code hash (salted scrypt — never plaintext), and an
+   `outbox_event` carrying a `verification-code.issued` envelope. The HTTP
+   response returns here. Nothing has been published and no email has been sent.
+3. Identity's relay claims the row with `FOR UPDATE SKIP LOCKED`, publishes it
+   to the `train.events` topic exchange, waits for the broker confirm, and only
+   then marks `published_at`.
+4. Notification consumes from its own durable queue, claims the envelope id in
+   `processed_event` for idempotency, and sends the email over SMTP to Mailpit.
+   A transient failure goes to per-attempt TTL retry queues (1s / 3s / 9s), then
+   the DLQ. A code older than `VERIFICATION_CODE_TTL_SECONDS` is recorded as
+   skipped and not emailed.
+
+Two properties follow: stopping notification or RabbitMQ does not fail a
+sign-up, and a duplicate delivery produces one email. The
+[messaging runbook](docs/runbook-messaging.md) has the operator commands and the
+three review demos; [design-patterns.md](docs/design-patterns.md) explains the
+mechanisms.
 
 ### One database — and one set of credentials — per service
 
@@ -136,16 +169,22 @@ npm run test:e2e  # needs Docker, and RESETS the local database volumes
 ```
 
 The e2e suite proves the per-service database credentials really are isolated,
-which can only be checked against a live Postgres created from an empty data
-directory — so it runs `docker compose down -v` before and after. Don't run it
-against a stack whose data you want to keep.
+then drives the event backbone end to end: demo 1 (notification stopped, sign-up
+still answers, email arrives on restart), demo 2 (a republished envelope yields
+exactly one email), demo 1b (broker stopped, the outbox publishes on recovery),
+and a 25-sign-up latency run that gates BR-03 at p95 and worst case under 30s.
+The outbox specs start only the backbone's slice of Compose, wait on service
+readiness and the broker's consumer count, and run specs serially
+(`fileParallelism: false`). The suite runs `docker compose down -v` before and
+after — so don't point it at data you want to keep.
 
-The suite is the skeleton's own guard rail. It asserts that the seven apps and
-three libs stay registered, that the path aliases really resolve, that every
-compose service builds from the shared `Dockerfile` with its own `APP` argument
-and waits for healthy infrastructure, that only the gateway publishes a port,
-and that every variable `docker-compose.yml` interpolates is documented in
-`.env.example`. Add a service and forget a step, and a test says which one.
+The unit and skeleton suites are the skeleton's own guard rail. They assert
+that the seven apps and three libs stay registered, that the path aliases really
+resolve, that every compose service builds from the shared `Dockerfile` with
+its own `APP` argument and waits for healthy infrastructure, that only the
+gateway publishes a port, and that every variable `docker-compose.yml`
+interpolates is documented in `.env.example`. Add a service and forget a step,
+and a test says which one.
 
 ## Resetting the databases
 
@@ -188,10 +227,15 @@ in `docker-compose.yml`, and nothing else.
    cp .env.example .env
    docker compose up --build -d
    ```
-2. Verify all infrastructure and seven services are healthy:
+2. Verify infrastructure health and application readiness:
    ```bash
-   docker compose ps
+   docker compose ps            # the four infra containers report healthy
+   curl -s http://localhost:3000/health/ready
    ```
+   *Expected:* the four infrastructure containers report `healthy`, and the
+   readiness report's top-level `status` is `ready`. The route reports rather
+   than returning `503`, so read the field. The seven app containers have no
+   Compose healthcheck, so `ps` alone is not enough.
 3. Test Gateway health aggregation and bilingual response envelope:
    ```bash
    curl -i -H "Accept-Language: ar" http://localhost:3000/health
@@ -203,6 +247,28 @@ in `docker-compose.yml`, and nothing else.
    docker compose logs | grep "<correlation-id>"
    ```
    *Expected:* Log lines from gateway and all downstream services carrying that exact correlation ID in single-line JSON format, with sensitive credentials and personal data (passwords, tokens, PINs, card numbers, unmasked emails) redacted.
+5. Sign up and watch the verification email arrive:
+   ```bash
+   curl -s -X POST http://localhost:3000/identity/sign-up \
+     -H 'content-type: application/json' \
+     -d '{"email":"reviewer@example.com","language":"en"}'
+   ```
+   *Expected:* `201` with the bilingual response envelope. The account, code
+   hash and outbox event committed together; within about a second the email
+   appears at <http://localhost:8025>. `language: "en"` selects the English
+   body; `"ar"` or an omitted `language` uses Arabic, while any other value is
+   rejected with `400` at the HTTP edge.
+6. Prove the async hop is not a lost update:
+   ```bash
+   docker compose stop notification
+   curl -s -X POST http://localhost:3000/identity/sign-up \
+     -H 'content-type: application/json' \
+     -d '{"email":"reviewer-2@example.com","language":"ar"}'
+   docker compose start notification
+   ```
+   *Expected:* the second sign-up still returns `201` immediately; the email
+   arrives once notification restarts. The full set of failure demos is in the
+   [messaging runbook](docs/runbook-messaging.md#the-three-demos).
 
 ### Unhappy Demo Paths
 1. **Configuration Fails Fast**: Remove a required variable from identity's environment:
@@ -237,8 +303,8 @@ in `docker-compose.yml`, and nothing else.
 
 A complete Postman Collection and Environment are provided in `postman/`:
 
-- **Collection**: [`postman/train-app-platform.postman_collection.json`](file:///d:/Elevate/Projects/train-app-team-1/postman/train-app-platform.postman_collection.json)
-- **Environment**: [`postman/train-app-local.postman_environment.json`](file:///d:/Elevate/Projects/train-app-team-1/postman/train-app-local.postman_environment.json)
+- **Collection**: [`postman/train-app-platform.postman_collection.json`](postman/train-app-platform.postman_collection.json)
+- **Environment**: [`postman/train-app-local.postman_environment.json`](postman/train-app-local.postman_environment.json)
 
 ### Importing into Postman
 1. Open Postman -> click **Import**.
