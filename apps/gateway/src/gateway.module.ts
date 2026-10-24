@@ -5,6 +5,7 @@ import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
 import { ServiceInfoModule } from './modules/service-info/service-info.module.js';
 import { HealthAggregationModule } from './modules/health-aggregation/health-aggregation.module.js';
+import { AccountsModule } from './modules/accounts/accounts.module.js';
 
 /**
  * Root module: infrastructure wiring and feature modules only. Business
@@ -18,6 +19,7 @@ import { HealthAggregationModule } from './modules/health-aggregation/health-agg
     MessagingModule,
     ServiceInfoModule,
     HealthAggregationModule,
+    AccountsModule,
   ],
 })
 export class GatewayModule {}
