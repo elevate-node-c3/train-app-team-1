@@ -75,8 +75,8 @@ owns 3000, 15672 or 8025 locally, change `GATEWAY_PORT`,
 The four infrastructure containers have healthchecks; the seven app containers
 do not. `docker compose up --wait` therefore says nothing about application
 readiness. Poll `/health/ready` before using the stack, and for the event
-backbone also confirm the consumer attached — see the
-[messaging runbook](docs/runbook-messaging.md#setup).
+backbone also confirm the consumer attached — see
+[Reviewer Flow & Demo Scenarios](#reviewer-flow--demo-scenarios).
 
 ### How sign-up works
 
@@ -98,10 +98,10 @@ asynchronous:
    skipped and not emailed.
 
 Two properties follow: stopping notification or RabbitMQ does not fail a
-sign-up, and a duplicate delivery produces one email. The
-[messaging runbook](docs/runbook-messaging.md) has the operator commands and the
-three review demos; [design-patterns.md](docs/design-patterns.md) explains the
-mechanisms.
+sign-up, and a duplicate delivery produces one email.
+[Reviewer Flow & Demo Scenarios](#reviewer-flow--demo-scenarios) has the
+operator commands and the failure demos; `test/e2e/` runs the same demos
+non-interactively against the real stack.
 
 ### One database — and one set of credentials — per service
 
@@ -267,8 +267,8 @@ in `docker-compose.yml`, and nothing else.
    docker compose start notification
    ```
    *Expected:* the second sign-up still returns `201` immediately; the email
-   arrives once notification restarts. The full set of failure demos is in the
-   [messaging runbook](docs/runbook-messaging.md#the-three-demos).
+   arrives once notification restarts. The full set of failure demos is in
+   [Unhappy Demo Paths](#unhappy-demo-paths) below.
 
 ### Unhappy Demo Paths
 1. **Configuration Fails Fast**: Remove a required variable from identity's environment:

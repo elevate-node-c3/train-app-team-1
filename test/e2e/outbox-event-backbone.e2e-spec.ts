@@ -18,8 +18,8 @@ import {
 } from './support/stack.js';
 
 /**
- * The three review demos from `docs/runbook-messaging.md`, run non-interactively
- * against the real Compose stack.
+ * The three review demos from the README's "Unhappy Demo Paths", run
+ * non-interactively against the real Compose stack.
  *
  * Order is load-bearing: demo 1b stops the broker, and the notification
  * consumer does not re-subscribe on its own after a channel closes, so it runs
