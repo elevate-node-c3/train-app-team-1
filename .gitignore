@@ -36,6 +36,9 @@ lerna-debug.log*
 *.sublime-workspace
 .claude/
 
+# Personal agent notes. The shared conventions they summarise live in docs/.
+CLAUDE.md
+
 # IDE - VSCode
 .vscode/*
 !.vscode/settings.json
