@@ -15,7 +15,7 @@ import {
 import type { EventEnvelope } from '@app/contracts';
 import { envelopeOf, type OutboxRow } from './outbox-row.js';
 import { relayBackoffMs } from './backoff.js';
-import type { TypeOrmOutboxRepository } from './typeorm-outbox.repository.js';
+import { TypeOrmOutboxRepository } from './typeorm-outbox.repository.js';
 import { EventPublisherService } from '../publisher/event-publisher.service.js';
 
 /**
