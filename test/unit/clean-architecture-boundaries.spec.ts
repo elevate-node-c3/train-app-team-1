@@ -191,6 +191,28 @@ describe('Clean architecture layer boundaries (ADR-0007, §2.5)', () => {
     expect(violations).toEqual([]);
   });
 
+  // `@app/messaging` re-exports the Nest modules that own AMQP connections and
+  // TypeORM-backed stores, so a bare import would drag broker and database
+  // wiring into the application layer by transitivity. Subpath imports are how
+  // a use-case reaches the pure contracts it is allowed to depend on —
+  // `event-errors.js` and `consumer/event-handler.port.js` import no I/O.
+  it('lets the application layer import @app/messaging only by subpath', () => {
+    const violations: string[] = [];
+
+    for (const file of files) {
+      if (layerOf(file) !== 'application') continue;
+      for (const specifier of importsOf(readFileSync(file, 'utf8'))) {
+        if (specifier === '@app/messaging') {
+          violations.push(
+            `${file} imports the '@app/messaging' barrel; use a subpath such as '@app/messaging/consumer/event-handler.port.js'`,
+          );
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
   // A controller that can reach a repository will eventually reach one, and
   // then the use-case stops being the single entry point to the feature.
   it('stops presentation from reaching into infrastructure', () => {
