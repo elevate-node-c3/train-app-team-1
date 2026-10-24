@@ -1,0 +1,29 @@
+import type { EventLanguage } from './events/event-envelope.js';
+import { getProtoPath } from './proto-path.js';
+
+export const ACCOUNTS_PACKAGE_NAME = 'train.accounts.v1';
+export const ACCOUNTS_SERVICE_NAME = 'AccountsService';
+
+/** Resolves accounts.proto across the source, dist and container layouts. */
+export function getAccountsProtoPath(): string {
+  return getProtoPath('accounts.proto');
+}
+
+export interface SignUpRequestDto {
+  email: string;
+  /**
+   * Optional on the wire because the gRPC caller may omit it; identity then
+   * defaults the account to Arabic, the platform fallback (BR-56).
+   */
+  language?: EventLanguage;
+}
+
+/**
+ * The response deliberately carries no verification code. The plaintext exists
+ * only in the event's payload and the user's inbox; identity stores the hash.
+ */
+export interface SignUpResponseDto {
+  accountId: string;
+  email: string;
+  language: EventLanguage;
+}
