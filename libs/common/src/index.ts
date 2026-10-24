@@ -1,5 +1,6 @@
 export * from './common.module.js';
 export * from './config/env.schema.js';
+export * from './config/env.defaults.js';
 export * from './config/env.validator.js';
 export * from './logging/pii-redactor.js';
 export * from './logging/pino-config.js';
