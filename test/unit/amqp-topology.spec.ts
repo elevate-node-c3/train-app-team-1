@@ -84,6 +84,15 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
     );
 
     expect(calls).toEqual([
+      // Re-asserted by the consumer so it can bind even when it starts before
+      // the producer. Identical parameters keep the two declarations
+      // compatible (AMQP rejects an exchange redefined with other options).
+      {
+        kind: 'exchange',
+        name: EVENTS_EXCHANGE,
+        type: 'topic',
+        options: { durable: true, autoDelete: false },
+      },
       {
         kind: 'exchange',
         name: RETRY_EXCHANGE,
@@ -152,6 +161,24 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
         routingKey: QUEUE,
       },
     ]);
+  });
+
+  // The bug this prevents: Compose starts notification and identity together,
+  // and a consumer that binds before the producer has declared `train.events`
+  // gets a 404, logs once, and never subscribes. The consumer re-asserts the
+  // exchange; the parameters must stay identical or AMQP rejects the second
+  // declaration.
+  it("re-asserts the producer's events exchange so startup order cannot break binding", () => {
+    const producer = producerTopology().exchanges.find(
+      (exchange) => exchange.name === EVENTS_EXCHANGE,
+    );
+    const consumer = consumerTopology({
+      queue: QUEUE,
+      eventType: EVENT,
+      retryDelaysMs: [1000],
+    }).exchanges.find((exchange) => exchange.name === EVENTS_EXCHANGE);
+
+    expect(consumer).toEqual(producer);
   });
 
   it('has no dead-letter exchange on the main queue', () => {
