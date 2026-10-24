@@ -12,6 +12,8 @@ import {
   MARK_PROCESSED_EVENT_HANDLED_SQL,
   MARK_PROCESSED_EVENT_SKIPPED_SQL,
 } from '@app/messaging/consumer/processed-event.sql.js';
+import { EMAIL_DELIVERY_OUTCOMES } from '../../apps/notification/src/modules/verification-emails/application/ports/email-delivery.repository.port.js';
+import { INSERT_EMAIL_DELIVERY_SQL } from '../../apps/notification/src/modules/verification-emails/infrastructure/persistence/email-delivery.sql.js';
 
 const identityDdl = readFileSync(
   'apps/identity/src/database/migrations/1761314400000-create-accounts-verification-codes-outbox.ts',
@@ -161,6 +163,32 @@ describe('Schema agreement (ADR-0001, ADR-0003, ADR-0006)', () => {
     expect(identityDdl).toMatch(
       /CREATE INDEX idx_outbox_event_unpublished[\s\S]*?WHERE published_at IS NULL/,
     );
+  });
+
+  it('gives the email_delivery insert a column the migration creates', () => {
+    const columns = new Set(columnsOf(notificationDdl, 'email_delivery'));
+    const referenced = referencedColumns(
+      INSERT_EMAIL_DELIVERY_SQL,
+      'email_delivery',
+    );
+
+    expect(referenced.size).toBeGreaterThanOrEqual(10);
+    expect([...referenced].filter((column) => !columns.has(column))).toEqual(
+      [],
+    );
+  });
+
+  it('keeps the delivery outcomes in sync with the migration CHECK', () => {
+    const body = tableBody(notificationDdl, 'email_delivery');
+
+    expect(EMAIL_DELIVERY_OUTCOMES).toEqual([
+      'accepted',
+      'skipped_expired',
+      'failed',
+    ]);
+    for (const outcome of EMAIL_DELIVERY_OUTCOMES) {
+      expect(body).toContain(`'${outcome}'`);
+    }
   });
 
   it('never gives notification a column that could hold the code or a secret', () => {
