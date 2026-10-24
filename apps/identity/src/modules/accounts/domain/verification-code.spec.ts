@@ -3,16 +3,16 @@ import {
   VERIFICATION_CODE_ISSUED_EVENT_TYPE,
   VERIFICATION_CODE_ISSUED_VERSION,
 } from '@app/contracts';
-import { Account } from '../../apps/identity/src/modules/accounts/domain/account.js';
+import { Account } from './account.js';
 import {
   MAX_VERIFICATION_CODE_TTL_SECONDS,
   VerificationCode,
-} from '../../apps/identity/src/modules/accounts/domain/verification-code.js';
+} from './verification-code.js';
 import {
   generateVerificationCode,
   verifyVerificationCode,
-} from '../../apps/identity/src/modules/accounts/domain/verification-code.hashing.js';
-import { buildVerificationCodeIssued } from '../../apps/identity/src/modules/accounts/domain/events/verification-code-issued.factory.js';
+} from './verification-code.hashing.js';
+import { buildVerificationCodeIssued } from './events/verification-code-issued.factory.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 

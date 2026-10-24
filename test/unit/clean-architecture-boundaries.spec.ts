@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, dirname, sep } from 'node:path';
 
 /**
- * Enforces the dependency rule from ADR-0007:
+ * Enforces the layer dependency rule:
  *
  *   presentation ─┐
  *                 ├─> application ──> domain
@@ -28,7 +28,14 @@ function tsFilesIn(dir: string): string[] {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       found = found.concat(tsFilesIn(full));
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
+    } else if (
+      entry.endsWith('.ts') &&
+      !entry.endsWith('.d.ts') &&
+      // Specs live beside their subject. A test is not part of a layer: it
+      // reaches across all of them on purpose, and imports vitest and whatever
+      // the adapter under test does.
+      !entry.endsWith('.spec.ts')
+    ) {
       found.push(full);
     }
   }
@@ -85,7 +92,7 @@ function resolvedLayer(file: string, specifier: string): Layer | null {
 
 const files = moduleFiles();
 
-describe('Clean architecture layer boundaries (ADR-0007, §2.5)', () => {
+describe('Clean architecture layer boundaries (§2.5)', () => {
   it('finds feature modules to check', () => {
     // A rename of `modules/` would make every assertion below vacuously pass.
     expect(files.length).toBeGreaterThan(0);
@@ -130,8 +137,8 @@ describe('Clean architecture layer boundaries (ADR-0007, §2.5)', () => {
   });
 
   // The application layer orchestrates. It may know Nest exists only to the
-  // extent of @Injectable()/@Inject() — a named concession in ADR-0007,
-  // because manual factory providers for every use-case buy nothing. It must
+  // extent of @Injectable()/@Inject() — a deliberate concession, because
+  // manual factory providers for every use-case buy nothing. It must
   // not know *how* anything is stored or sent: that is what ports are for.
   it('keeps the application layer free of I/O technology', () => {
     const violations: string[] = [];

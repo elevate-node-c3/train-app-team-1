@@ -24,13 +24,13 @@ import {
 import {
   ACCOUNTS_CLIENT,
   type AccountsClientPort,
-} from '../../apps/gateway/src/modules/accounts/application/ports/accounts.port.js';
-import { SignUpUseCase } from '../../apps/gateway/src/modules/accounts/application/use-cases/sign-up.use-case.js';
+} from './application/ports/accounts.port.js';
+import { SignUpUseCase } from './application/use-cases/sign-up.use-case.js';
 import {
   ACCOUNTS_CALL_TIMEOUT_MS,
   IdentityAccountsGrpcAdapter,
-} from '../../apps/gateway/src/modules/accounts/infrastructure/grpc/identity-accounts.grpc-adapter.js';
-import { AccountsHttpController } from '../../apps/gateway/src/modules/accounts/presentation/http/accounts.http.controller.js';
+} from './infrastructure/grpc/identity-accounts.grpc-adapter.js';
+import { AccountsHttpController } from './presentation/http/accounts.http.controller.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 const CORRELATION_ID = 'gateway-corr-1';

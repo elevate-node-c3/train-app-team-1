@@ -9,18 +9,18 @@ import { OUTBOX, type OutboxPort } from '@app/messaging/outbox/outbox.port.js';
 import {
   SignUpUseCase,
   type SignUpCommand,
-} from '../../apps/identity/src/modules/accounts/application/use-cases/sign-up.use-case.js';
+} from './sign-up.use-case.js';
 import {
   ACCOUNT_REPOSITORY,
   type AccountRepositoryPort,
-} from '../../apps/identity/src/modules/accounts/application/ports/account.repository.port.js';
+} from '../ports/account.repository.port.js';
 import {
   VERIFICATION_CODE_REPOSITORY,
   type VerificationCodeRepositoryPort,
-} from '../../apps/identity/src/modules/accounts/application/ports/verification-code.repository.port.js';
-import type { Account } from '../../apps/identity/src/modules/accounts/domain/account.js';
-import type { VerificationCode } from '../../apps/identity/src/modules/accounts/domain/verification-code.js';
-import { verifyVerificationCode } from '../../apps/identity/src/modules/accounts/domain/verification-code.hashing.js';
+} from '../ports/verification-code.repository.port.js';
+import type { Account } from '../../domain/account.js';
+import type { VerificationCode } from '../../domain/verification-code.js';
+import { verifyVerificationCode } from '../../domain/verification-code.hashing.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
