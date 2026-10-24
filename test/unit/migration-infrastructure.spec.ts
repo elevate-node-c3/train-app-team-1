@@ -70,7 +70,7 @@ function fakeDataSource(options: {
   return { dataSource, runner };
 }
 
-describe('Migration infrastructure (§2.1, ADR-0002)', () => {
+describe('Migration infrastructure (§2.1)', () => {
   describe('createTypeOrmAsyncOptions', () => {
     // The five services that own no migrations must receive exactly what they
     // received before the parameter existed, or adding migrations to identity
