@@ -135,6 +135,10 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
+      OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-true}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-500}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-20}
+      VERIFICATION_CODE_TTL_SECONDS: ${VERIFICATION_CODE_TTL_SECONDS:-600}
 
   inventory:
     <<: *service
@@ -178,9 +182,16 @@ services:
       mailpit: { condition: service_healthy }
     environment:
       <<: *service-env
+      # A hostname inside the Compose network is not a reviewer knob, so SMTP
+      # host and port stay uninterpolated; their defaults need no .env line.
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:-notification_dev}@postgres:5432/notification
+      SMTP_FROM: ${SMTP_FROM:-no-reply@train.local}
+      EVENT_HANDLER_TIMEOUT_MS: ${EVENT_HANDLER_TIMEOUT_MS:-3000}
+      EVENT_RETRY_DELAYS_MS: ${EVENT_RETRY_DELAYS_MS:-1000,3000,9000}
+      EVENT_PREFETCH: ${EVENT_PREFETCH:-10}
+      EVENT_CLAIM_LEASE_SECONDS: ${EVENT_CLAIM_LEASE_SECONDS:-60}
 
 volumes:
   postgres_data:

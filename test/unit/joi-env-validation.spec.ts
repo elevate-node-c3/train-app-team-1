@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   commonEnvSchema,
+  identityEnvSchema,
   notificationEnvSchema,
   validateEnvOrThrow,
   ConfigurationException,
+  NOTIFICATION_DEFAULTS,
+  OUTBOX_DEFAULTS,
+  VERIFICATION_CODE_DEFAULTS,
 } from '@app/common';
 
 describe('Joi Environment Schema Validation (§2.1)', () => {
@@ -105,5 +109,85 @@ describe('Joi Environment Schema Validation (§2.1)', () => {
     expect(() =>
       validateEnvOrThrow(notificationEnvSchema, missingSmtp, 'notification'),
     ).toThrowError(/Missing required environment variable 'SMTP_HOST'/);
+  });
+
+  describe('messaging environment (T6)', () => {
+    const validIdentityEnv = {
+      ...validCommonEnv,
+      OUTBOX_RELAY_ENABLED: 'true',
+      OUTBOX_POLL_INTERVAL_MS: '500',
+      OUTBOX_BATCH_SIZE: '20',
+      VERIFICATION_CODE_TTL_SECONDS: '600',
+    };
+
+    function defaultOf(schema: typeof identityEnvSchema, key: string) {
+      const described = schema.describe() as any;
+      return described.keys[key]?.flags?.default;
+    }
+
+    it('caps the verification code TTL at ten minutes', () => {
+      expect(() =>
+        validateEnvOrThrow(
+          identityEnvSchema,
+          { ...validIdentityEnv, VERIFICATION_CODE_TTL_SECONDS: '601' },
+          'identity',
+        ),
+      ).toThrowError(/VERIFICATION_CODE_TTL_SECONDS/);
+    });
+
+    it('keeps every code-side default equal to its Joi default', () => {
+      // validateEnv() discards the coerced value, so code reads these
+      // constants. A drifting pair is a silently wrong runtime default.
+      expect(defaultOf(identityEnvSchema, 'OUTBOX_RELAY_ENABLED')).toBe(
+        OUTBOX_DEFAULTS.enabled,
+      );
+      expect(defaultOf(identityEnvSchema, 'OUTBOX_POLL_INTERVAL_MS')).toBe(
+        OUTBOX_DEFAULTS.pollIntervalMs,
+      );
+      expect(defaultOf(identityEnvSchema, 'OUTBOX_BATCH_SIZE')).toBe(
+        OUTBOX_DEFAULTS.batchSize,
+      );
+      expect(defaultOf(identityEnvSchema, 'VERIFICATION_CODE_TTL_SECONDS')).toBe(
+        VERIFICATION_CODE_DEFAULTS.ttlSeconds,
+      );
+
+      expect(defaultOf(notificationEnvSchema as any, 'SMTP_FROM')).toBe(
+        NOTIFICATION_DEFAULTS.smtpFrom,
+      );
+      expect(
+        defaultOf(notificationEnvSchema as any, 'EVENT_HANDLER_TIMEOUT_MS'),
+      ).toBe(NOTIFICATION_DEFAULTS.handlerTimeoutMs);
+      expect(
+        defaultOf(notificationEnvSchema as any, 'EVENT_RETRY_DELAYS_MS'),
+      ).toBe(NOTIFICATION_DEFAULTS.retryDelays);
+      expect(defaultOf(notificationEnvSchema as any, 'EVENT_PREFETCH')).toBe(
+        NOTIFICATION_DEFAULTS.prefetch,
+      );
+      expect(
+        defaultOf(notificationEnvSchema as any, 'EVENT_CLAIM_LEASE_SECONDS'),
+      ).toBe(NOTIFICATION_DEFAULTS.claimLeaseSeconds);
+    });
+
+    it('keeps SMTP configuration out of the identity service', () => {
+      const described = identityEnvSchema.describe() as any;
+      expect(described.keys.SMTP_HOST).toBeUndefined();
+      expect(described.keys.SMTP_PORT).toBeUndefined();
+      expect(described.keys.SMTP_FROM).toBeUndefined();
+    });
+
+    it('runs the BR-03 budget check on the configured delays', () => {
+      expect(() =>
+        validateEnvOrThrow(
+          notificationEnvSchema,
+          {
+            ...validCommonEnv,
+            SMTP_HOST: 'mailpit',
+            SMTP_PORT: '1025',
+            EVENT_RETRY_DELAYS_MS: '10000,10000,10000',
+          },
+          'notification',
+        ),
+      ).toThrowError(/BR-03/);
+    });
   });
 });
