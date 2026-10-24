@@ -183,12 +183,16 @@ private loop: Promise<void> | null = null;
 
 onApplicationBootstrap(): void { this.loop = this.run(); }
 
-async onApplicationShutdown(): Promise<void> {
+async beforeApplicationShutdown(): Promise<void> {
   this.stopping = true;
   if (this.timer) clearTimeout(this.timer);
   await this.loop;        // the drain comes free
 }
 ```
+
+Drain in `beforeApplicationShutdown`, not `onApplicationShutdown`: the latter
+runs after `dispose()` and, for an AMQP loop, after the channel has already
+closed.
 
 Do not disable the rule. The pattern that satisfies it is the pattern that
 drains correctly on shutdown — that is not a coincidence.

@@ -199,12 +199,23 @@ testable without importing TypeORM.
 | Hook | Use for |
 |---|---|
 | `onModuleInit` | Acquire a resource the module owns (the AMQP connection). Must tolerate failure — see §6. |
-| `onApplicationBootstrap` | Work that needs *other* modules ready: running migrations, asserting AMQP topology, starting consumers. |
-| `onApplicationShutdown` | Stop accepting new work and **drain** what is in flight: cancel a consumer tag, await outstanding handlers, stop a poll loop. |
-| `onModuleDestroy` | Close the resource acquired in `onModuleInit`. Fires *after* `onApplicationShutdown`, so the drain must not live here — the channel may already be gone. |
+| `onApplicationBootstrap` | Work that needs *other* modules ready: running migrations, asserting AMQP topology, starting consumers and the relay. |
+| `onModuleDestroy` | First shutdown hook: flip the drain flag so readiness fails and new traffic is refused. Do **not** close a shared resource here. |
+| `beforeApplicationShutdown` | Stop accepting new work and **drain** what is in flight: cancel consumer tags, await outstanding handlers, await the relay loop. The AMQP channel is still open. |
+| `onApplicationShutdown` | Last shutdown hook: close the resource acquired in `onModuleInit` (the AMQP connection and channels), after `dispose()` and after the drain. |
+
+Nest fires them in this order:
+
+```
+onModuleDestroy -> beforeApplicationShutdown -> dispose() -> onApplicationShutdown
+```
 
 `setupApp()` already calls `app.enableShutdownHooks()`, so these fire on
-SIGTERM.
+SIGTERM. The order is why `GracefulShutdownService` flips its flag in
+`onModuleDestroy`, the relay and consumer drain in `beforeApplicationShutdown`,
+and `AmqpClientService` closes in `onApplicationShutdown`: closing the channel
+in an earlier hook would make every in-flight ack fail and turn a clean deploy
+into duplicate emails.
 
 ## 5. Bootstrap
 
