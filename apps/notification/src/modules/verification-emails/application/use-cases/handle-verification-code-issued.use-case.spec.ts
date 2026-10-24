@@ -12,15 +12,15 @@ import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
 import {
   type EmailDeliveryRecord,
   type EmailDeliveryRepositoryPort,
-} from '../../apps/notification/src/modules/verification-emails/application/ports/email-delivery.repository.port.js';
+} from '../ports/email-delivery.repository.port.js';
 import {
   type EmailSenderPort,
   type OutboundEmail,
-} from '../../apps/notification/src/modules/verification-emails/application/ports/email-sender.port.js';
-import { HandleVerificationCodeIssuedUseCase } from '../../apps/notification/src/modules/verification-emails/application/use-cases/handle-verification-code-issued.use-case.js';
-import { parseVerificationCodeIssuedPayload } from '../../apps/notification/src/modules/verification-emails/application/verification-code-issued.parser.js';
-import { renderVerificationEmail } from '../../apps/notification/src/modules/verification-emails/application/verification-email.template.js';
-import { NodemailerEmailSender } from '../../apps/notification/src/modules/verification-emails/infrastructure/email/nodemailer-email-sender.js';
+} from '../ports/email-sender.port.js';
+import { HandleVerificationCodeIssuedUseCase } from './handle-verification-code-issued.use-case.js';
+import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.parser.js';
+import { renderVerificationEmail } from '../verification-email.template.js';
+import { NodemailerEmailSender } from '../../infrastructure/email/nodemailer-email-sender.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 const EXPIRES_AT = new Date('2026-10-24T10:10:00.000Z');

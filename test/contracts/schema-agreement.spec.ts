@@ -106,7 +106,7 @@ function referencedColumns(sql: string, table: string): Set<string> {
   return found;
 }
 
-describe('Schema agreement (ADR-0001, ADR-0003, ADR-0006)', () => {
+describe('Schema agreement', () => {
   it('gives every processed_event statement a column the migration creates', () => {
     const columns = new Set(columnsOf(notificationDdl, 'processed_event'));
     const referenced = new Set<string>();

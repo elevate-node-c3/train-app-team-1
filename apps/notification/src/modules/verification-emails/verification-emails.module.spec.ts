@@ -6,7 +6,7 @@ import { producerTopology, type EventHandlerPort } from '@app/messaging';
 import {
   createVerificationEmailSubscriptions,
   VERIFICATION_EMAIL_QUEUE,
-} from '../../apps/notification/src/modules/verification-emails/verification-emails.module.js';
+} from './verification-emails.module.js';
 
 function tsFilesIn(dir: string): string[] {
   const files: string[] = [];
