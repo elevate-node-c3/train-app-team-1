@@ -10,6 +10,12 @@ import type { Channel } from 'amqplib';
  *
  * Declaring a consumer's queue on the producer's side would mean the producer
  * knows its consumers, which is exactly the coupling the backbone removes.
+ *
+ * A consumer also re-asserts `train.events` with the producer's exact
+ * parameters. The exchange's definition is still the producer's; the duplicate
+ * assertion is what makes startup order irrelevant, because binding to an
+ * exchange that does not exist yet fails with 404 and leaves the consumer
+ * subscribed to nothing.
  */
 export const EVENTS_EXCHANGE = 'train.events';
 export const RETRY_EXCHANGE = 'train.events.retry';
@@ -109,6 +115,10 @@ export function consumerTopology(
 
   return {
     exchanges: [
+      // Idempotent and identical to the producer's declaration. Without it, a
+      // consumer that starts first (e.g. `docker compose up`) cannot bind and
+      // never retries, so it would miss every event until manually restarted.
+      DURABLE_EXCHANGE(EVENTS_EXCHANGE, 'topic'),
       DURABLE_EXCHANGE(RETRY_EXCHANGE, 'direct'),
       DURABLE_EXCHANGE(REQUEUE_EXCHANGE, 'direct'),
       DURABLE_EXCHANGE(DEAD_LETTER_EXCHANGE, 'direct'),
