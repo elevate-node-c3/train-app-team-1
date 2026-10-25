@@ -46,6 +46,29 @@ describe('Notification environment schema', () => {
     );
   });
 
+  it('ignores the relay interval, which belongs to identity', () => {
+    // Another service's knob must not change this service's verdict, and its
+    // absence must not either — the old check read it from here and silently
+    // validated against the shared constant regardless.
+    const base = {
+      ...validCommonEnv,
+      SMTP_HOST: 'mailpit',
+      SMTP_PORT: '1025',
+      EVENT_RETRY_DELAYS_MS: '1000,3000,9000',
+    };
+
+    expect(() =>
+      validateEnvOrThrow(notificationEnvSchema, base, 'notification'),
+    ).not.toThrow();
+    expect(() =>
+      validateEnvOrThrow(
+        notificationEnvSchema,
+        { ...base, OUTBOX_POLL_INTERVAL_MS: '20000' },
+        'notification',
+      ),
+    ).not.toThrow();
+  });
+
   it('runs the BR-03 budget check on the configured delays', () => {
     expect(() =>
       validateEnvOrThrow(

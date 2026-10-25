@@ -48,6 +48,23 @@ describe('Identity environment schema', () => {
     );
   });
 
+  it('bounds the relay interval by its share of the delivery budget', () => {
+    // Identity owns this knob, so identity is the only process that can catch
+    // it being mis-set. Notification used to read OUTBOX_POLL_INTERVAL_MS off
+    // its own environment, where Compose never sets it, so nothing checked it.
+    expect(() =>
+      validateEnvOrThrow(
+        identityEnvSchema,
+        { ...validIdentityEnv, OUTBOX_POLL_INTERVAL_MS: '20000' },
+        'identity',
+      ),
+    ).toThrowError(/delivery budget/);
+
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, validIdentityEnv, 'identity'),
+    ).not.toThrow();
+  });
+
   it('keeps SMTP configuration out of the identity service', () => {
     const described = identityEnvSchema.describe() as any;
     expect(described.keys.SMTP_HOST).toBeUndefined();

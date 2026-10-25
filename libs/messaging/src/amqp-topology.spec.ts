@@ -5,6 +5,7 @@ import {
   EVENTS_EXCHANGE,
   EVENT_HANDLER_TIMEOUT_MS,
   EVENT_RETRY_DELAYS_MS,
+  MAX_RELAY_POLL_INTERVAL_MS,
   OUTBOX_POLL_INTERVAL_MS,
   REQUEUE_EXCHANGE,
   RETRY_EXCHANGE,
@@ -205,6 +206,31 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
 
   it('allows one more attempt than there are retry delays', () => {
     expect(maxDeliveryAttempts([1000, 3000, 9000])).toBe(4);
+  });
+
+  it('derives the relay bound as the largest interval that still fits', () => {
+    // Identity bounds its poll interval with this instead of re-summing a
+    // budget whose other 98% lives in another service's environment. The
+    // boundary is the whole value of the constant, so it is asserted from both
+    // sides rather than hardcoded.
+    const consumer = {
+      handlerTimeoutMs: EVENT_HANDLER_TIMEOUT_MS,
+      retryDelaysMs: EVENT_RETRY_DELAYS_MS,
+    };
+
+    expect(() =>
+      assertDeliveryBudget({
+        ...consumer,
+        pollIntervalMs: MAX_RELAY_POLL_INTERVAL_MS,
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertDeliveryBudget({
+        ...consumer,
+        pollIntervalMs: MAX_RELAY_POLL_INTERVAL_MS + 1,
+      }),
+    ).toThrowError(/budget exceeded/);
   });
 
   it('rejects a configuration that leaves no BR-03 headroom', () => {
