@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { TOKEN_DEFAULTS } from '@app/contracts';
 import { commonEnvSchema } from '@app/common/config/env.schema.js';
 import {
   OUTBOX_DEFAULTS,
@@ -40,4 +41,25 @@ export const identityEnvSchema = commonEnvSchema.keys({
       'number.max':
         "Variable 'VERIFICATION_CODE_TTL_SECONDS' must be <= 600: a verification code must die within ten minutes",
     }),
-});
+  // Identity is the only holder of the signing key. At least one of the inline
+  // value and the file path is required: there is no committed fallback.
+  JWT_KEY_ID: Joi.string().default('dev-1'),
+  JWT_PRIVATE_KEY: Joi.string().optional(),
+  JWT_PRIVATE_KEY_FILE: Joi.string().optional(),
+  ACCESS_TOKEN_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(60)
+    .max(3600)
+    .default(TOKEN_DEFAULTS.accessTtlSeconds),
+  REFRESH_TOKEN_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(300)
+    .default(TOKEN_DEFAULTS.refreshTtlSeconds),
+  REFRESH_TOKEN_GRACE_SECONDS: Joi.number()
+    .integer()
+    .min(0)
+    .max(300)
+    .default(TOKEN_DEFAULTS.refreshGraceSeconds),
+  TOKEN_GRACE_SECRET: Joi.string().optional(),
+  BCRYPT_COST: Joi.number().integer().min(4).max(15).default(12),
+}).or('JWT_PRIVATE_KEY', 'JWT_PRIVATE_KEY_FILE');

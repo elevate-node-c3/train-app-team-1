@@ -6,6 +6,7 @@ import {
 
 /** Enforced in the domain as well as in Joi: the invariant is not config-only. */
 export const MAX_VERIFICATION_CODE_TTL_SECONDS = 600;
+export const MAX_VERIFICATION_CODE_ATTEMPTS = 5;
 
 export interface IssueVerificationCodeProps {
   id: string;
@@ -20,6 +21,9 @@ export interface IssueVerificationCodeProps {
    */
   issuedAt?: Date;
   salt?: string;
+  attempts?: number;
+  maxAttempts?: number;
+  consumedAt?: Date | null;
 }
 
 /**
@@ -36,6 +40,8 @@ export class VerificationCode {
     readonly issuedAt: Date,
     readonly expiresAt: Date,
     readonly consumedAt: Date | null,
+    readonly attempts: number,
+    readonly maxAttempts: number,
   ) {}
 
   static issue(props: IssueVerificationCodeProps): VerificationCode {
@@ -66,11 +72,81 @@ export class VerificationCode {
       salt,
       issuedAt,
       expiresAt,
-      null,
+      props.consumedAt ?? null,
+      props.attempts ?? 0,
+      props.maxAttempts ?? MAX_VERIFICATION_CODE_ATTEMPTS,
+    );
+  }
+
+  static restore(props: {
+    id: string;
+    accountId: string;
+    purpose: VerificationCodePurpose;
+    codeHash: string;
+    codeSalt: string;
+    issuedAt: Date;
+    expiresAt: Date;
+    consumedAt?: Date | null;
+    attempts?: number;
+    maxAttempts?: number;
+  }): VerificationCode {
+    return new VerificationCode(
+      props.id,
+      props.accountId,
+      props.purpose,
+      props.codeHash,
+      props.codeSalt,
+      props.issuedAt,
+      props.expiresAt,
+      props.consumedAt ?? null,
+      props.attempts ?? 0,
+      props.maxAttempts ?? MAX_VERIFICATION_CODE_ATTEMPTS,
     );
   }
 
   isExpired(now: Date = new Date()): boolean {
     return this.expiresAt.getTime() <= now.getTime();
+  }
+
+  isConsumed(): boolean {
+    return this.consumedAt !== null;
+  }
+
+  hasAttemptsRemaining(): boolean {
+    return this.attempts < this.maxAttempts;
+  }
+
+  isUsable(now: Date = new Date()): boolean {
+    return !this.isConsumed() && !this.isExpired(now) && this.hasAttemptsRemaining();
+  }
+
+  recordFailure(): VerificationCode {
+    return new VerificationCode(
+      this.id,
+      this.accountId,
+      this.purpose,
+      this.codeHash,
+      this.codeSalt,
+      this.issuedAt,
+      this.expiresAt,
+      this.consumedAt,
+      Math.min(this.attempts + 1, this.maxAttempts),
+      this.maxAttempts,
+    );
+  }
+
+  consume(at: Date = new Date()): VerificationCode {
+    return new VerificationCode(
+      this.id,
+      this.accountId,
+      this.purpose,
+      this.codeHash,
+      this.codeSalt,
+      this.issuedAt,
+      this.expiresAt,
+      at,
+      this.attempts,
+      this.maxAttempts,
+    );
   }
 }

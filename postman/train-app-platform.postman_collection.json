@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "c1f7b8a2-94d3-4f90-a7d1-e6a8d7a4e921",
-    "name": "Train App - Platform Skeleton & Health",
-    "description": "Postman collection covering health, readiness, liveness, and unified envelope testing across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
+    "name": "Train App - Platform Skeleton, Health & Auth",
+    "description": "Postman collection covering health, readiness, liveness, unified envelope testing, and the AUTH-1/AUTH-2/AUTH-3 flows across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -60,8 +60,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
             },
             "description": "Returns the aggregated readiness status of the Gateway and all six downstream services via gRPC."
           },
@@ -99,8 +103,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
             },
             "description": "Tests language negotiation returning English message envelope."
           },
@@ -132,8 +140,13 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health/ready",
-              "host": ["{{baseUrl}}"],
-              "path": ["health", "ready"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
             },
             "description": "Standard Kubernetes/Docker readiness probe endpoint."
           },
@@ -164,15 +177,20 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health/live",
-              "host": ["{{baseUrl}}"],
-              "path": ["health", "live"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
             },
             "description": "Standard Kubernetes/Docker liveness probe endpoint."
           },
           "response": []
         },
         {
-          "name": "Ping All Microservices (/api/ping-all)",
+          "name": "Ping All Microservices (/api/v1/ping-all)",
           "event": [
             {
               "listen": "test",
@@ -202,9 +220,15 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/ping-all",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "ping-all"]
+              "raw": "{{baseUrl}}/api/v1/ping-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ping-all"
+              ]
             },
             "description": "Dispatches gRPC health queries to all microservices carrying the correlation ID."
           },
@@ -230,10 +254,469 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/",
-              "host": ["{{baseUrl}}"],
-              "path": [""]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ""
+              ]
             },
             "description": "Gateway service metadata endpoint."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication (Gateway)",
+      "description": "AUTH-1/AUTH-2/AUTH-3. Start with Sign Up, copy the code from Mailpit into {{verificationCode}}, then run Verify Email. Tokens are stored in the environment automatically.",
+      "item": [
+        {
+          "name": "Sign Up",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Pending account and masked email\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.maskedEmail).to.be.a(\"string\");",
+                  "    pm.expect(json.data.resendAfterSeconds).to.be.above(0);",
+                  "    pm.environment.set(\"authAccountId\", json.data.accountId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\",\n  \"password\": \"{{authPassword}}\",\n  \"language\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/sign-up",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "sign-up"
+              ]
+            },
+            "description": "Creates a pending account and emails a verification code. The password must contain a letter, a digit and a symbol."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Verification returns a token pair\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.tokenType).to.eql(\"Bearer\");",
+                  "    pm.expect(json.data.accessToken.split(\".\")).to.have.lengthOf(3);",
+                  "    pm.environment.set(\"accessToken\", json.data.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", json.data.refreshToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\",\n  \"code\": \"{{verificationCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/verify-email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "verify-email"
+              ]
+            },
+            "description": "Consumes the email code, activates the account and returns the first RS256 token pair."
+          },
+          "response": []
+        },
+        {
+          "name": "Resend Verification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Resend reports the remaining window\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.secondsRemaining).to.be.a(\"number\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/resend-verification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "resend-verification"
+              ]
+            },
+            "description": "Issues a fresh sign-up code. The durable 120-second resend window applies even while Redis is down."
+          },
+          "response": []
+        },
+        {
+          "name": "Sign In",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Verified sign-in returns a token pair\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.verificationRequired).to.be.false;",
+                  "    pm.expect(json.data.tokens).to.be.an(\"object\");",
+                  "    pm.environment.set(\"accessToken\", json.data.tokens.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", json.data.tokens.refreshToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\",\n  \"password\": \"{{authPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/sign-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "sign-in"
+              ]
+            },
+            "description": "Password sign-in. An unverified account answers 200 with verificationRequired true and tokens null."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Rotation returns a new pair\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.accessToken).to.be.a(\"string\");",
+                  "    pm.expect(json.data.refreshToken).to.be.a(\"string\");",
+                  "    pm.environment.set(\"accessToken\", json.data.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", json.data.refreshToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates the refresh token. Replaying the old token within ten seconds returns the same successor pair."
+          },
+          "response": []
+        },
+        {
+          "name": "Sign Out",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Session revoked\", function () {",
+                  "    pm.expect(pm.response.json().data.revoked).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/sign-out",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "sign-out"
+              ]
+            },
+            "description": "Revokes the caller session. The gateway consumes the session.revoked event and rejects the access token from then on."
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test(\"Non-enumerating answer\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.secondsRemaining).to.eql(120);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Always answers 202 with the same body, whether or not the address exists."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Password reset applied\", function () {",
+                  "    pm.expect(pm.response.json().data.reset).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{authEmail}}\",\n  \"code\": \"{{verificationCode}}\",\n  \"newPassword\": \"{{authNewPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Consumes the reset code, changes the password and revokes every session of the account."
           },
           "response": []
         }
@@ -253,9 +736,13 @@
                 "url": {
                   "raw": "http://localhost:{{identityPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{identityPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -266,9 +753,14 @@
                 "url": {
                   "raw": "http://localhost:{{identityPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{identityPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -279,9 +771,13 @@
                 "url": {
                   "raw": "http://localhost:{{identityPort}}/identity",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{identityPort}}",
-                  "path": ["identity"]
+                  "path": [
+                    "identity"
+                  ]
                 }
               }
             }
@@ -297,9 +793,13 @@
                 "url": {
                   "raw": "http://localhost:{{catalogPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{catalogPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -310,9 +810,14 @@
                 "url": {
                   "raw": "http://localhost:{{catalogPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{catalogPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -323,9 +828,13 @@
                 "url": {
                   "raw": "http://localhost:{{catalogPort}}/catalog",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{catalogPort}}",
-                  "path": ["catalog"]
+                  "path": [
+                    "catalog"
+                  ]
                 }
               }
             }
@@ -341,9 +850,13 @@
                 "url": {
                   "raw": "http://localhost:{{inventoryPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{inventoryPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -354,9 +867,14 @@
                 "url": {
                   "raw": "http://localhost:{{inventoryPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{inventoryPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -367,9 +885,13 @@
                 "url": {
                   "raw": "http://localhost:{{inventoryPort}}/inventory",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{inventoryPort}}",
-                  "path": ["inventory"]
+                  "path": [
+                    "inventory"
+                  ]
                 }
               }
             }
@@ -385,9 +907,13 @@
                 "url": {
                   "raw": "http://localhost:{{bookingPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{bookingPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -398,9 +924,14 @@
                 "url": {
                   "raw": "http://localhost:{{bookingPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{bookingPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -411,9 +942,13 @@
                 "url": {
                   "raw": "http://localhost:{{bookingPort}}/booking",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{bookingPort}}",
-                  "path": ["booking"]
+                  "path": [
+                    "booking"
+                  ]
                 }
               }
             }
@@ -429,9 +964,13 @@
                 "url": {
                   "raw": "http://localhost:{{paymentPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{paymentPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -442,9 +981,14 @@
                 "url": {
                   "raw": "http://localhost:{{paymentPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{paymentPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -455,9 +999,13 @@
                 "url": {
                   "raw": "http://localhost:{{paymentPort}}/payment",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{paymentPort}}",
-                  "path": ["payment"]
+                  "path": [
+                    "payment"
+                  ]
                 }
               }
             }
@@ -473,9 +1021,13 @@
                 "url": {
                   "raw": "http://localhost:{{notificationPort}}/health",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{notificationPort}}",
-                  "path": ["health"]
+                  "path": [
+                    "health"
+                  ]
                 }
               }
             },
@@ -486,9 +1038,14 @@
                 "url": {
                   "raw": "http://localhost:{{notificationPort}}/health/live",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{notificationPort}}",
-                  "path": ["health", "live"]
+                  "path": [
+                    "health",
+                    "live"
+                  ]
                 }
               }
             },
@@ -499,9 +1056,13 @@
                 "url": {
                   "raw": "http://localhost:{{notificationPort}}/notification",
                   "protocol": "http",
-                  "host": ["localhost"],
+                  "host": [
+                    "localhost"
+                  ],
                   "port": "{{notificationPort}}",
-                  "path": ["notification"]
+                  "path": [
+                    "notification"
+                  ]
                 }
               }
             }

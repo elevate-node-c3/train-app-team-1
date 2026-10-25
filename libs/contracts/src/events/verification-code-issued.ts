@@ -2,13 +2,14 @@ import type { EventEnvelope, EventLanguage } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
 
 /**
- * Why a code was issued. Only `sign_up` exists today; the union is here because
- * the consumer needs a total answer rather than "whatever string arrived".
+ * Why a code was issued. Reset codes are purpose-separated from verification
+ * codes, so a code mailed for one flow can never be replayed in the other.
  */
-export type VerificationCodePurpose = 'sign_up';
+export type VerificationCodePurpose = 'sign_up' | 'password_reset';
 
 export const VERIFICATION_CODE_PURPOSES: readonly VerificationCodePurpose[] = [
   'sign_up',
+  'password_reset',
 ];
 
 /**

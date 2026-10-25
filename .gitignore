@@ -53,6 +53,11 @@ CLAUDE.md
 .env.production.local
 .env.local
 
+# Local development JWT key pair. Generate with `npm run keys:generate`.
+# Never commit a private key: a clone with it can mint tokens the gateway trusts.
+*.pem
+/config/jwt/
+
 # temp directory
 .temp
 .tmp

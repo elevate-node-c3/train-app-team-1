@@ -11,4 +11,15 @@ export const ACCOUNT_REPOSITORY = Symbol('ACCOUNT_REPOSITORY');
  */
 export interface AccountRepositoryPort {
   save(ctx: TransactionContext, account: Account): Promise<void>;
+  update(ctx: TransactionContext, account: Account): Promise<void>;
+  findByEmail(email: string): Promise<Account | null>;
+  findById(id: string): Promise<Account | null>;
+  findByEmailForUpdate(
+    ctx: TransactionContext,
+    email: string,
+  ): Promise<Account | null>;
+  findByIdForUpdate(
+    ctx: TransactionContext,
+    id: string,
+  ): Promise<Account | null>;
 }

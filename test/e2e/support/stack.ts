@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { ApiResponse, SignUpResponseDto } from '@app/contracts';
+import { STAFF_SEED_ACCOUNTS } from '../../../apps/identity/src/database/seeds/staff-accounts.js';
 
 /**
  * Shared harness for the two outbox e2e specs.
@@ -18,6 +19,31 @@ export const GATEWAY_URL = `http://localhost:${process.env.GATEWAY_PORT ?? '3000
 export const MAILPIT_URL = `http://127.0.0.1:${process.env.MAILPIT_UI_PORT ?? '8025'}`;
 export const RABBITMQ_MANAGEMENT_URL = `http://127.0.0.1:${process.env.RABBITMQ_MANAGEMENT_PORT ?? '15672'}`;
 export const EMAIL_QUEUE = 'notification.verification-code-issued';
+
+/** The gateway is the only prefixed service (ADR: one public door). */
+export const AUTH_BASE_URL = `${GATEWAY_URL}/api/v1/auth`;
+
+/** Satisfies BR-02: at least 8 characters, a letter, a digit and a symbol. */
+export const DEFAULT_PASSWORD = 'Str0ng!Passw0rd';
+
+/**
+ * The seed data has one source: identity's standalone seed. The e2e harness
+ * aliases the two accounts rather than restating their addresses and
+ * development passwords.
+ */
+const [OPERATOR_SEED_ACCOUNT, CONDUCTOR_SEED_ACCOUNT] = STAFF_SEED_ACCOUNTS;
+
+export const OPERATOR_SEED_EMAIL = OPERATOR_SEED_ACCOUNT.email;
+export const CONDUCTOR_SEED_EMAIL = CONDUCTOR_SEED_ACCOUNT.email;
+export const OPERATOR_SEED_PASSWORD = OPERATOR_SEED_ACCOUNT.developmentPassword;
+export const CONDUCTOR_SEED_PASSWORD =
+  CONDUCTOR_SEED_ACCOUNT.developmentPassword;
+
+const COMPOSE_ENV = {
+  ...process.env,
+  OPERATOR_SEED_PASSWORD,
+  CONDUCTOR_SEED_PASSWORD,
+};
 
 const RABBITMQ_USER = process.env.RABBITMQ_USER ?? 'train_app';
 const RABBITMQ_PASSWORD = process.env.RABBITMQ_PASSWORD ?? 'train_app';
@@ -38,6 +64,7 @@ function docker(args: string[], timeoutMs: number): string {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeoutMs,
+      env: COMPOSE_ENV,
     });
   } catch (error: unknown) {
     const failure = error as { stderr?: string; message?: string };
@@ -73,6 +100,15 @@ export function startStack(): void {
 
 export function stopStack(): void {
   compose('down', '-v', '--remove-orphans');
+}
+
+/**
+ * Runs the standalone seed after identity has migrated. The image may not have
+ * been built by `startStack` (the seed is intentionally not in the backbone
+ * slice), so allow the first-build budget rather than the command timeout.
+ */
+export function seedStaff(): void {
+  docker(['compose', 'up', '--no-deps', 'identity-seed'], BUILD_TIMEOUT_MS);
 }
 
 /**
@@ -157,15 +193,16 @@ export async function signUp(
   email: string,
   language: 'ar' | 'en',
   correlationId = `e2e-${randomUUID()}`,
+  password = DEFAULT_PASSWORD,
 ): Promise<SignUpResult> {
   const started = Date.now();
-  const response = await fetch(`${GATEWAY_URL}/identity/sign-up`, {
+  const response = await fetch(`${AUTH_BASE_URL}/sign-up`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-correlation-id': correlationId,
     },
-    body: JSON.stringify({ email, language }),
+    body: JSON.stringify({ email, password, language }),
   });
   const body = (await response.json()) as ApiResponse<SignUpResponseDto>;
 
@@ -211,6 +248,69 @@ export async function waitForInboxSize(
     250,
   );
   return mailpitInbox();
+}
+
+export interface MailpitMessageDetail extends MailpitMessage {
+  Text: string;
+  HTML: string;
+}
+
+export async function mailpitMessage(
+  id: string,
+): Promise<MailpitMessageDetail> {
+  const response = await fetch(
+    `${MAILPIT_URL}/api/v1/message/${encodeURIComponent(id)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Mailpit message ${id} returned HTTP ${response.status}`);
+  }
+  return (await response.json()) as MailpitMessageDetail;
+}
+
+/**
+ * Waits for a particular email and extracts the six-digit code from its body.
+ *
+ * The code is deliberately absent from the subject, so the body is the only
+ * place to read it. `Text` is checked before `HTML` so a CSS colour cannot be
+ * mistaken for the code.
+ */
+export async function waitForEmailCode(
+  email: string,
+  subject: string,
+  timeoutMs = 90_000,
+): Promise<string> {
+  let code: string | null = null;
+
+  await waitFor(
+    `a '${subject}' email for ${email}`,
+    async () => {
+      const inbox = await mailpitInbox();
+      const message = inbox.messages.find(
+        (candidate) =>
+          candidate.Subject === subject &&
+          candidate.To.some((recipient) => recipient.Address === email),
+      );
+      if (!message) return false;
+
+      const detail = await mailpitMessage(message.ID);
+      const body = detail.Text || stripHtml(detail.HTML ?? '');
+      code = /\b(\d{6})\b/.exec(body)?.[1] ?? null;
+      return code !== null;
+    },
+    timeoutMs,
+    500,
+  );
+
+  if (code === null) {
+    throw new Error(
+      `The '${subject}' email for ${email} contained no six-digit code`,
+    );
+  }
+  return code;
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ');
 }
 
 export interface QueueStats {
@@ -279,5 +379,22 @@ export function psql(
     '--no-align',
     '--command',
     sql,
+  ).trim();
+}
+
+/**
+ * Reads a key from the shared Redis. Revocation is asynchronous (outbox →
+ * broker → gateway consumer), so a spec that needs the edge to have applied an
+ * event waits on the marker itself rather than sleeping.
+ */
+export function redisGet(key: string): string {
+  return compose(
+    'exec',
+    '-T',
+    'redis',
+    'redis-cli',
+    '--raw',
+    'GET',
+    key,
   ).trim();
 }

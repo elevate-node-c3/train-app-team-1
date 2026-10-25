@@ -1,3 +1,4 @@
+import { VERIFICATION_CODE_ISSUED_EVENT_TYPE } from '@app/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   EMAIL_QUEUE,
@@ -92,9 +93,15 @@ describe('Outbox event backbone demos', () => {
     expect(result.status).toBe(201);
     await waitForInboxSize(1);
 
+    // Sign-up writes both `verification-code.issued` and `account.registered`
+    // in the same transaction with the same `occurred_at`. Select the code
+    // event explicitly: the account event belongs to a different queue and
+    // deliberately sends no mail.
     const eventId = psql(
       'identity',
-      'select id from outbox_event order by occurred_at desc limit 1',
+      `select id from outbox_event
+        where event_type = '${VERIFICATION_CODE_ISSUED_EVENT_TYPE}'
+        order by occurred_at desc limit 1`,
     );
     expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
 

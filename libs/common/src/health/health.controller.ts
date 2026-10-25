@@ -5,7 +5,9 @@ import {
   type AggregateReadiness,
 } from './aggregate-readiness.js';
 import { HealthService } from './health.service.js';
+import { Public } from '../auth/access-level.decorator.js';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

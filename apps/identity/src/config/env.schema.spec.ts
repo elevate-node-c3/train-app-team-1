@@ -17,6 +17,7 @@ const validIdentityEnv = {
   OUTBOX_POLL_INTERVAL_MS: '500',
   OUTBOX_BATCH_SIZE: '20',
   VERIFICATION_CODE_TTL_SECONDS: '600',
+  JWT_PRIVATE_KEY_FILE: 'config/jwt/dev-private.pem',
 };
 
 function defaultOf(key: string): unknown {
@@ -70,5 +71,13 @@ describe('Identity environment schema', () => {
     expect(described.keys.SMTP_HOST).toBeUndefined();
     expect(described.keys.SMTP_PORT).toBeUndefined();
     expect(described.keys.SMTP_FROM).toBeUndefined();
+  });
+
+  it('refuses to boot without a JWT private key source', () => {
+    const { JWT_PRIVATE_KEY_FILE: _file, ...withoutKey } = validIdentityEnv;
+
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, withoutKey, 'identity'),
+    ).toThrowError(/JWT_PRIVATE_KEY/);
   });
 });

@@ -26,4 +26,10 @@ export class VerificationCodeOrmEntity {
 
   @Column({ name: 'consumed_at', type: 'timestamptz', nullable: true })
   consumedAt!: Date | null;
+
+  @Column({ type: 'integer', default: 0 })
+  attempts!: number;
+
+  @Column({ name: 'max_attempts', type: 'integer', default: 5 })
+  maxAttempts!: number;
 }

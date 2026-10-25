@@ -1,9 +1,14 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EVENT_TYPES, VERIFICATION_CODE_ISSUED_VERSION } from '@app/contracts';
+import {
+  ACCOUNT_REGISTERED_VERSION,
+  EVENT_TYPES,
+  VERIFICATION_CODE_ISSUED_VERSION,
+} from '@app/contracts';
 import { producerTopology, type EventHandlerPort } from '@app/messaging';
 import {
+  ACCOUNT_REGISTERED_QUEUE,
   createVerificationEmailSubscriptions,
   VERIFICATION_EMAIL_QUEUE,
 } from './verification-emails.module.js';
@@ -57,21 +62,47 @@ describe('Producers do not know their consumers', () => {
   it('declares the consumer queue only on the consumer side', () => {
     expect(producerTopology().queues).toEqual([]);
 
-    const subscriptions = createVerificationEmailSubscriptions(handler());
-    expect(subscriptions).toHaveLength(1);
-    expect(subscriptions[0]).toMatchObject({
-      eventType: EVENT_TYPES.verificationCodeIssued,
-      version: VERIFICATION_CODE_ISSUED_VERSION,
-      queueName: VERIFICATION_EMAIL_QUEUE,
-    });
+    const handlerPort = handler();
+    const subscriptions = createVerificationEmailSubscriptions(
+      handlerPort,
+      handlerPort,
+    );
+    expect(subscriptions).toEqual([
+      expect.objectContaining({
+        eventType: EVENT_TYPES.verificationCodeIssued,
+        version: VERIFICATION_CODE_ISSUED_VERSION,
+        queueName: VERIFICATION_EMAIL_QUEUE,
+      }),
+      expect.objectContaining({
+        eventType: EVENT_TYPES.accountRegistered,
+        version: ACCOUNT_REGISTERED_VERSION,
+        queueName: ACCOUNT_REGISTERED_QUEUE,
+      }),
+    ]);
+  });
+
+  it('gives each event its own queue so one backlog cannot starve the other', () => {
+    const handlerPort = handler();
+    const subscriptions = createVerificationEmailSubscriptions(
+      handlerPort,
+      handlerPort,
+    );
+
+    expect(subscriptions[0].queueName).not.toBe(subscriptions[1].queueName);
+    expect(subscriptions[0].handler).toBe(subscriptions[1].handler);
   });
 
   it('builds an independent subscription list per call', () => {
-    const first = createVerificationEmailSubscriptions(handler());
-    const second = createVerificationEmailSubscriptions(handler());
+    const handlerPort = handler();
+    const first = createVerificationEmailSubscriptions(handlerPort, handlerPort);
+    const second = createVerificationEmailSubscriptions(
+      handlerPort,
+      handlerPort,
+    );
 
     expect(first).not.toBe(second);
     expect(first[0]).not.toBe(second[0]);
+    expect(first[1]).not.toBe(second[1]);
   });
 });
 
