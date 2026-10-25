@@ -4,7 +4,7 @@ import { NOTIFICATION_DEFAULTS } from '@app/common/config/env.defaults.js';
 import {
   assertDeliveryBudget,
   EVENT_HANDLER_TIMEOUT_MS as DEFAULT_HANDLER_TIMEOUT_MS,
-  OUTBOX_POLL_INTERVAL_MS as DEFAULT_POLL_INTERVAL_MS,
+  OUTBOX_POLL_INTERVAL_MS as RELAY_POLL_INTERVAL_MS,
 } from '@app/messaging/retry-budget.js';
 
 function parseDelays(value: string): number[] {
@@ -15,9 +15,14 @@ function parseDelays(value: string): number[] {
 }
 
 /**
- * The budget check runs on the *configured* handler timeout and poll interval,
- * not on the defaults, so a longer timeout cannot quietly push the worst case
- * past the 30s target while the delays stay unchanged.
+ * Notification owns 25 000 of the budget's 25 500ms — the attempts and the
+ * delays — and they interact, so this is a computation rather than a bound.
+ * It runs on the *configured* handler timeout, so a longer timeout cannot
+ * quietly push the worst case past the target while the delays stay unchanged.
+ *
+ * The relay's interval is identity's variable and is never present here;
+ * reading it off this environment only ever found `undefined`. Identity bounds
+ * its own share with `MAX_RELAY_POLL_INTERVAL_MS`.
  */
 const retryDelays = Joi.string()
   .pattern(/^\d+(,\d+)*$/)
@@ -27,12 +32,9 @@ const retryDelays = Joi.string()
     const handlerTimeoutMs = Number(
       root.EVENT_HANDLER_TIMEOUT_MS ?? DEFAULT_HANDLER_TIMEOUT_MS,
     );
-    const pollIntervalMs = Number(
-      root.OUTBOX_POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS,
-    );
     try {
       assertDeliveryBudget({
-        pollIntervalMs,
+        pollIntervalMs: RELAY_POLL_INTERVAL_MS,
         handlerTimeoutMs,
         retryDelaysMs: parseDelays(value),
       });
