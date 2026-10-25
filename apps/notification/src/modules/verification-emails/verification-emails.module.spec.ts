@@ -14,7 +14,14 @@ function tsFilesIn(dir: string): string[] {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       files.push(...tsFilesIn(full));
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
+    } else if (
+      entry.endsWith('.ts') &&
+      !entry.endsWith('.d.ts') &&
+      // Identity's own specs assert that SMTP keys are absent from its schema,
+      // so they name them. Scanning a test for a string it exists to forbid
+      // reports the proof as the violation.
+      !entry.endsWith('.spec.ts')
+    ) {
       files.push(full);
     }
   }
@@ -23,7 +30,7 @@ function tsFilesIn(dir: string): string[] {
 
 const identityFiles = tsFilesIn(join(process.cwd(), 'apps', 'identity', 'src'));
 
-describe('Producers do not know their consumers (ADR-0001, ADR-0007)', () => {
+describe('Producers do not know their consumers', () => {
   it('keeps every email, SMTP and consumer concern out of identity', () => {
     const violations: string[] = [];
     const consumerOnly = [

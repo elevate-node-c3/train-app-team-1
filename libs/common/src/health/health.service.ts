@@ -5,7 +5,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { AmqpClientService } from '@app/messaging';
 import {
   HealthState,
   ServiceDependencyHealth,
@@ -13,6 +12,7 @@ import {
 } from '@app/contracts';
 import { GracefulShutdownService } from '../shutdown/graceful-shutdown.service.js';
 import { DataSourceInitializer } from '../persistence/data-source-initializer.js';
+import { DependencyHealthRegistry } from './dependency-health.js';
 import { RedisHealthService } from './redis-health.service.js';
 
 @Injectable()
@@ -23,8 +23,8 @@ export class HealthService {
     private readonly shutdownService: GracefulShutdownService,
     private readonly redisHealth: RedisHealthService,
     @Optional() private readonly dataSource?: DataSource,
-    @Optional() private readonly amqpClient?: AmqpClientService,
     @Optional() private readonly initializer?: DataSourceInitializer,
+    @Optional() private readonly dependencies?: DependencyHealthRegistry,
   ) {}
 
   checkLiveness(): { status: 'live'; timestamp: string } {
@@ -70,21 +70,21 @@ export class HealthService {
       }
     }
 
-    // 2. Check RabbitMQ Broker
-    if (this.amqpClient) {
-      const amqpHealth = await this.amqpClient.checkHealth();
-      if (amqpHealth.status === 'ready') {
-        dependencies.broker = { status: 'ready' };
-      } else {
-        isFullyReady = false;
-        dependencies.broker = {
-          status: 'not_ready',
-          message: amqpHealth.message,
-        };
-        this.logger.warn(
-          `RabbitMQ check failed for ${currentService}: ${amqpHealth.message}`,
-        );
+    // 2. Whatever registered itself — the broker, today.
+    for (const contributor of this.dependencies?.all() ?? []) {
+      const result = await contributor.check();
+      if (result.ready) {
+        dependencies[contributor.name] = { status: 'ready' };
+        continue;
       }
+      isFullyReady = false;
+      dependencies[contributor.name] = {
+        status: 'not_ready',
+        message: result.message,
+      };
+      this.logger.warn(
+        `${contributor.name} check failed for ${currentService}: ${result.message}`,
+      );
     }
 
     // 3. Check Redis Cache (Degraded, not dead per §2.3 rule 7)

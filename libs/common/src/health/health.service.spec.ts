@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ServiceUnavailableException } from '@nestjs/common';
-import { GracefulShutdownService, HealthService } from '@app/common';
+import {
+  DependencyHealthRegistry,
+  GracefulShutdownService,
+  HealthService,
+} from '@app/common';
 
 describe('Health, Readiness & Degraded Operation (§2.3 rule 7, AUTH-1)', () => {
   describe('GracefulShutdownService', () => {
@@ -77,6 +81,40 @@ describe('Health, Readiness & Degraded Operation (§2.3 rule 7, AUTH-1)', () => 
       expect(report.dependencies.database.status).toBe('ready');
       expect(report.dependencies.redis.status).toBe('degraded');
       expect(report.dependencies.redis.message).toBe('Connection refused');
+    });
+
+    it('includes a registered dependency and fails readiness when it is down', async () => {
+      const mockDataSource = {
+        isInitialized: true,
+        query: async () => [{ '?column?': 1 }],
+      } as any;
+      const mockRedisHealth = {
+        check: async () => ({ status: 'ready' as const }),
+      } as any;
+
+      // Silently losing this is the risk the registry introduces: a report that
+      // never checked the broker still answers `ready`.
+      const registry = new DependencyHealthRegistry();
+      registry.register({
+        name: 'broker',
+        check: async () => ({ ready: false, message: 'Channel not open' }),
+      });
+
+      const healthService = new HealthService(
+        new GracefulShutdownService(),
+        mockRedisHealth,
+        mockDataSource,
+        undefined,
+        registry,
+      );
+
+      await expect(
+        healthService.checkReadiness('notification'),
+      ).rejects.toThrowError(ServiceUnavailableException);
+
+      registry.register({ name: 'broker', check: async () => ({ ready: true }) });
+      const report = await healthService.checkReadiness('notification');
+      expect(report.dependencies.broker.status).toBe('ready');
     });
 
     it('throws ServiceUnavailableException (503) when Postgres database is down', async () => {
