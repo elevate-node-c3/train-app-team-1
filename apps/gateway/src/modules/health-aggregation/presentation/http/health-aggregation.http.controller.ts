@@ -1,18 +1,19 @@
 import { Controller, Get, Inject } from '@nestjs/common';
-import { AggregatedHealthReport } from '@app/contracts';
 import {
-  SERVICE_HEALTH,
-  type ServiceHealthPort,
-} from '../../application/ports/service-health.port.js';
+  AGGREGATE_READINESS,
+  type AggregateReadiness,
+} from '@app/common';
+import { AggregatedHealthReport } from '@app/contracts';
 
 /**
- * Injects the port, not a use-case: there is no aggregation rule here beyond
- * the fan-out itself, which the implementation owns.
+ * The explicit aggregate route. `/health` answers the same report through the
+ * library's controller; this one is the documented name for it.
  */
 @Controller('api')
 export class HealthAggregationHttpController {
   constructor(
-    @Inject(SERVICE_HEALTH) private readonly serviceHealth: ServiceHealthPort,
+    @Inject(AGGREGATE_READINESS)
+    private readonly serviceHealth: AggregateReadiness,
   ) {}
 
   @Get('ping-all')
