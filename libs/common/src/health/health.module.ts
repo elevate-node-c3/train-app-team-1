@@ -5,7 +5,6 @@ import { HealthService } from './health.service.js';
 import { HealthController } from './health.controller.js';
 import { HealthGrpcController } from './health.grpc.controller.js';
 import { HealthRegistryModule } from './health-registry.module.js';
-import { GatewayHealthService } from './gateway-health.service.js';
 
 @Module({
   imports: [HealthRegistryModule],
@@ -14,13 +13,11 @@ import { GatewayHealthService } from './gateway-health.service.js';
     GracefulShutdownService,
     RedisHealthService,
     HealthService,
-    GatewayHealthService,
   ],
   exports: [
     GracefulShutdownService,
     RedisHealthService,
     HealthService,
-    GatewayHealthService,
   ],
 })
 export class HealthModule {}

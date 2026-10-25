@@ -12,7 +12,7 @@ export * from './envelope/response.interceptor.js';
 export * from './envelope/http-exception.filter.js';
 export * from './health/health.service.js';
 export * from './health/redis-health.service.js';
-export * from './health/gateway-health.service.js';
+export * from './health/aggregate-readiness.js';
 export * from './health/health.controller.js';
 export * from './health/health.grpc.controller.js';
 export * from './health/dependency-health.js';

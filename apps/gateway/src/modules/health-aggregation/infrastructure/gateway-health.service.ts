@@ -14,8 +14,8 @@ import {
   HealthState,
   ServiceHealthReport,
 } from '@app/contracts';
-import { HealthService } from './health.service.js';
-import { createGrpcMetadataWithCorrelation } from '../correlation/grpc-correlation.interceptor.js';
+import { HealthService } from '@app/common';
+import { createGrpcMetadataWithCorrelation } from '@app/common';
 
 interface HealthGrpcClient {
   check(
