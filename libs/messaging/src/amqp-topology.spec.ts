@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BR03_BUDGET_MS,
+  BUDGET_MS,
   DEAD_LETTER_EXCHANGE,
   EVENTS_EXCHANGE,
   EVENT_HANDLER_TIMEOUT_MS,
@@ -214,7 +214,7 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
         handlerTimeoutMs: 3000,
         retryDelaysMs: [10_000, 10_000, 10_000],
       }),
-    ).toThrowError(/BR-03/);
+    ).toThrowError(/budget exceeded/);
   });
 
   it('accepts the reviewed configuration', () => {
@@ -225,6 +225,6 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
         retryDelaysMs: EVENT_RETRY_DELAYS_MS,
       }),
     ).not.toThrow();
-    expect(BR03_BUDGET_MS).toBe(30_000);
+    expect(BUDGET_MS).toBe(30_000);
   });
 });

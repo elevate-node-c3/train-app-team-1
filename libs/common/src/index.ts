@@ -15,6 +15,8 @@ export * from './health/redis-health.service.js';
 export * from './health/gateway-health.service.js';
 export * from './health/health.controller.js';
 export * from './health/health.grpc.controller.js';
+export * from './health/dependency-health.js';
+export * from './health/health-registry.module.js';
 export * from './health/health.module.js';
 export * from './shutdown/graceful-shutdown.service.js';
 export * from './persistence/typeorm.config.js';

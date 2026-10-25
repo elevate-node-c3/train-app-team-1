@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
-import { gatewayEnvSchema, setupApp, validateEnv } from '@app/common';
+import { setupApp, validateEnv } from '@app/common';
+import { gatewayEnvSchema } from './config/env.schema.js';
 import { GatewayModule } from './gateway.module.js';
 
 // 1. Fail-fast environment configuration validation at boot (§2.1)

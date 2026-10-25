@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { identityEnvSchema, setupApp, validateEnv } from '@app/common';
+import { setupApp, validateEnv } from '@app/common';
+import { identityEnvSchema } from './config/env.schema.js';
 import {
   ACCOUNTS_PACKAGE_NAME,
   HEALTH_PACKAGE_NAME,
