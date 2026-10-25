@@ -66,6 +66,16 @@ function layerOf(file: string): Layer | null {
   return null;
 }
 
+/**
+ * Block comments and whole-line `//` comments removed. Anchored deliberately:
+ * stripping every `//` would also eat the one inside a `postgres://` literal.
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+}
+
 /** Every `from '...'` specifier in a file, import or re-export. */
 function importsOf(content: string): string[] {
   const specifiers: string[] = [];
@@ -173,6 +183,39 @@ describe('Clean architecture layer boundaries (§2.5)', () => {
         }
       }
     }
+
+    expect(violations).toEqual([]);
+  });
+
+  // Environment access belongs to the composition root. An application service
+  // that reads it re-parses configuration on every call and makes a unit test
+  // depend on the developer's shell.
+  //
+  // Matched against code only. A file that documents this rule names
+  // `process.env` in its own doc comment, and reporting that as the violation
+  // is how a scanner ends up flagging its own proof.
+  it('keeps process.env out of the application and domain layers', () => {
+    const violations: string[] = [];
+
+    for (const file of files) {
+      const layer = layerOf(file);
+      if (layer !== 'application' && layer !== 'domain') continue;
+      if (/\bprocess\.env\b/.test(withoutComments(readFileSync(file, 'utf8')))) {
+        violations.push(`${file} reads process.env; inject a settings object`);
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  // A handler is application policy wherever it lives. `.infrastructure` is a
+  // legal layer for consumers, so the layer scanner cannot catch a use-case
+  // placed there by name alone.
+  it('keeps *.use-case.ts files out of infrastructure', () => {
+    const violations = files.filter(
+      (file) =>
+        file.endsWith('.use-case.ts') && layerOf(file) === 'infrastructure',
+    );
 
     expect(violations).toEqual([]);
   });

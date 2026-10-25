@@ -264,13 +264,20 @@ describe('Migration infrastructure (§2.1)', () => {
       // source path, because each service owns its own migrations and there is
       // no single repo-wide data source to default to.
       //   npm run migration:show -- apps/identity/src/database/data-source.ts
+      expect(pkg.devDependencies.tsx).toBeDefined();
       for (const command of [
         'migration:run',
         'migration:show',
         'migration:revert',
       ]) {
-        expect(pkg.scripts[command]).toBe(`typeorm-ts-node-esm ${command} -d`);
+        expect(pkg.scripts[command]).toBe(
+          `tsx node_modules/typeorm/cli.js ${command} -d`,
+        );
       }
+
+      expect(pkg.scripts['seed:staff']).toBe(
+        'tsx apps/identity/src/database/seeds/staff-accounts.seed.ts',
+      );
 
       // migration:generate is deliberately absent — migrations here are
       // hand-written, and a generated one would not match the reviewed DDL.

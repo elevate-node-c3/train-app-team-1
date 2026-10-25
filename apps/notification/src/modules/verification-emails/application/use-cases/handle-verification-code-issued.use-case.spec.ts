@@ -187,6 +187,20 @@ describe('Verification email template (BR-56)', () => {
       renderVerificationEmail({ code: CODE, language: 'ar' }),
     );
   });
+
+  it('uses reset-specific copy so a sign-up code is not presented as a reset', () => {
+    const reset = renderVerificationEmail({
+      code: CODE,
+      language: 'en',
+      purpose: 'password_reset',
+    });
+    const signUp = renderVerificationEmail({ code: CODE, language: 'en' });
+
+    expect(reset.subject).toBe('Reset your Train password');
+    expect(reset.subject).not.toBe(signUp.subject);
+    expect(reset.text).toContain('password reset code');
+    expect(reset.subject).not.toContain(CODE);
+  });
 });
 
 describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () => {

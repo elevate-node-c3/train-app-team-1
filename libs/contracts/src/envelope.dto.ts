@@ -11,6 +11,8 @@ export interface ApiErrorDetail {
   code: ErrorCode | string;
   message: string;
   details?: ValidationErrorDetail[];
+  /** Present on rate limits and retryable dependency failures. */
+  retryAfterSeconds?: number;
 }
 
 export interface ApiResponse<T = unknown> {

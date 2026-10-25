@@ -9,6 +9,10 @@
  */
 export const EVENT_TYPES = {
   verificationCodeIssued: 'identity.verification-code.issued',
+  accountRegistered: 'identity.account.registered',
+  emailVerified: 'identity.email.verified',
+  sessionRevoked: 'identity.session.revoked',
+  passwordReset: 'identity.password.reset',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

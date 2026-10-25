@@ -3,9 +3,11 @@ import { DataSource } from 'typeorm';
 import { migrations } from './migrations/index.js';
 
 /**
- * Used by the TypeORM CLI only:
+ * The identity database connection shared by the TypeORM CLI and the staff
+ * seed:
  *
  *   npm run migration:run -- apps/identity/src/database/data-source.ts
+ *   npm run seed:staff
  *
  * The running service uses `createTypeOrmAsyncOptions(undefined, { migrations })`
  * and the shared `MigrationRunnerService` instead, because one DataSource must

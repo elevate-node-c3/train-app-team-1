@@ -1,4 +1,4 @@
-import type { VerificationCode } from '../../domain/verification-code.js';
+import { VerificationCode } from '../../domain/verification-code.js';
 import type { VerificationCodeOrmEntity } from './verification-code.orm-entity.js';
 
 /**
@@ -17,5 +17,24 @@ export function toVerificationCodeRow(
     issuedAt: code.issuedAt,
     expiresAt: code.expiresAt,
     consumedAt: code.consumedAt,
+    attempts: code.attempts,
+    maxAttempts: code.maxAttempts,
   };
+}
+
+export function toVerificationCodeDomain(
+  row: VerificationCodeOrmEntity,
+): VerificationCode {
+  return VerificationCode.restore({
+    id: row.id,
+    accountId: row.accountId,
+    purpose: row.purpose,
+    codeHash: row.codeHash,
+    codeSalt: row.codeSalt,
+    issuedAt: row.issuedAt,
+    expiresAt: row.expiresAt,
+    consumedAt: row.consumedAt,
+    attempts: row.attempts,
+    maxAttempts: row.maxAttempts,
+  });
 }

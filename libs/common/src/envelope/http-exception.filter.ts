@@ -46,14 +46,34 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code: string = ErrorCode.INTERNAL_SERVER_ERROR;
     let details: ValidationErrorDetail[] | undefined;
+    let retryAfterSeconds: number | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const response = exception.getResponse();
 
+      // An adapter that knows *why* it failed can send a stable code. It is
+      // only trusted when it names a code in the enum, so a gRPC detail string
+      // can never become a client-visible code.
+      if (response && typeof response === 'object') {
+        const explicit = (response as Record<string, unknown>).code;
+        if (
+          typeof explicit === 'string' &&
+          Object.values(ErrorCode).includes(explicit as ErrorCode)
+        ) {
+          code = explicit;
+        }
+        const retry = (response as Record<string, unknown>).retryAfterSeconds;
+        if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) {
+          retryAfterSeconds = Math.ceil(retry);
+        }
+      }
+
       switch (status) {
         case HttpStatus.BAD_REQUEST:
-          code = ErrorCode.BAD_REQUEST;
+          if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+            code = ErrorCode.BAD_REQUEST;
+          }
           // Extract class-validator errors
           details = this.extractValidationDetails(response, lang);
           if (details && details.length > 0) {
@@ -61,21 +81,31 @@ export class HttpExceptionFilter implements ExceptionFilter {
           }
           break;
         case HttpStatus.NOT_FOUND:
-          code = ErrorCode.ROUTE_NOT_FOUND;
+          if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+            code = ErrorCode.ROUTE_NOT_FOUND;
+          }
           break;
         case HttpStatus.UNAUTHORIZED:
-          code = ErrorCode.UNAUTHORIZED;
+          if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+            code = ErrorCode.UNAUTHORIZED;
+          }
           break;
         case HttpStatus.FORBIDDEN:
-          code = ErrorCode.FORBIDDEN;
+          if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+            code = ErrorCode.FORBIDDEN;
+          }
           break;
         case HttpStatus.SERVICE_UNAVAILABLE:
-          code = ErrorCode.SERVICE_UNAVAILABLE;
+          if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+            code = ErrorCode.SERVICE_UNAVAILABLE;
+          }
           break;
         default:
           if (status >= 500) {
-            code = ErrorCode.INTERNAL_SERVER_ERROR;
-          } else {
+            if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
+              code = ErrorCode.INTERNAL_SERVER_ERROR;
+            }
+          } else if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
             code = ErrorCode.BAD_REQUEST;
           }
           break;
@@ -101,6 +131,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         code,
         message: localizedMessage,
         ...(details && details.length > 0 ? { details } : {}),
+        ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
       },
       correlationId,
       timestamp: new Date().toISOString(),
@@ -162,10 +193,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
                   ? itemObj.message
                   : 'Validation failed';
           const action =
-            typeof itemObj.action === 'string' ? itemObj.action : defaultAction;
+            typeof itemObj.action === 'string' && itemObj.action.length > 0
+              ? itemObj.action
+              : defaultAction;
           return {
             field,
-            rejectedValue: itemObj.value,
+            rejectedValue:
+              'rejectedValue' in itemObj
+                ? itemObj.rejectedValue
+                : itemObj.value,
             issue,
             action,
           };

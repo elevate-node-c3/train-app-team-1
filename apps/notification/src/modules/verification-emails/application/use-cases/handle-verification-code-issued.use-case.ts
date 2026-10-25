@@ -65,6 +65,7 @@ export class HandleVerificationCodeIssuedUseCase implements EventHandlerPort {
     const content = renderVerificationEmail({
       code: payload.code,
       language: payload.language,
+      purpose: payload.purpose,
     });
 
     try {

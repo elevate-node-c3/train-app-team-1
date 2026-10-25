@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RedisModule } from '../cache/redis.module.js';
 import { GracefulShutdownService } from '../shutdown/graceful-shutdown.service.js';
 import { RedisHealthService } from './redis-health.service.js';
 import { HealthService } from './health.service.js';
@@ -7,7 +8,7 @@ import { HealthGrpcController } from './health.grpc.controller.js';
 import { HealthRegistryModule } from './health-registry.module.js';
 
 @Module({
-  imports: [HealthRegistryModule],
+  imports: [HealthRegistryModule, RedisModule],
   controllers: [HealthController, HealthGrpcController],
   providers: [
     GracefulShutdownService,

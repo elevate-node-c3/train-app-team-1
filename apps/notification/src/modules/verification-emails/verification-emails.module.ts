@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import {
+  ACCOUNT_REGISTERED_EVENT_TYPE,
+  ACCOUNT_REGISTERED_VERSION,
   VERIFICATION_CODE_ISSUED_EVENT_TYPE,
   VERIFICATION_CODE_ISSUED_VERSION,
 } from '@app/contracts';
@@ -17,11 +19,13 @@ import type { EventHandlerPort } from '@app/messaging/consumer/event-handler.por
 import { EMAIL_DELIVERY_REPOSITORY } from './application/ports/email-delivery.repository.port.js';
 import { EMAIL_SENDER } from './application/ports/email-sender.port.js';
 import { HandleVerificationCodeIssuedUseCase } from './application/use-cases/handle-verification-code-issued.use-case.js';
+import { HandleAccountRegisteredUseCase } from './application/use-cases/handle-account-registered.use-case.js';
 import { NodemailerEmailSender } from './infrastructure/email/nodemailer-email-sender.js';
 import { TypeOrmEmailDeliveryRepository } from './infrastructure/persistence/typeorm-email-delivery.repository.js';
 
 /** The consumer's own queue. A second consumer gets a different one. */
 export const VERIFICATION_EMAIL_QUEUE = 'notification.verification-code-issued';
+export const ACCOUNT_REGISTERED_QUEUE = 'notification.account-registered';
 
 /**
  * Pure on purpose: the module's DI factory receives the handler and returns
@@ -31,6 +35,7 @@ export const VERIFICATION_EMAIL_QUEUE = 'notification.verification-code-issued';
  */
 export function createVerificationEmailSubscriptions(
   handler: EventHandlerPort,
+  accountRegistered: EventHandlerPort,
 ): EventSubscription[] {
   return [
     {
@@ -38,6 +43,12 @@ export function createVerificationEmailSubscriptions(
       version: VERIFICATION_CODE_ISSUED_VERSION,
       queueName: VERIFICATION_EMAIL_QUEUE,
       handler,
+    },
+    {
+      eventType: ACCOUNT_REGISTERED_EVENT_TYPE,
+      version: ACCOUNT_REGISTERED_VERSION,
+      queueName: ACCOUNT_REGISTERED_QUEUE,
+      handler: accountRegistered,
     },
   ];
 }
@@ -51,6 +62,7 @@ export function createVerificationEmailSubscriptions(
   imports: [MessagingModule],
   providers: [
     HandleVerificationCodeIssuedUseCase,
+    HandleAccountRegisteredUseCase,
     NodemailerEmailSender,
     TypeOrmEmailDeliveryRepository,
     TypeOrmProcessedEventStore,
@@ -66,7 +78,10 @@ export function createVerificationEmailSubscriptions(
     {
       provide: EVENT_SUBSCRIPTIONS,
       useFactory: createVerificationEmailSubscriptions,
-      inject: [HandleVerificationCodeIssuedUseCase],
+      inject: [
+        HandleVerificationCodeIssuedUseCase,
+        HandleAccountRegisteredUseCase,
+      ],
     },
     MessageRepublisher,
     EventFailureRouter,

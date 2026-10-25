@@ -8,7 +8,7 @@ validateEnv(gatewayEnvSchema, process.env, 'gateway');
 
 async function bootstrap() {
   const app = await NestFactory.create(GatewayModule, { bufferLogs: true });
-  setupApp(app);
+  setupApp(app, { apiPrefix: 'api/v1' });
   await app.listen(process.env.PORT ?? 3000);
 }
 
