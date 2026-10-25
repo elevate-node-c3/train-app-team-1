@@ -3,19 +3,45 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
 import { ContractsModule } from '@app/contracts';
 import { MessagingModule } from '@app/messaging';
-import { GatewayController } from './transport/gateway.controller.js';
-import { GatewayService } from './domain/gateway.service.js';
-import { GatewayRepository } from './persistence/gateway.repository.js';
-
+import { GatewayController } from './gateway.controller.js';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { GatewayService } from './gateway.service.js';
+import { IdentityModule } from './module/identity/identity.module.js';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import path from 'node:path';
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
     CommonModule,
     ContractsModule,
     MessagingModule,
+    ConfigModule.forRoot({
+      envFilePath: ['.env.example'],
+    }),
+    ClientsModule.register([
+      {
+        name: 'IDENTITY_PACKAGE',
+        transport: Transport.GRPC,
+        options: {
+          package: 'Identity',
+          protoPath: path.join(__dirname, '../proto/identity.proto'),
+          url: 'localhost:50051',
+        },
+      },
+    ]),
+    // global endpoints ratelimiting
+    // ThrottlerModule.forRoot({
+    //   throttlers: [
+    //     {
+    //       ttl: 60000,
+    //       limit: 10,
+    //     },
+    //   ],
+    // }),
+    IdentityModule,
   ],
   controllers: [GatewayController],
-  providers: [GatewayService, GatewayRepository],
-  exports: [GatewayService],
+  providers: [GatewayService],
 })
 export class GatewayModule {}

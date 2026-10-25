@@ -1,0 +1,70 @@
+
+syntax = "proto3";
+
+package Identity;
+
+import "google/protobuf/empty.proto";
+
+message Test {
+  string test1 = 1;
+}
+
+message SignUpRequest {
+  string name = 1;
+  string email = 2;
+  string password = 3;
+}
+
+message SignInRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  string accessToken = 1;
+  string refreshToken = 2;
+  string message = 3;
+}
+
+message ConfirmEmailRequest {
+  string email = 1;
+  string otp = 2;
+}
+
+message ResendOTPRequest {
+  string email = 1;
+}
+
+message RefreshRequest {
+  string refreshToken = 1;
+}
+
+message ForgetPasswordRequest {
+  string email = 1;
+}
+
+message ResetPasswordRequest {
+  string email = 1;
+  string otp = 2;
+  string newPassword = 3;
+}
+
+message LogoutRequest {
+  string refreshToken = 1;
+}
+
+message IdentityResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+service IdentityService {
+  rpc SignUp(SignUpRequest) returns (AuthResponse);
+  rpc SignIn(SignInRequest) returns (AuthResponse);
+  rpc ConfirmEmail(ConfirmEmailRequest) returns (IdentityResponse);
+  rpc ResendOTP(ResendOTPRequest) returns (IdentityResponse);
+  rpc Refresh(RefreshRequest) returns (AuthResponse);
+  rpc ForgetPassword(ForgetPasswordRequest) returns (IdentityResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (IdentityResponse);
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty);
+}

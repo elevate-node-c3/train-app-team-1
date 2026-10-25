@@ -10,11 +10,12 @@ export function createTypeOrmAsyncOptions(
       type: 'postgres',
       url: process.env.DATABASE_URL || 'postgres://localhost:5432/postgres',
       autoLoadEntities: true,
-      synchronize: false,
+      synchronize: true,
       manualInitialization: true,
       extra: {
         connectionTimeoutMillis: 5000,
       },
+      entities: [__dirname + '../../../../apps/gateway/src/database/*'],
     }),
   };
 }
