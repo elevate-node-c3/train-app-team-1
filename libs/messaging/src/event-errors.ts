@@ -5,12 +5,9 @@
  * Both subclasses are permanent — retrying either is forever wrong — but they
  * stay separate because `x-death-reason` drives replay: `invalid-payload` is a
  * producer bug and unreplayable, while `unsupported-version` becomes replayable
- * once the consumer that understands the version is deployed. Sprint 5's replay
- * tool branches on exactly this.
+ * once the consumer that understands the version is deployed.
  */
-export type PermanentEventReason =
-  | 'invalid-payload'
-  | 'unsupported-version';
+export type PermanentEventReason = 'invalid-payload' | 'unsupported-version';
 
 export class PermanentEventError extends Error {
   constructor(

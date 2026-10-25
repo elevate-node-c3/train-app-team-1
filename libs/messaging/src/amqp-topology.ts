@@ -50,7 +50,10 @@ export interface TopologyDeclaration {
   queues: QueueDeclaration[];
 }
 
-const DURABLE_EXCHANGE = (name: string, type: ExchangeType): ExchangeDeclaration => ({
+const DURABLE_EXCHANGE = (
+  name: string,
+  type: ExchangeType,
+): ExchangeDeclaration => ({
   name,
   type,
   durable: true,
@@ -98,7 +101,7 @@ export function consumerTopology(
   config: ConsumerTopologyConfig,
 ): TopologyDeclaration {
   const main = config.queue;
-  const dlq = `${main}.dlq`;
+  const dlq = deadLetterQueueName(main);
 
   const retryQueues = config.retryDelaysMs.map((delay) => {
     const name = retryQueueName(main, delay);
@@ -167,11 +170,7 @@ export async function declareTopology(
       ...(queue.arguments ? { arguments: queue.arguments } : {}),
     });
     for (const binding of queue.bindings) {
-      await channel.bindQueue(
-        queue.name,
-        binding.exchange,
-        binding.routingKey,
-      );
+      await channel.bindQueue(queue.name, binding.exchange, binding.routingKey);
     }
   }
 }
