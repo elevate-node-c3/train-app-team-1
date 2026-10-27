@@ -10,7 +10,7 @@ import { migrations } from './database/migrations/index.js';
 import { SecurityModule } from './common/security/security.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
-import { HealthModule } from './health/health.module.js';
+import { HealthModule } from './modules/health/health.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 

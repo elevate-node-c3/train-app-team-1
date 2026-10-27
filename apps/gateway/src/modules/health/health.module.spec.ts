@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { HealthController as SharedHealthController } from '@app/common';
-import { GatewayModule } from '../gateway.module.js';
+import { GatewayModule } from '../../gateway.module.js';
 import { HealthService } from './health.service.js';
 
 describe('Gateway health aggregation wiring', () => {
