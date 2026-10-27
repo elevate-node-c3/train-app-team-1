@@ -1,18 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { maskEmail } from '@app/common/logging/pii-redactor.js';
 import type { EventEnvelope } from '@app/contracts';
 import type {
   EventHandlerPort,
   EventHandlingResult,
 } from '@app/messaging/consumer/event-handler.port.js';
-import {
-  EMAIL_DELIVERY_REPOSITORY,
-  type EmailDeliveryRepositoryPort,
-} from '../ports/email-delivery.repository.port.js';
-import {
-  EMAIL_SENDER,
-  type EmailSenderPort,
-} from '../ports/email-sender.port.js';
+import { EmailDeliveryRepository } from '../email-delivery.repository.js';
+import { NodemailerEmailSender } from '../email-sender.js';
 import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.parser.js';
 import { renderVerificationEmail } from '../verification-email.template.js';
 
@@ -25,15 +19,12 @@ import { renderVerificationEmail } from '../verification-email.template.js';
  * which is the deliberate trade in ADR-0003.
  */
 @Injectable()
-export class HandleVerificationCodeIssuedUseCase implements EventHandlerPort {
-  private readonly logger = new Logger(
-    HandleVerificationCodeIssuedUseCase.name,
-  );
+export class VerificationCodeIssuedConsumer implements EventHandlerPort {
+  private readonly logger = new Logger(VerificationCodeIssuedConsumer.name);
 
   constructor(
-    @Inject(EMAIL_SENDER) private readonly emails: EmailSenderPort,
-    @Inject(EMAIL_DELIVERY_REPOSITORY)
-    private readonly deliveries: EmailDeliveryRepositoryPort,
+    private readonly emails: NodemailerEmailSender,
+    private readonly deliveries: EmailDeliveryRepository,
   ) {}
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {

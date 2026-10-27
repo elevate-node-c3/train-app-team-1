@@ -14,8 +14,8 @@ import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
  * `identity.verification-code.issued`, which carries the code and its TTL.
  */
 @Injectable()
-export class HandleAccountRegisteredUseCase implements EventHandlerPort {
-  private readonly logger = new Logger(HandleAccountRegisteredUseCase.name);
+export class AccountRegisteredConsumer implements EventHandlerPort {
+  private readonly logger = new Logger(AccountRegisteredConsumer.name);
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {
     const payload = envelope.payload;

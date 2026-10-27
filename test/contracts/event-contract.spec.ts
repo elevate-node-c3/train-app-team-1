@@ -16,7 +16,7 @@ import {
 } from '@app/messaging/event-errors.js';
 import { parseEventEnvelope } from '@app/messaging/consumer/parse-envelope.js';
 import { buildVerificationCodeIssued } from '../../apps/identity/src/modules/auth/verification-code-issued.factory.js';
-import { parseVerificationCodeIssuedPayload } from '../../apps/notification/src/modules/verification-emails/application/verification-code-issued.parser.js';
+import { parseVerificationCodeIssuedPayload } from '../../apps/notification/src/modules/verification-emails/verification-code-issued.parser.js';
 
 /**
  * Consumer-driven contract test (ADR-0005).

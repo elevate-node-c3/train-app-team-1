@@ -9,18 +9,12 @@ import {
   VERIFICATION_CODE_ISSUED_VERSION,
 } from '@app/contracts';
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
-import {
-  type EmailDeliveryRecord,
-  type EmailDeliveryRepositoryPort,
-} from '../ports/email-delivery.repository.port.js';
-import {
-  type EmailSenderPort,
-  type OutboundEmail,
-} from '../ports/email-sender.port.js';
-import { HandleVerificationCodeIssuedUseCase } from './handle-verification-code-issued.use-case.js';
+import type { EmailDeliveryRepository } from '../email-delivery.repository.js';
+import type { EmailDeliveryRecord } from '../email-delivery.types.js';
+import { NodemailerEmailSender, type OutboundEmail } from '../email-sender.js';
 import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.parser.js';
 import { renderVerificationEmail } from '../verification-email.template.js';
-import { NodemailerEmailSender } from '../../infrastructure/email/nodemailer-email-sender.js';
+import { VerificationCodeIssuedConsumer } from './verification-code-issued.consumer.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 const EXPIRES_AT = new Date('2026-10-24T10:10:00.000Z');
@@ -57,7 +51,7 @@ function event(
 }
 
 interface Harness {
-  handler: HandleVerificationCodeIssuedUseCase;
+  handler: VerificationCodeIssuedConsumer;
   sent: OutboundEmail[];
   recorded: EmailDeliveryRecord[];
 }
@@ -66,20 +60,20 @@ function harness(options: { sendError?: Error } = {}): Harness {
   const sent: OutboundEmail[] = [];
   const recorded: EmailDeliveryRecord[] = [];
 
-  const emails: EmailSenderPort = {
-    send: async (email) => {
+  const emails = {
+    send: async (email: OutboundEmail) => {
       if (options.sendError) throw options.sendError;
       sent.push(email);
     },
-  };
-  const deliveries: EmailDeliveryRepositoryPort = {
-    record: async (delivery) => {
+  } as unknown as NodemailerEmailSender;
+  const deliveries = {
+    record: async (delivery: EmailDeliveryRecord) => {
       recorded.push(delivery);
     },
-  };
+  } as unknown as EmailDeliveryRepository;
 
   return {
-    handler: new HandleVerificationCodeIssuedUseCase(emails, deliveries),
+    handler: new VerificationCodeIssuedConsumer(emails, deliveries),
     sent,
     recorded,
   };
@@ -203,12 +197,12 @@ describe('Verification email template (BR-56)', () => {
   });
 });
 
-describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () => {
+describe('Verification-code issued consumer (BR-03, BR-54, BR-56, ADR-0003)', () => {
   it('sends the English email and records the accepted latency', async () => {
     const { handler, sent, recorded } = harness();
     vi.setSystemTime(NOW.getTime() + 2_000);
 
-    await expect(handler.handle(event(), 1)).resolves.toEqual({
+    await expect(handler.handle(event())).resolves.toEqual({
       status: 'handled',
     });
 
@@ -238,7 +232,7 @@ describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () 
   it('renders Arabic for an Arabic account', async () => {
     const { handler, sent } = harness();
 
-    await handler.handle(event({ language: 'ar' }), 1);
+    await handler.handle(event({ language: 'ar' }));
 
     expect(sent).toHaveLength(1);
     expect(sent[0].subject).toBe('رمز التحقق الخاص بك في Train');
@@ -249,7 +243,7 @@ describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () 
     const { handler, sent, recorded } = harness();
     vi.setSystemTime(EXPIRES_AT);
 
-    await expect(handler.handle(event(), 1)).resolves.toEqual({
+    await expect(handler.handle(event())).resolves.toEqual({
       status: 'skipped',
       skipReason: 'code_expired',
     });
@@ -266,7 +260,7 @@ describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () 
     const failure = new Error('smtp refused the message');
     const { handler, sent, recorded } = harness({ sendError: failure });
 
-    await expect(handler.handle(event(), 1)).rejects.toBe(failure);
+    await expect(handler.handle(event())).rejects.toBe(failure);
 
     expect(sent).toEqual([]);
     expect(recorded).toHaveLength(1);
@@ -281,7 +275,7 @@ describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () 
     delete (envelope.payload as Record<string, unknown>).code;
     const { handler, sent, recorded } = harness();
 
-    await expect(handler.handle(envelope, 1)).rejects.toBeInstanceOf(
+    await expect(handler.handle(envelope)).rejects.toBeInstanceOf(
       InvalidEventPayloadError,
     );
 
@@ -299,7 +293,7 @@ describe('Verification-code issued handler (BR-03, BR-54, BR-56, ADR-0003)', () 
     vi.spyOn(Logger.prototype, 'error').mockImplementation(capture);
 
     const { handler } = harness();
-    await handler.handle(event(), 1);
+    await handler.handle(event());
 
     const output = logged.join('\n');
     expect(output).toContain('u***@example.com');

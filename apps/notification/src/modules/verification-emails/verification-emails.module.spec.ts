@@ -41,8 +41,9 @@ describe('Producers do not know their consumers', () => {
     const consumerOnly = [
       /nodemailer/i,
       /\bEventConsumerService\b/,
-      /\bEMAIL_SENDER\b/,
-      /\bEMAIL_DELIVERY_REPOSITORY\b/,
+      /\bEmailDeliveryRepository\b/,
+      /\bNodemailerEmailSender\b/,
+      /\bVerificationCodeIssuedConsumer\b/,
       /\bSMTP_[A-Z_]+\b/,
       /verification-emails/,
     ];
@@ -94,7 +95,10 @@ describe('Producers do not know their consumers', () => {
 
   it('builds an independent subscription list per call', () => {
     const handlerPort = handler();
-    const first = createVerificationEmailSubscriptions(handlerPort, handlerPort);
+    const first = createVerificationEmailSubscriptions(
+      handlerPort,
+      handlerPort,
+    );
     const second = createVerificationEmailSubscriptions(
       handlerPort,
       handlerPort,

@@ -12,8 +12,7 @@ import {
   MARK_PROCESSED_EVENT_HANDLED_SQL,
   MARK_PROCESSED_EVENT_SKIPPED_SQL,
 } from '@app/messaging/consumer/processed-event.sql.js';
-import { EMAIL_DELIVERY_OUTCOMES } from '../../apps/notification/src/modules/verification-emails/application/ports/email-delivery.repository.port.js';
-import { INSERT_EMAIL_DELIVERY_SQL } from '../../apps/notification/src/modules/verification-emails/infrastructure/persistence/email-delivery.sql.js';
+import { EMAIL_DELIVERY_OUTCOMES } from '../../apps/notification/src/modules/verification-emails/email-delivery.types.js';
 
 const identityDdl = readFileSync(
   'apps/identity/src/database/migrations/1761314400000-create-accounts-verification-codes-outbox.ts',
@@ -21,6 +20,10 @@ const identityDdl = readFileSync(
 );
 const notificationDdl = readFileSync(
   'apps/notification/src/database/migrations/1761314500000-create-processed-event-email-delivery.ts',
+  'utf8',
+);
+const emailDeliveryEntitySource = readFileSync(
+  'apps/notification/src/modules/verification-emails/entities/email-delivery.entity.ts',
   'utf8',
 );
 
@@ -63,6 +66,25 @@ function columnsOf(ddl: string, table: string): string[] {
 }
 
 /**
+ * The entity source is the contract here, not TypeORM metadata: a decorator
+ * typo is exactly what this test must catch. Named columns use the explicit
+ * `name`; unnamed columns map to the property name. The non-greedy body match
+ * backtracks over `default: () => 'now()'` to reach the decorator's real `)`.
+ */
+function entityColumnsOf(source: string): string[] {
+  const columns: string[] = [];
+  for (const match of source.matchAll(
+    /@(?:PrimaryColumn|Column)\(([\s\S]*?)\)\s*([A-Za-z_$][\w$]*)\s*!/g,
+  )) {
+    const decoratedOptions = match[1];
+    const property = match[2];
+    const named = decoratedOptions.match(/\bname:\s*['"]([^'"]+)['"]/);
+    columns.push(named?.[1] ?? property);
+  }
+  return columns;
+}
+
+/**
  * The columns a statement mentions, not every identifier in it: SQL keywords,
  * `now()` and the status literals would otherwise drown the signal. This is
  * enough to catch the real failure — an adapter statement naming a column the
@@ -84,7 +106,9 @@ function referencedColumns(sql: string, table: string): Set<string> {
     for (const column of insert[1].split(',')) found.add(column.trim());
   }
 
-  const select = sql.match(new RegExp(`SELECT([\\s\\S]*?)FROM\\s+${table}`, 'i'));
+  const select = sql.match(
+    new RegExp(`SELECT([\\s\\S]*?)FROM\\s+${table}`, 'i'),
+  );
   if (select) {
     for (const expression of select[1].split(',')) {
       const column = expression.trim().match(/^([a-z_][a-z0-9_]*)$/);
@@ -165,17 +189,20 @@ describe('Schema agreement', () => {
     );
   });
 
-  it('gives the email_delivery insert a column the migration creates', () => {
-    const columns = new Set(columnsOf(notificationDdl, 'email_delivery'));
-    const referenced = referencedColumns(
-      INSERT_EMAIL_DELIVERY_SQL,
-      'email_delivery',
+  it('gives the email_delivery entity exactly the columns the migration creates', () => {
+    const migrationColumns = new Set(
+      columnsOf(notificationDdl, 'email_delivery'),
     );
+    const entityColumns = entityColumnsOf(emailDeliveryEntitySource);
 
-    expect(referenced.size).toBeGreaterThanOrEqual(10);
-    expect([...referenced].filter((column) => !columns.has(column))).toEqual(
-      [],
-    );
+    expect(emailDeliveryEntitySource).toMatch(/@Entity\('email_delivery'\)/);
+    expect(entityColumns).toHaveLength(12);
+    expect(
+      entityColumns.filter((column) => !migrationColumns.has(column)),
+    ).toEqual([]);
+    expect(
+      [...migrationColumns].filter((column) => !entityColumns.includes(column)),
+    ).toEqual([]);
   });
 
   it('keeps the delivery outcomes in sync with the migration CHECK', () => {
@@ -197,17 +224,15 @@ describe('Schema agreement', () => {
       ...columnsOf(notificationDdl, 'email_delivery'),
     ];
 
-    expect(columns.filter((column) => /code|secret|token/i.test(column))).toEqual(
-      [],
-    );
+    expect(
+      columns.filter((column) => /code|secret|token/i.test(column)),
+    ).toEqual([]);
   });
 
   it('keeps the plaintext out of identity: only hash and salt are columns', () => {
     const columns = columnsOf(identityDdl, 'verification_code');
 
-    expect(columns).toEqual(
-      expect.arrayContaining(['code_hash', 'code_salt']),
-    );
+    expect(columns).toEqual(expect.arrayContaining(['code_hash', 'code_salt']));
     expect(columns).not.toContain('code');
     expect(columnsOf(identityDdl, 'outbox_event')).not.toContain('code');
   });
