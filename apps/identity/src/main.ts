@@ -3,9 +3,9 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { setupApp, validateEnv } from '@app/common';
 import { identityEnvSchema } from './config/env.schema.js';
 import {
-  AUTH_PACKAGE_NAME,
+  IDENTITY_PACKAGE_NAME,
   HEALTH_PACKAGE_NAME,
-  getAuthProtoPath,
+  getIdentityProtoPath,
   getHealthProtoPath,
 } from '@app/contracts';
 import { IdentityModule } from './identity.module.js';
@@ -22,8 +22,8 @@ async function bootstrap() {
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {
-      package: [HEALTH_PACKAGE_NAME, AUTH_PACKAGE_NAME],
-      protoPath: [getHealthProtoPath(), getAuthProtoPath()],
+      package: [HEALTH_PACKAGE_NAME, IDENTITY_PACKAGE_NAME],
+      protoPath: [getHealthProtoPath(), getIdentityProtoPath()],
       url: `0.0.0.0:${grpcPort}`,
     },
   });

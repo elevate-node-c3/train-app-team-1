@@ -504,13 +504,13 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
 });
 
 describe('IdentityGrpcClient wire contract', () => {
-  it('loads AuthService from auth.proto under train.auth.v1', () => {
+  it('loads IdentityService from identity.proto under train.identity.v1', () => {
     const service = identityGrpcServiceConstructor() as unknown as {
       serviceName: string;
       service: Record<string, unknown>;
     };
 
-    expect(service.serviceName).toBe('AuthService');
+    expect(service.serviceName).toBe('IdentityService');
     expect(Object.keys(service.service)).toEqual(
       METHODS.map((method) => method.charAt(0).toUpperCase() + method.slice(1)),
     );
