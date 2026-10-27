@@ -21,7 +21,7 @@ import {
 import {
   DOWNSTREAM_SERVICES,
   downstreamGrpcUrlsFromEnv,
-} from '../config/grpc-settings.js';
+} from '../../config/grpc-settings.js';
 
 interface HealthGrpcClient {
   check(
