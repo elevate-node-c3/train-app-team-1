@@ -15,7 +15,7 @@ import {
   UnsupportedEventVersionError,
 } from '@app/messaging/event-errors.js';
 import { parseEventEnvelope } from '@app/messaging/consumer/parse-envelope.js';
-import { buildVerificationCodeIssued } from '../../apps/identity/src/modules/accounts/domain/events/verification-code-issued.factory.js';
+import { buildVerificationCodeIssued } from '../../apps/identity/src/modules/auth/verification-code-issued.factory.js';
 import { parseVerificationCodeIssuedPayload } from '../../apps/notification/src/modules/verification-emails/application/verification-code-issued.parser.js';
 
 /**
@@ -82,6 +82,12 @@ function mutableClone(): VerificationCodeIssuedEvent {
   return structuredClone(golden);
 }
 
+function mutablePayload(
+  event: VerificationCodeIssuedEvent,
+): Record<string, unknown> {
+  return event.payload as unknown as Record<string, unknown>;
+}
+
 describe('Producer/consumer event contract (ADR-0005)', () => {
   it('the committed golden sample is exactly what the producer builds', () => {
     // Any rename, removal or reordering of an emitted field turns this red,
@@ -106,7 +112,7 @@ describe('Producer/consumer event contract (ADR-0005)', () => {
   it.each([...ENVELOPE_REQUIRED_KEYS])(
     'the consumer rejects an event missing envelope field %s',
     (key) => {
-      const incomplete: Record<string, unknown> = mutableClone();
+      const incomplete = mutableClone() as unknown as Record<string, unknown>;
       delete incomplete[key];
 
       expect(() => parseAsConsumer(incomplete)).toThrow(
@@ -119,7 +125,7 @@ describe('Producer/consumer event contract (ADR-0005)', () => {
     'the consumer rejects an event missing payload field %s',
     (key) => {
       const incomplete = mutableClone();
-      delete (incomplete.payload as Record<string, unknown>)[key];
+      delete mutablePayload(incomplete)[key];
 
       expect(() => parseAsConsumer(incomplete)).toThrow(
         InvalidEventPayloadError,
@@ -131,14 +137,14 @@ describe('Producer/consumer event contract (ADR-0005)', () => {
     const event = mutableClone() as VerificationCodeIssuedEvent &
       Record<string, unknown>;
     event.futureEnvelopeField = 'ignored';
-    (event.payload as Record<string, unknown>).futurePayloadField = 'ignored';
+    mutablePayload(event).futurePayloadField = 'ignored';
 
     expect(parseAsConsumer(event).code).toBe(golden.payload.code);
   });
 
   it('coerces an unknown language to Arabic rather than dead-lettering', () => {
     const event = mutableClone();
-    (event.payload as Record<string, unknown>).language = 'fr';
+    mutablePayload(event).language = 'fr';
 
     expect(parseAsConsumer(event).language).toBe('ar');
   });

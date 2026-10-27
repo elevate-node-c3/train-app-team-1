@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
+import { databaseUrlFromEnv } from '../config/database-settings.js';
 import { migrations } from './migrations/index.js';
 
 /**
@@ -15,9 +16,7 @@ import { migrations } from './migrations/index.js';
  */
 export default new DataSource({
   type: 'postgres',
-  url:
-    process.env.DATABASE_URL ??
-    'postgres://identity:identity_dev@localhost:5432/identity',
+  url: databaseUrlFromEnv(),
   synchronize: false,
   migrations,
 });

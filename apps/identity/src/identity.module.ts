@@ -7,7 +7,7 @@ import {
 } from '@app/common';
 import { MessagingModule, OutboxModule } from '@app/messaging';
 import { migrations } from './database/migrations/index.js';
-import { AccountsModule } from './modules/accounts/accounts.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /**
@@ -27,7 +27,7 @@ import { ServiceInfoController } from './service-info.controller.js';
     MessagingModule,
     OutboxModule,
     MigrationModule,
-    AccountsModule,
+    AuthModule,
   ],
   controllers: [ServiceInfoController],
 })

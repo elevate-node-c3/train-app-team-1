@@ -1,6 +1,8 @@
 import { hash } from 'bcryptjs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { bcryptCostFromEnv } from '../../config/password-settings.js';
+import { seedEnvironment } from '../../config/seed-settings.js';
 import dataSource from '../data-source.js';
 import { STAFF_SEED_ACCOUNTS } from './staff-accounts.js';
 
@@ -15,7 +17,7 @@ const TABLE_POLL_INTERVAL_MS = 250;
  */
 export function seedPassword(
   account: SeedAccount,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = seedEnvironment(),
 ): string {
   const configured = env[account.passwordEnv];
   if (configured && configured.length > 0) return configured;
@@ -26,13 +28,6 @@ export function seedPassword(
     );
   }
   return account.developmentPassword;
-}
-
-function bcryptCost(env: NodeJS.ProcessEnv = process.env): number {
-  const configured = Number(env.BCRYPT_COST ?? 12);
-  return Number.isInteger(configured) && configured >= 4 && configured <= 15
-    ? configured
-    : 12;
 }
 
 /**
@@ -59,7 +54,7 @@ async function waitForAccountTable(): Promise<void> {
 }
 
 async function seed(): Promise<void> {
-  const cost = bcryptCost();
+  const cost = bcryptCostFromEnv();
   const accounts = await Promise.all(
     STAFF_SEED_ACCOUNTS.map(async (account) => ({
       ...account,
@@ -98,13 +93,7 @@ async function seed(): Promise<void> {
           )
           RETURNING id
         `,
-        [
-          account.id,
-          account.email,
-          now,
-          account.passwordHash,
-          account.role,
-        ],
+        [account.id, account.email, now, account.passwordHash, account.role],
       )) as Array<{ id: string }>;
 
       console.log(
