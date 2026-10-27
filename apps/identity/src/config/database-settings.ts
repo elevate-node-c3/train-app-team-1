@@ -1,0 +1,13 @@
+/**
+ * Composition-root parsing for the TypeORM CLI and the staff seed. The running
+ * service gets its options from `createTypeOrmAsyncOptions`; this keeps the
+ * `process.env` read in `config/` for the standalone tools too.
+ */
+export function databaseUrlFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return (
+    env.DATABASE_URL ??
+    'postgres://identity:identity_dev@localhost:5432/identity'
+  );
+}

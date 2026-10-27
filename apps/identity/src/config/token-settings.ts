@@ -1,6 +1,6 @@
 import { TOKEN_DEFAULTS } from '@app/contracts';
 import { VERIFICATION_CODE_DEFAULTS } from '@app/common/config/env.defaults.js';
-import type { TokenSettings } from '../modules/accounts/application/token-settings.js';
+import type { TokenSettings } from '../modules/auth/token-settings.js';
 
 /**
  * Composition-root parsing. The values have already passed the Joi schema in
@@ -27,6 +27,21 @@ export function tokenSettingsFromEnv(
       VERIFICATION_CODE_DEFAULTS.ttlSeconds,
     ),
   };
+}
+
+/**
+ * The key that seals the short-lived grace payload. `TOKEN_GRACE_SECRET` is the
+ * dedicated setting; the signing key and then a development-only fallback keep
+ * the existing single-key deployments booting.
+ */
+export function tokenGraceSecretFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return (
+    env.TOKEN_GRACE_SECRET ??
+    env.JWT_PRIVATE_KEY ??
+    'train-app-development-grace-secret'
+  );
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
