@@ -1,16 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import {
-  ClientGrpc,
-  ClientProxyFactory,
-  Transport,
-} from '@nestjs/microservices';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import { firstValueFrom, timeout } from 'rxjs';
 import {
   AggregatedHealthReport,
-  getHealthProtoPath,
-  HEALTH_PACKAGE_NAME,
-  HEALTH_SERVICE_NAME,
   HealthState,
   ServiceHealthReport,
 } from '@app/contracts';
@@ -18,59 +10,21 @@ import {
   HealthService as CommonHealthService,
   createGrpcMetadataWithCorrelation,
 } from '@app/common';
-import {
-  DOWNSTREAM_SERVICES,
-  downstreamGrpcUrlsFromEnv,
-} from '../../config/grpc-settings.js';
+import { DOWNSTREAM_SERVICES } from '../../config/grpc-settings.js';
+import { HEALTH_GRPC_CLIENTS, type HealthGrpcClient } from './health.types.js';
 
-interface HealthGrpcClient {
-  check(
-    data: { service: string },
-    metadata?: unknown,
-  ): import('rxjs').Observable<{
-    status: number;
-    service: string;
-    message: string;
-    details: Record<string, string>;
-  }>;
-}
+export const HEALTH_CALL_TIMEOUT_MS = 2500;
 
 @Injectable()
-export class HealthService implements OnModuleInit {
+export class HealthService {
   private readonly logger = new Logger(HealthService.name);
-  private grpcClients: Map<string, HealthGrpcClient> = new Map();
 
   constructor(
     private readonly localHealthService: CommonHealthService,
     private readonly cls: ClsService,
+    @Inject(HEALTH_GRPC_CLIENTS)
+    private readonly grpcClients: Map<string, HealthGrpcClient>,
   ) {}
-
-  onModuleInit(): void {
-    const protoPath = getHealthProtoPath();
-    const urls = downstreamGrpcUrlsFromEnv();
-
-    for (const service of DOWNSTREAM_SERVICES) {
-      const url = urls[service];
-
-      try {
-        const client: ClientGrpc = ClientProxyFactory.create({
-          transport: Transport.GRPC,
-          options: {
-            package: HEALTH_PACKAGE_NAME,
-            protoPath,
-            url,
-          },
-        });
-        const grpcService =
-          client.getService<HealthGrpcClient>(HEALTH_SERVICE_NAME);
-        this.grpcClients.set(service, grpcService);
-      } catch (err: unknown) {
-        this.logger.warn(
-          `Failed to initialize gRPC client for ${service}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }
 
   async aggregate(): Promise<AggregatedHealthReport> {
     const gatewayReport =
@@ -95,9 +49,10 @@ export class HealthService implements OnModuleInit {
       try {
         const metadata = createGrpcMetadataWithCorrelation(this.cls);
         this.logger.log(`Dispatching gRPC health check to ${service}`);
+        const deadline = Date.now() + HEALTH_CALL_TIMEOUT_MS;
         const response$ = client
-          .check({ service }, metadata)
-          .pipe(timeout(2500));
+          .check({ service }, metadata, { deadline })
+          .pipe(timeout(HEALTH_CALL_TIMEOUT_MS + 500));
         const res = await firstValueFrom(response$);
 
         let status: HealthState = 'ready';
