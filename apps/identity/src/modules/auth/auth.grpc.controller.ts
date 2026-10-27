@@ -4,7 +4,7 @@ import { ClsService } from 'nestjs-cls';
 import { randomUUID } from 'node:crypto';
 import * as grpc from '@grpc/grpc-js';
 import {
-  AUTH_SERVICE_NAME,
+  IDENTITY_SERVICE_NAME,
   ErrorCode,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
@@ -117,7 +117,7 @@ export class AuthGrpcController {
     private readonly cls: ClsService,
   ) {}
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'SignUp')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignUp')
   async signUp(request: SignUpRequestDto): Promise<SignUpResponseDto> {
     return this.run(() =>
       this.accounts.signUp({
@@ -129,7 +129,7 @@ export class AuthGrpcController {
     );
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'VerifyEmail')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'VerifyEmail')
   async verifyEmail(request: VerifyEmailRequestDto): Promise<{
     tokens: TokenPairWire;
     accountId: string;
@@ -150,7 +150,7 @@ export class AuthGrpcController {
     });
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'ResendVerification')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResendVerification')
   async resendVerification(
     request: ResendVerificationRequestDto,
   ): Promise<ResendVerificationResponseDto> {
@@ -162,7 +162,7 @@ export class AuthGrpcController {
     );
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'SignIn')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignIn')
   async signIn(request: SignInRequestDto): Promise<SignInResponseDto> {
     return this.run(async () => {
       const result = await this.sessions.signIn({
@@ -178,7 +178,7 @@ export class AuthGrpcController {
     });
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'RefreshToken')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'RefreshToken')
   async refreshToken(
     request: RefreshTokenRequestDto,
   ): Promise<{ tokens: TokenPairWire }> {
@@ -192,7 +192,7 @@ export class AuthGrpcController {
     }));
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'SignOut')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignOut')
   async signOut(request: SignOutRequestDto): Promise<SignOutResponseDto> {
     return this.run(() => {
       const accountId = this.cls.get<string>(CALLER_ACCOUNT_ID_KEY);
@@ -214,7 +214,7 @@ export class AuthGrpcController {
     });
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'ForgotPassword')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ForgotPassword')
   async forgotPassword(
     request: ForgotPasswordRequestDto,
   ): Promise<ForgotPasswordResponseDto> {
@@ -226,7 +226,7 @@ export class AuthGrpcController {
     );
   }
 
-  @GrpcMethod(AUTH_SERVICE_NAME, 'ResetPassword')
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResetPassword')
   async resetPassword(
     request: ResetPasswordRequestDto,
   ): Promise<ResetPasswordResponseDto> {

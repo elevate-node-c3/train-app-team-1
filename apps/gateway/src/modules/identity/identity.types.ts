@@ -1,9 +1,9 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import {
-  AUTH_PACKAGE_NAME,
-  AUTH_SERVICE_NAME,
-  getAuthProtoPath,
+  IDENTITY_PACKAGE_NAME,
+  IDENTITY_SERVICE_NAME,
+  getIdentityProtoPath,
   type ForgotPasswordResponseDto,
   type ResendVerificationResponseDto,
   type ResetPasswordResponseDto,
@@ -111,7 +111,7 @@ export interface IdentityGrpcServiceConstructor {
 }
 
 export function identityGrpcServiceConstructor(): IdentityGrpcServiceConstructor {
-  const definition = protoLoader.loadSync(getAuthProtoPath(), {
+  const definition = protoLoader.loadSync(getIdentityProtoPath(), {
     keepCase: false,
     longs: String,
     enums: String,
@@ -119,16 +119,16 @@ export function identityGrpcServiceConstructor(): IdentityGrpcServiceConstructor
     oneofs: true,
   });
   const loaded = grpc.loadPackageDefinition(definition);
-  // `loadPackageDefinition` nests by package segment (`train.auth.v1`), while
-  // the constant is the wire name. Walk the segments so a rename has one source
-  // of truth rather than a matching hardcoded tree here.
-  const namespace = AUTH_PACKAGE_NAME.split('.').reduce<
+  // `loadPackageDefinition` nests by package segment (`train.identity.v1`),
+  // while the constant is the wire name. Walk the segments so a rename has one
+  // source of truth rather than a matching hardcoded tree here.
+  const namespace = IDENTITY_PACKAGE_NAME.split('.').reduce<
     Record<string, unknown>
   >(
     (current, part) => current[part] as Record<string, unknown>,
     loaded as unknown as Record<string, unknown>,
   );
   return namespace[
-    AUTH_SERVICE_NAME
+    IDENTITY_SERVICE_NAME
   ] as unknown as IdentityGrpcServiceConstructor;
 }

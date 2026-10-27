@@ -9,19 +9,19 @@ This document records the verification evidence for the **Platform Skeleton** an
 1. **Monorepo & Multi-Service Topology**:
    - 7 NestJS microservices (`apps/`) using module-first feature slices: `src/modules/<feature>/` with a root `<feature>.module.ts`, concrete `controllers/`, `services/`, `repositories/`, `consumers/` and `entities/`, plus app-level `config/` and `database/`.
    - 3 shared libraries (`libs/`):
-     - `@app/contracts`: Unified response envelope DTO, health models, error codes enum, and gRPC proto contracts (`health.proto`, plus `auth.proto` under `train.auth.v1` with `AuthService`).
+     - `@app/contracts`: Unified response envelope DTO, health models, error codes enum, and gRPC proto contracts (`health.proto`, plus `identity.proto` under `train.identity.v1` with `IdentityService`).
      - `@app/messaging`: Direct AMQP client via `amqplib` with connection recovery, exclusive probe health checks, and cross-service correlation header propagation.
      - `@app/common`: Joi fail-fast environment validation with secret masking, Pino structured JSON logging with ISO timestamps and PII redaction, AsyncLocalStorage correlation tracking via `ClsService`, bilingual response envelope/error filter (Arabic default fallback `ar`, English via `Accept-Language: en`), gRPC health server/client with downstream aggregation, and graceful shutdown handling (`SIGTERM`/`SIGINT`).
    - Persistence is **TypeORM** in every service, including notification's entity-backed `email_delivery` log (`manualInitialization: true` for zero-host-dependency unit testing).
 
 2. **Automated Test Suite**:
-   - **47 test files passed** (469 passed, 1 skipped).
+   - **48 test files passed** (471 passed, 1 skipped).
    - Covers compose structure, library exports, application builds, Joi environment schema fail-fast validations, response envelopes and i18n, correlation propagation, Pino PII redaction, health & degraded mode, module-first convention checks (banned layers/ports/use-cases, concrete repositories, pure entities, `process.env` limits), and every authentication service, guard, store, consumer and gRPC adapter.
    - The real Compose stack is exercised by five e2e specs (25 tests total), including the complete auth lifecycle, staff-role isolation and password recovery flow.
 
 3. **Authentication & Session Lifecycle**:
    - Identity owns bcrypt password hashes, verification codes (scrypt-hashed), Postgres-backed counters and RS256 signing; the gateway holds only the public key and denies unannotated routes by default.
-   - Identity's gRPC contract is `train.auth.v1` / `AuthService` in `auth.proto`, renamed from `train.accounts.v1` / `AccountsService`; gateway and identity must deploy together.
+   - Identity's gRPC contract is `train.identity.v1` / `IdentityService` in `identity.proto`, renamed from `train.auth.v1` / `AuthService` (formerly `train.accounts.v1` / `AccountsService`); gateway and identity must deploy together.
    - Sign-up, pending sign-in, email verification, refresh rotation with a 10-second replay grace window, sign-out, and password recovery run through `POST /api/v1/auth/*`.
    - A standalone TypeScript seed creates one verified operator and one conductor without using a migration; Compose runs it as a one-shot after identity starts, and the e2e harness reuses the same seed data.
    - Session revocation travels through the outbox to a gateway consumer and is applied as Redis markers, with an in-process fallback when Redis is degraded.
@@ -42,9 +42,9 @@ Output:
 
  RUN  v4.1.12 D:/projects/Elevate/train-app-team-1
 
- Test Files  47 passed (47)
-      Tests  469 passed | 1 skipped (470)
-   Duration  19.49s
+ Test Files  48 passed (48)
+      Tests  471 passed | 1 skipped (472)
+   Duration  22.87s
 ```
 
 Lint is also clean:
@@ -318,7 +318,7 @@ The same suite without the file filter runs all five e2e specs:
 ```text
  Test Files  5 passed (5)
       Tests  25 passed (25)
-   Duration  192.70s
+   Duration  221.18s
 ```
 
 ---
@@ -335,7 +335,7 @@ The same suite without the file filter runs all five e2e specs:
 | Structured JSON logs with PII redaction | `nestjs-pino`, `ClsService`, `pii-redactor.ts` | Verified |
 | Correlation ID propagation (HTTP -> gRPC -> AMQP) | `CorrelationMiddleware` & `GrpcCorrelationInterceptor` | Verified |
 | gRPC Health aggregation | `libs/contracts/src/proto/health.proto`, `GatewayHealthService` | Verified |
-| Auth gRPC contract | `libs/contracts/src/proto/auth.proto` (`train.auth.v1`, `AuthService`) | Verified |
+| Identity gRPC contract | `libs/contracts/src/proto/identity.proto` (`train.identity.v1`, `IdentityService`) | Verified |
 | Redis degraded mode (§2.3 rule 7) | `RedisHealthService` | Verified |
 | Postgres outage auto-recovery | Dynamic connection polling in `HealthService` | Verified |
 | Graceful shutdown (SIGTERM / code 0) | `GracefulShutdownService` | Verified |
@@ -346,4 +346,4 @@ The same suite without the file filter runs all five e2e specs:
 | Password recovery without enumeration (BR-09) | `PasswordsService`, account-level revocation marker | Verified |
 | Auth lifecycle and staff isolation against the real stack | `test/e2e/auth.e2e-spec.ts` (4 tests) | Verified |
 | Staff seed outside migrations | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot Compose service | Verified |
-| 100% Passing automated tests | Vitest unit & regression suites (469 passed, 1 skipped) | Verified |
+| 100% Passing automated tests | Vitest unit & regression suites (471 passed, 1 skipped) | Verified |

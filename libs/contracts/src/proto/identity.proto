@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package train.auth.v1;
+package train.identity.v1;
 
-service AuthService {
+service IdentityService {
   rpc SignUp (SignUpRequest) returns (SignUpResponse);
   rpc VerifyEmail (VerifyEmailRequest) returns (VerifyEmailResponse);
   rpc ResendVerification (ResendVerificationRequest) returns (ResendVerificationResponse);
