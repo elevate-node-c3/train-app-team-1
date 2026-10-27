@@ -4,22 +4,16 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
-import { NOTIFICATION_DEFAULTS } from '@app/common/config/env.defaults.js';
-import type {
-  EmailSenderPort,
-  OutboundEmail,
-} from '../../application/ports/email-sender.port.js';
+import {
+  smtpSettingsFromEnv,
+  type SmtpSettings,
+} from '../../config/smtp-settings.js';
 
-function handlerTimeoutMs(): number {
-  const raw = Number(process.env.EVENT_HANDLER_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0
-    ? raw
-    : NOTIFICATION_DEFAULTS.handlerTimeoutMs;
-}
-
-function smtpPort(): number {
-  const raw = Number(process.env.SMTP_PORT);
-  return Number.isInteger(raw) && raw > 0 ? raw : 1025;
+export interface OutboundEmail {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
 }
 
 /**
@@ -33,22 +27,18 @@ function smtpPort(): number {
  * and produce the duplicate this design already keeps rare.
  */
 @Injectable()
-export class NodemailerEmailSender
-  implements EmailSenderPort, OnModuleInit, OnModuleDestroy
-{
+export class NodemailerEmailSender implements OnModuleInit, OnModuleDestroy {
   private transporter: Transporter | null = null;
-  private readonly from =
-    process.env.SMTP_FROM ?? NOTIFICATION_DEFAULTS.smtpFrom;
+  private readonly settings: SmtpSettings = smtpSettingsFromEnv();
 
   onModuleInit(): void {
-    const timeout = handlerTimeoutMs();
     this.transporter = createTransport({
-      host: process.env.SMTP_HOST ?? 'localhost',
-      port: smtpPort(),
+      host: this.settings.host,
+      port: this.settings.port,
       secure: false,
-      connectionTimeout: timeout,
-      greetingTimeout: timeout,
-      socketTimeout: timeout,
+      connectionTimeout: this.settings.handlerTimeoutMs,
+      greetingTimeout: this.settings.handlerTimeoutMs,
+      socketTimeout: this.settings.handlerTimeoutMs,
     });
   }
 
@@ -58,7 +48,7 @@ export class NodemailerEmailSender
     }
 
     await this.transporter.sendMail({
-      from: this.from,
+      from: this.settings.from,
       to: email.to,
       subject: email.subject,
       text: email.text,

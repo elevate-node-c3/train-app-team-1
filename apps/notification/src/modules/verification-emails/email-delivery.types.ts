@@ -1,7 +1,5 @@
 import type { VerificationCodePurpose } from '@app/contracts';
 
-export const EMAIL_DELIVERY_REPOSITORY = Symbol('EMAIL_DELIVERY_REPOSITORY');
-
 export const EMAIL_DELIVERY_OUTCOMES = [
   'accepted',
   'skipped_expired',
@@ -37,7 +35,3 @@ export type EmailDeliveryRecord =
       outcome: 'failed';
       errorMessage: string;
     });
-
-export interface EmailDeliveryRepositoryPort {
-  record(delivery: EmailDeliveryRecord): Promise<void>;
-}

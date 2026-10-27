@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ACCOUNT_REGISTERED_EVENT_TYPE,
   ACCOUNT_REGISTERED_VERSION,
@@ -16,12 +17,11 @@ import { PROCESSED_EVENT_STORE } from '@app/messaging/consumer/processed-event.p
 import { TypeOrmProcessedEventStore } from '@app/messaging/consumer/typeorm-processed-event.store.js';
 import { MessagingModule } from '@app/messaging';
 import type { EventHandlerPort } from '@app/messaging/consumer/event-handler.port.js';
-import { EMAIL_DELIVERY_REPOSITORY } from './application/ports/email-delivery.repository.port.js';
-import { EMAIL_SENDER } from './application/ports/email-sender.port.js';
-import { HandleVerificationCodeIssuedUseCase } from './application/use-cases/handle-verification-code-issued.use-case.js';
-import { HandleAccountRegisteredUseCase } from './application/use-cases/handle-account-registered.use-case.js';
-import { NodemailerEmailSender } from './infrastructure/email/nodemailer-email-sender.js';
-import { TypeOrmEmailDeliveryRepository } from './infrastructure/persistence/typeorm-email-delivery.repository.js';
+import { AccountRegisteredConsumer } from './consumers/account-registered.consumer.js';
+import { VerificationCodeIssuedConsumer } from './consumers/verification-code-issued.consumer.js';
+import { EmailDeliveryRepository } from './email-delivery.repository.js';
+import { NodemailerEmailSender } from './email-sender.js';
+import { EmailDeliveryEntity } from './entities/email-delivery.entity.js';
 
 /** The consumer's own queue. A second consumer gets a different one. */
 export const VERIFICATION_EMAIL_QUEUE = 'notification.verification-code-issued';
@@ -55,22 +55,18 @@ export function createVerificationEmailSubscriptions(
 
 /**
  * The feature owns its consumer runtime because it owns the subscriptions.
- * `MessagingModule` supplies the shared connection; binding the store and both
- * ports here keeps the application layer unaware of TypeORM and nodemailer.
+ * `MessagingModule` supplies the shared connection; binding the store and the
+ * concrete sender/repository here keeps the consumers unaware of TypeORM and
+ * nodemailer.
  */
 @Module({
-  imports: [MessagingModule],
+  imports: [MessagingModule, TypeOrmModule.forFeature([EmailDeliveryEntity])],
   providers: [
-    HandleVerificationCodeIssuedUseCase,
-    HandleAccountRegisteredUseCase,
+    VerificationCodeIssuedConsumer,
+    AccountRegisteredConsumer,
     NodemailerEmailSender,
-    TypeOrmEmailDeliveryRepository,
+    EmailDeliveryRepository,
     TypeOrmProcessedEventStore,
-    { provide: EMAIL_SENDER, useExisting: NodemailerEmailSender },
-    {
-      provide: EMAIL_DELIVERY_REPOSITORY,
-      useExisting: TypeOrmEmailDeliveryRepository,
-    },
     {
       provide: PROCESSED_EVENT_STORE,
       useExisting: TypeOrmProcessedEventStore,
@@ -78,15 +74,12 @@ export function createVerificationEmailSubscriptions(
     {
       provide: EVENT_SUBSCRIPTIONS,
       useFactory: createVerificationEmailSubscriptions,
-      inject: [
-        HandleVerificationCodeIssuedUseCase,
-        HandleAccountRegisteredUseCase,
-      ],
+      inject: [VerificationCodeIssuedConsumer, AccountRegisteredConsumer],
     },
     MessageRepublisher,
     EventFailureRouter,
     EventConsumerService,
   ],
-  exports: [HandleVerificationCodeIssuedUseCase],
+  exports: [VerificationCodeIssuedConsumer],
 })
 export class VerificationEmailsModule {}
