@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package train.identity.v1;
+
+service IdentityService {
+  rpc SignUp (SignUpRequest) returns (SignUpResponse);
+  rpc VerifyEmail (VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc ResendVerification (ResendVerificationRequest) returns (ResendVerificationResponse);
+  rpc SignIn (SignInRequest) returns (SignInResponse);
+  rpc RefreshToken (RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc SignOut (SignOutRequest) returns (SignOutResponse);
+  rpc ForgotPassword (ForgotPasswordRequest) returns (ForgotPasswordResponse);
+  rpc ResetPassword (ResetPasswordRequest) returns (ResetPasswordResponse);
+}
+
+message TokenPair {
+  string accessToken = 1;
+  string refreshToken = 2;
+  string tokenType = 3;
+  int32 accessExpiresIn = 4;
+  int32 refreshExpiresIn = 5;
+}
+
+message SignUpRequest {
+  string email = 1;
+  // Plaintext only for the duration of the call; identity hashes it at once.
+  string password = 2;
+  // Empty means "use the platform fallback" (Arabic, BR-56).
+  string language = 3;
+}
+
+message SignUpResponse {
+  string accountId = 1;
+  string maskedEmail = 2;
+  string language = 3;
+  int32 resendAfterSeconds = 4;
+}
+
+message VerifyEmailRequest {
+  string email = 1;
+  string code = 2;
+  // Accepted for forward compatibility; identity does not trust it.
+  string deviceId = 3;
+}
+
+message VerifyEmailResponse {
+  TokenPair tokens = 1;
+  string accountId = 2;
+  string maskedEmail = 3;
+}
+
+message ResendVerificationRequest {
+  string email = 1;
+}
+
+message ResendVerificationResponse {
+  string maskedEmail = 1;
+  int32 secondsRemaining = 2;
+}
+
+message SignInRequest {
+  string email = 1;
+  string password = 2;
+  string deviceId = 3;
+}
+
+message SignInResponse {
+  bool verificationRequired = 1;
+  string maskedEmail = 2;
+  int32 secondsRemaining = 3;
+  // Absent when verification is required.
+  TokenPair tokens = 4;
+}
+
+message RefreshTokenRequest {
+  string refreshToken = 1;
+}
+
+message RefreshTokenResponse {
+  TokenPair tokens = 1;
+}
+
+message SignOutRequest {
+  string refreshToken = 1;
+  // The gateway supplies the verified claims; identity never trusts a client
+  // supplied value.
+  string sessionId = 2;
+  string jti = 3;
+  // ISO-8601 expiry of the access token that authorized the call.
+  string accessTokenExpiresAt = 4;
+}
+
+message SignOutResponse {
+  bool revoked = 1;
+}
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message ForgotPasswordResponse {
+  int32 secondsRemaining = 1;
+}
+
+message ResetPasswordRequest {
+  string email = 1;
+  string code = 2;
+  string newPassword = 3;
+}
+
+message ResetPasswordResponse {
+  bool reset = 1;
+}

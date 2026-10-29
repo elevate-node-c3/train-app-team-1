@@ -9,6 +9,9 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Restate Vitest's defaults when overriding `exclude`; otherwise the
+    // dependency tree and build output are scanned for specs.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
     testTimeout: 30000,
   },
 });

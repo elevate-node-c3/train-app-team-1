@@ -1,22 +1,30 @@
-# Platform Skeleton Verification & Walkthrough
+# Platform Skeleton & Authentication Verification Walkthrough
 
-This document records the verification evidence for the **Platform Skeleton** story: seven microservices (`gateway`, `catalog`, `identity`, `inventory`, `booking`, `payment`, `notification`) booting, reporting their health, and speaking one unified language of errors and responses.
+This document records the verification evidence for the **Platform Skeleton** and the **Authentication (AUTH-1/AUTH-2/AUTH-3)** stories: seven microservices (`gateway`, `catalog`, `identity`, `inventory`, `booking`, `payment`, `notification`) booting, reporting their health, speaking one unified language of errors and responses, and enforcing a complete account and session lifecycle at the gateway.
 
 ---
 
 ## 1. Summary of Delivered Architecture
 
 1. **Monorepo & Multi-Service Topology**:
-   - 7 NestJS microservices (`apps/`) structured in vertical slices (`transport/`, `domain/`, `persistence/`).
+   - 7 NestJS microservices (`apps/`) using module-first feature slices: `src/modules/<feature>/` with a root `<feature>.module.ts`, concrete `controllers/`, `services/`, `repositories/`, `consumers/` and `entities/`, plus app-level `config/` and `database/`.
    - 3 shared libraries (`libs/`):
-     - `@app/contracts`: Unified response envelope DTO, health models, error codes enum, and gRPC proto contracts (`health.proto`).
+     - `@app/contracts`: Unified response envelope DTO, health models, error codes enum, and gRPC proto contracts (`health.proto`, plus `identity.proto` under `train.identity.v1` with `IdentityService`).
      - `@app/messaging`: Direct AMQP client via `amqplib` with connection recovery, exclusive probe health checks, and cross-service correlation header propagation.
      - `@app/common`: Joi fail-fast environment validation with secret masking, Pino structured JSON logging with ISO timestamps and PII redaction, AsyncLocalStorage correlation tracking via `ClsService`, bilingual response envelope/error filter (Arabic default fallback `ar`, English via `Accept-Language: en`), gRPC health server/client with downstream aggregation, and graceful shutdown handling (`SIGTERM`/`SIGINT`).
-   - Persistence layer implemented with **TypeORM** (`manualInitialization: true` for zero-host-dependency unit testing).
+   - Persistence is **TypeORM** in every service, including notification's entity-backed `email_delivery` log (`manualInitialization: true` for zero-host-dependency unit testing).
 
 2. **Automated Test Suite**:
-   - **10 test files passed** (96 passed, 1 skipped).
-   - Covers compose structure, library exports, application builds, Joi environment schema fail-fast validations, response envelopes and i18n, correlation propagation, Pino PII redaction, health & degraded mode, and strict architectural layer boundaries.
+   - **48 test files passed** (471 passed, 1 skipped).
+   - Covers compose structure, library exports, application builds, Joi environment schema fail-fast validations, response envelopes and i18n, correlation propagation, Pino PII redaction, health & degraded mode, module-first convention checks (banned layers/ports/use-cases, concrete repositories, pure entities, `process.env` limits), and every authentication service, guard, store, consumer and gRPC adapter.
+   - The real Compose stack is exercised by five e2e specs (25 tests total), including the complete auth lifecycle, staff-role isolation and password recovery flow.
+
+3. **Authentication & Session Lifecycle**:
+   - Identity owns bcrypt password hashes, verification codes (scrypt-hashed), Postgres-backed counters and RS256 signing; the gateway holds only the public key and denies unannotated routes by default.
+   - Identity's gRPC contract is `train.identity.v1` / `IdentityService` in `identity.proto`, renamed from `train.auth.v1` / `AuthService` (formerly `train.accounts.v1` / `AccountsService`); gateway and identity must deploy together.
+   - Sign-up, pending sign-in, email verification, refresh rotation with a 10-second replay grace window, sign-out, and password recovery run through `POST /api/v1/auth/*`.
+   - A standalone TypeScript seed creates one verified operator and one conductor without using a migration; Compose runs it as a one-shot after identity starts, and the e2e harness reuses the same seed data.
+   - Session revocation travels through the outbox to a gateway consumer and is applied as Redis markers, with an in-process fallback when Redis is degraded.
 
 ---
 
@@ -32,22 +40,18 @@ Output:
 > train-app-team-1@0.0.1 test
 > vitest run
 
- RUN  v4.1.12 D:/Elevate/Projects/train-app-team-1
+ RUN  v4.1.12 D:/projects/Elevate/train-app-team-1
 
- ✓ test/unit/architecture-boundaries.spec.ts (1 test)
- ✓ test/skeleton/compose.spec.ts (43 tests)
- ✓ test/skeleton/libs.spec.ts (5 tests)
- ✓ test/unit/correlation-and-pino.spec.ts (4 tests)
- ✓ test/unit/health-and-degraded.spec.ts (5 tests)
- ✓ test/unit/envelope-and-i18n.spec.ts (10 tests)
- ✓ test/unit/joi-env-validation.spec.ts (6 tests)
- ✓ test/skeleton/scripts.spec.ts (2 tests | 1 skipped)
- ✓ test/skeleton/apps.spec.ts (9 tests)
- ✓ test/skeleton/lib-imports.spec.ts (12 tests)
+ Test Files  48 passed (48)
+      Tests  471 passed | 1 skipped (472)
+   Duration  22.87s
+```
 
- Test Files  10 passed (10)
-      Tests  96 passed | 1 skipped (97)
-   Duration  28.89s
+Lint is also clean:
+
+```text
+> train-app-team-1@0.0.1 lint
+> oxlint --type-aware apps/ libs/ test/
 ```
 
 ---
@@ -117,7 +121,7 @@ curl -i -H "Accept-Language: en" http://localhost:3000/health
 
 ### Demo 2: Correlation ID Distributed Tracing
 
-Invoking the gateway aggregation endpoint (`/api/ping-all`) generates a correlation ID (`8f84e497-03cc-41e4-af42-fe42d83e5840`) which is forwarded across gRPC metadata to all downstream services.
+Invoking the gateway aggregation endpoint (`/api/v1/ping-all`) generates a correlation ID (`8f84e497-03cc-41e4-af42-fe42d83e5840`) which is forwarded across gRPC metadata to all downstream services.
 
 **Command:**
 ```bash
@@ -266,19 +270,80 @@ docker compose run --rm -e DATABASE_URL="" identity
 
 ---
 
+### Demo 7: Happy Path — Authentication Lifecycle and Revocation (e2e)
+
+**Command:**
+```bash
+npm run test:e2e -- test/e2e/auth.e2e-spec.ts
+```
+
+**Output:**
+```text
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  18:36:58
+   Duration  28.56s
+```
+
+The spec drives the real Compose stack through the gateway only, so it proves
+the HTTP edge, gRPC adapter, identity services, outbox relay, gateway
+revocation consumer and Mailpit agree with each other:
+
+1. **Sign-up → verify:** `POST /api/v1/auth/sign-up` returns `201`; signing in
+   before verification returns `200` with `verificationRequired: true` and no
+   tokens; the six-digit code read from Mailpit verifies the account and returns
+   the first RS256 pair. The decoded access token carries `sub`, `sid`, `jti`,
+   `lvl`, `roles`, `bkbl`, `iss` and `aud`, and contains no email address.
+2. **Refresh rotation and grace replay:** the first refresh returns a different
+   pair; replaying the consumed token inside the 10-second window returns the
+   exact same successor pair rather than treating the client as an attacker.
+3. **Sign-out revocation:** sign-out returns `{ "revoked": true }`, the gateway
+   consumer writes `auth:revoked:sid:<sessionId>` to Redis, the old access token
+   then fails with `401 TOKEN_REVOKED`, and the refresh token fails with
+   `401 SESSION_REVOKED`.
+4. **Password recovery and BR-09:** an unknown address and a real address both
+   get an identical `202` body with `secondsRemaining: 120`. The reset email is
+   read from Mailpit, the reset returns `{ "reset": true }`, the account-level
+   marker `auth:revoked:account:<accountId>` rejects **both** live sessions, the
+   old password gets `401 INVALID_CREDENTIALS`, and the new password signs in.
+5. **Staff role isolation:** the seeded operator and conductor sign in with
+   `lvl: "traveller"` and exactly one role each; the operator gets `200` on the
+   operator route and `403 FORBIDDEN` on the conductor route, and vice versa.
+6. **Deny-by-default and prefix rules:** `POST /sign-out` without a bearer token
+   is `401 UNAUTHORIZED`, `GET /health/live` is `200`, and
+   `GET /api/v1/health/live` is `404`.
+
+The same suite without the file filter runs all five e2e specs:
+
+```text
+ Test Files  5 passed (5)
+      Tests  25 passed (25)
+   Duration  221.18s
+```
+
+---
+
 ## 4. Verification Check-off Matrix
 
 | Requirement | Implementation Component | Status |
 |---|---|---|
 | Single command boot (`docker compose up`) | Root `Dockerfile` & `docker-compose.yml` | Verified |
-| 7 microservices + 3 shared libs | `apps/` & `libs/` vertical slice modules | Verified |
-| TypeORM persistence layer | `@nestjs/typeorm` with `manualInitialization: true` | Verified |
+| 7 microservices + 3 shared libs | `apps/` module-first feature modules & `libs/` | Verified |
+| TypeORM persistence layer | `@nestjs/typeorm` with `manualInitialization: true` in every service | Verified |
 | Joi fail-fast env validation & secret masking | `libs/common/src/config/env.validator.ts` | Verified |
 | Bilingual response & error envelope (Arabic fallback) | `HttpExceptionFilter` & `ResponseInterceptor` | Verified |
 | Structured JSON logs with PII redaction | `nestjs-pino`, `ClsService`, `pii-redactor.ts` | Verified |
 | Correlation ID propagation (HTTP -> gRPC -> AMQP) | `CorrelationMiddleware` & `GrpcCorrelationInterceptor` | Verified |
 | gRPC Health aggregation | `libs/contracts/src/proto/health.proto`, `GatewayHealthService` | Verified |
+| Identity gRPC contract | `libs/contracts/src/proto/identity.proto` (`train.identity.v1`, `IdentityService`) | Verified |
 | Redis degraded mode (§2.3 rule 7) | `RedisHealthService` | Verified |
 | Postgres outage auto-recovery | Dynamic connection polling in `HealthService` | Verified |
 | Graceful shutdown (SIGTERM / code 0) | `GracefulShutdownService` | Verified |
-| 100% Passing automated tests | Vitest unit & regression suites (96 tests passed) | Verified |
+| RS256 access tokens, `kid` rotation, no `alg` confusion | Identity `IdentityJwtSigner`, gateway `TokenVerifierService` | Verified |
+| Deny-by-default gateway authorization | `JwtAuthGuard`, explicit `@Public()` / `@RequireAccess()` metadata | Verified |
+| Refresh rotation + 10-second replay grace | `SessionsService`, `SessionIssuer`, sealed successor payload | Verified |
+| Prompt, durable session revocation | Outbox event, `SessionRevokedConsumer`, Redis + memory revocation stores | Verified |
+| Password recovery without enumeration (BR-09) | `PasswordsService`, account-level revocation marker | Verified |
+| Auth lifecycle and staff isolation against the real stack | `test/e2e/auth.e2e-spec.ts` (4 tests) | Verified |
+| Staff seed outside migrations | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot Compose service | Verified |
+| 100% Passing automated tests | Vitest unit & regression suites (471 passed, 1 skipped) | Verified |

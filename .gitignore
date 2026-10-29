@@ -36,6 +36,9 @@ lerna-debug.log*
 *.sublime-workspace
 .claude/
 
+# Personal agent notes.
+CLAUDE.md
+
 # IDE - VSCode
 .vscode/*
 !.vscode/settings.json
@@ -49,6 +52,11 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+
+# Local development JWT key pair. Generate with `npm run keys:generate`.
+# Never commit a private key: a clone with it can mint tokens the gateway trusts.
+*.pem
+/config/jwt/
 
 # temp directory
 .temp

@@ -1,21 +1,34 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
-import { ContractsModule } from '@app/contracts';
+import {
+  CommonModule,
+  MigrationModule,
+  createTypeOrmAsyncOptions,
+} from '@app/common';
 import { MessagingModule } from '@app/messaging';
-import { NotificationController } from './transport/notification.controller.js';
-import { NotificationService } from './domain/notification.service.js';
-import { NotificationRepository } from './persistence/notification.repository.js';
+import { migrations } from './database/migrations/index.js';
+import { VerificationEmailsModule } from './modules/verification-emails/verification-emails.module.js';
+import { ServiceInfoController } from './service-info.controller.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them.
+ *
+ * The migration list is passed to the same DataSource the consumer's store
+ * uses; `MigrationRunnerService` applies it at bootstrap and no provider
+ * connects in its constructor (the skeleton test compiles this module without
+ * Docker).
+ */
 @Module({
   imports: [
-    TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
+    TypeOrmModule.forRootAsync(
+      createTypeOrmAsyncOptions(undefined, { migrations }),
+    ),
     CommonModule,
-    ContractsModule,
     MessagingModule,
+    MigrationModule,
+    VerificationEmailsModule,
   ],
-  controllers: [NotificationController],
-  providers: [NotificationService, NotificationRepository],
-  exports: [NotificationService],
+  controllers: [ServiceInfoController],
 })
 export class NotificationModule {}

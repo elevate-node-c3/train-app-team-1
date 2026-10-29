@@ -125,6 +125,12 @@ services:
       BOOKING_GRPC_URL: ${BOOKING_GRPC_URL:-booking:50051}
       PAYMENT_GRPC_URL: ${PAYMENT_GRPC_URL:-payment:50051}
       NOTIFICATION_GRPC_URL: ${NOTIFICATION_GRPC_URL:-notification:50051}
+      JWT_KEY_ID: ${JWT_KEY_ID:-dev-1}
+      JWT_CLOCK_SKEW_SECONDS: ${JWT_CLOCK_SKEW_SECONDS:-30}
+      JWT_PUBLIC_KEY_FILE: /app/config/jwt/dev-public.pem
+    volumes:
+      # The gateway gets the public half only.
+      - ./config/jwt/dev-public.pem:/app/config/jwt/dev-public.pem:ro
 
   identity:
     <<: *service
@@ -135,6 +141,37 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
+      OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-true}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-500}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-20}
+      VERIFICATION_CODE_TTL_SECONDS: ${VERIFICATION_CODE_TTL_SECONDS:-600}
+      JWT_KEY_ID: ${JWT_KEY_ID:-dev-1}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
+      REFRESH_TOKEN_GRACE_SECONDS: ${REFRESH_TOKEN_GRACE_SECONDS:-10}
+      TOKEN_GRACE_SECRET: ${TOKEN_GRACE_SECRET:-change-me-in-production}
+      JWT_PRIVATE_KEY_FILE: /app/config/jwt/dev-private.pem
+    volumes:
+      # Identity is the only process that can mint a token.
+      - ./config/jwt/dev-private.pem:/app/config/jwt/dev-private.pem:ro
+
+  # The identity-seed service runs once to create the initial staff accounts in the identity database.
+  identity-seed:
+    build:
+      <<: *build
+      args:
+        APP: identity
+    restart: 'no'
+    depends_on:
+      postgres: { condition: service_healthy }
+      identity: { condition: service_started }
+    command: node dist/apps/identity/src/database/seeds/staff-accounts.seed.js
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
+      BCRYPT_COST: ${BCRYPT_COST:-12}
+      OPERATOR_SEED_PASSWORD: "${OPERATOR_SEED_PASSWORD:-Operator!Dev123}"
+      CONDUCTOR_SEED_PASSWORD: "${CONDUCTOR_SEED_PASSWORD:-Conductor!Dev123}"
 
   inventory:
     <<: *service
@@ -178,9 +215,16 @@ services:
       mailpit: { condition: service_healthy }
     environment:
       <<: *service-env
+      # A hostname inside the Compose network is not a reviewer knob, so SMTP
+      # host and port stay uninterpolated; their defaults need no .env line.
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       DATABASE_URL: postgres://notification:${NOTIFICATION_DB_PASSWORD:-notification_dev}@postgres:5432/notification
+      SMTP_FROM: ${SMTP_FROM:-no-reply@train.local}
+      EVENT_HANDLER_TIMEOUT_MS: ${EVENT_HANDLER_TIMEOUT_MS:-3000}
+      EVENT_RETRY_DELAYS_MS: ${EVENT_RETRY_DELAYS_MS:-1000,3000,9000}
+      EVENT_PREFETCH: ${EVENT_PREFETCH:-10}
+      EVENT_CLAIM_LEASE_SECONDS: ${EVENT_CLAIM_LEASE_SECONDS:-60}
 
 volumes:
   postgres_data:

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { notificationEnvSchema, setupApp, validateEnv } from '@app/common';
+import { setupApp, validateEnv } from '@app/common';
+import { notificationEnvSchema } from './config/env.schema.js';
 import { getHealthProtoPath, HEALTH_PACKAGE_NAME } from '@app/contracts';
 import { NotificationModule } from './notification.module.js';
 

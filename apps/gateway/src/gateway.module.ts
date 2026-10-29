@@ -1,21 +1,41 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, createTypeOrmAsyncOptions } from '@app/common';
-import { ContractsModule } from '@app/contracts';
-import { MessagingModule } from '@app/messaging';
-import { GatewayController } from './transport/gateway.controller.js';
-import { GatewayService } from './domain/gateway.service.js';
-import { GatewayRepository } from './persistence/gateway.repository.js';
+import {
+  CommonModule,
+  MigrationModule,
+  createTypeOrmAsyncOptions,
+} from '@app/common';
+import { migrations } from './database/migrations/index.js';
+import { SecurityModule } from './common/security/security.module.js';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
+import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
+import { HealthModule } from './modules/health/health.module.js';
+import { IdentityModule } from './modules/identity/identity.module.js';
+import { ServiceInfoController } from './service-info.controller.js';
 
+/**
+ * Root module: infrastructure wiring and feature modules only. Business
+ * providers belong to the feature module that owns them.
+ */
 @Module({
   imports: [
-    TypeOrmModule.forRootAsync(createTypeOrmAsyncOptions()),
+    TypeOrmModule.forRootAsync(
+      createTypeOrmAsyncOptions(undefined, { migrations }),
+    ),
     CommonModule,
-    ContractsModule,
-    MessagingModule,
+    MigrationModule,
+    HealthModule,
+    SecurityModule,
+    IdentityModule,
   ],
-  controllers: [GatewayController],
-  providers: [GatewayService, GatewayRepository],
-  exports: [GatewayService],
+  controllers: [ServiceInfoController],
+  providers: [
+    // Rate limiting runs first so an unauthenticated flood is cut before any
+    // signature verification work.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
+    // Deny-by-default: every route must declare `@Public()` or an access level.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class GatewayModule {}
