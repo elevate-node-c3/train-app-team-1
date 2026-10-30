@@ -7,7 +7,7 @@ import {
   MigrationModule,
 } from '@app/common';
 
-import { MessagingModule, OutboxModule } from '@app/messaging';
+import { MessagingModule } from '@app/messaging';
 
 import { migrations } from './database/migrations/index.js';
 import { ServiceInfoController } from './service-info.controller.js';
@@ -25,7 +25,6 @@ import { TripsModule } from './modules/trips/trips.module.js';
     ),
     CommonModule,
     MessagingModule,
-    OutboxModule,
     MigrationModule,
     StationsModule,
     TrainsModule,

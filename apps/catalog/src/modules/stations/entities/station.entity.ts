@@ -8,6 +8,7 @@ import {
   PrimaryColumn,
 } from 'typeorm';
 import { CityEntity } from './city.entity.js';
+import type { Relation } from 'typeorm';
 
 /**
  * A station belongs to a city, and the city to a governorate. The governorate
@@ -30,7 +31,7 @@ export class StationEntity {
     onDelete: 'RESTRICT',
   })
   @JoinColumn({ name: 'city_id' })
-  city!: CityEntity;
+  city!: Relation<CityEntity>;
 
   @Column({ name: 'name_ar', type: 'text' })
   nameAr!: string;
