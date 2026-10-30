@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { GovernorateEntity } from './governorate.entity.js';
 import { StationEntity } from './station.entity.js';
+import type { Relation } from 'typeorm';
 
 @Entity('city')
 @Check('city_name_ar_not_empty', `name_ar <> ''`)
@@ -27,7 +28,7 @@ export class CityEntity {
     onDelete: 'RESTRICT',
   })
   @JoinColumn({ name: 'governorate_id' })
-  governorate!: GovernorateEntity;
+  governorate!: Relation<GovernorateEntity>;
 
   @Column({ name: 'name_ar', type: 'text' })
   nameAr!: string;
@@ -36,5 +37,5 @@ export class CityEntity {
   nameEn!: string;
 
   @OneToMany(() => StationEntity, (station) => station.city)
-  stations!: StationEntity[];
+  stations!: Relation<StationEntity[]>;
 }
