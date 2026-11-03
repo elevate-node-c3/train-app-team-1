@@ -34,4 +34,22 @@ export class AccountEntity {
 
   @Column({ type: 'text', array: true, default: () => 'ARRAY[]::text[]' })
   roles!: StaffRole[];
+
+  @Column({ name: 'full_name', type: 'text', nullable: true })
+  fullName!: string | null;
+
+  @Column({ name: 'phone_number', type: 'text', nullable: true })
+  phoneNumber!: string | null;
+
+  @Column({ name: 'national_id', type: 'text', nullable: true })
+  nationalId!: string | null;
+
+  @Column({ name: 'profile_type', type: 'text', nullable: true })
+  profileType!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  nationality!: string | null;
+
+  @Column({ name: 'profile_completed_at', type: 'timestamptz', nullable: true })
+  profileCompletedAt!: Date | null;
 }

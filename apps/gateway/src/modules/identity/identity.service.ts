@@ -1,7 +1,11 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import type {
+  CompleteProfileRequestDto,
+  CompleteProfileResponseDto,
   ForgotPasswordRequestDto,
   ForgotPasswordResponseDto,
+  ProfileOptionsResponseDto,
+  ProfileResponseDto,
   RefreshResponseDto,
   RefreshTokenRequestDto,
   ResendVerificationRequestDto,
@@ -91,6 +95,48 @@ export class IdentityService {
     input: ResetPasswordRequestDto,
   ): Promise<ResetPasswordResponseDto> {
     return this.client.resetPassword(input);
+  }
+
+  async completeProfile(
+    input: CompleteProfileRequestDto,
+  ): Promise<CompleteProfileResponseDto> {
+    const response = await this.client.completeProfile(input);
+    if (!response.tokens) {
+      throw new InternalServerErrorException('identity returned no token pair');
+    }
+    return {
+      tokens: toTokenPair(response.tokens),
+      profile: {
+        accountId: response.profile.accountId,
+        fullName: response.profile.fullName || null,
+        phoneNumber: response.profile.phoneNumber || null,
+        nationalId: response.profile.nationalId || null,
+        profileType: response.profile.profileType || null,
+        nationality: response.profile.nationality || null,
+        bookable: response.profile.bookable,
+      },
+    };
+  }
+
+  async getProfile(): Promise<ProfileResponseDto> {
+    const response = await this.client.getProfile();
+    return {
+      accountId: response.profile.accountId,
+      fullName: response.profile.bookable ? response.profile.fullName : null,
+      phoneNumber: response.profile.bookable ? response.profile.phoneNumber : null,
+      nationalId: response.profile.bookable ? response.profile.nationalId : null,
+      profileType: response.profile.bookable ? response.profile.profileType : null,
+      nationality: response.profile.bookable ? response.profile.nationality : null,
+      bookable: response.profile.bookable,
+    };
+  }
+
+  async getProfileOptions(): Promise<ProfileOptionsResponseDto> {
+    const response = await this.client.getProfileOptions();
+    return {
+      profileTypes: response.profileTypes ?? [],
+      nationalities: response.nationalities ?? [],
+    };
   }
 }
 

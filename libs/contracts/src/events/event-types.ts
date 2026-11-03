@@ -9,6 +9,7 @@ export const EVENT_TYPES = {
   emailVerified: 'identity.email.verified',
   sessionRevoked: 'identity.session.revoked',
   passwordReset: 'identity.password.reset',
+  profileCompleted: 'identity.profile.completed',
   timetablePublished: 'catalog.timetable.published',
   fareChanged: 'catalog.fare.changed',
   stationChanged: 'catalog.station.changed',
