@@ -41,6 +41,9 @@ const METHODS = [
   'signOut',
   'forgotPassword',
   'resetPassword',
+  'completeProfile',
+  'getProfile',
+  'getProfileOptions',
 ] as const;
 type Method = (typeof METHODS)[number];
 
@@ -347,6 +350,55 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
       code: '123456',
       newPassword: 'N3w!Passw0rd',
     });
+  });
+
+  it('forwards complete-profile, get-profile and get-profile-options', async () => {
+    const wireProfile = {
+      accountId: 'acc-1',
+      fullName: 'Ahmed Hussein',
+      phoneNumber: '01001234567',
+      nationalId: '28505150101235',
+      profileType: 'Regular',
+      nationality: 'Egyptian',
+      bookable: true,
+    };
+
+    const { adapter, fake } = adapterWith((method) => {
+      if (method === 'completeProfile') {
+        return {
+          response: {
+            tokens: WIRE_TOKENS,
+            profile: wireProfile,
+          },
+        };
+      }
+      if (method === 'getProfile') {
+        return { response: { profile: wireProfile } };
+      }
+      return {
+        response: {
+          profileTypes: [{ code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' }],
+          nationalities: [{ code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' }],
+        },
+      };
+    });
+
+    const completeResult = await adapter.completeProfile({
+      fullName: 'Ahmed Hussein',
+      phoneNumber: '01001234567',
+      nationalId: '28505150101235',
+      profileType: 'Regular',
+      nationality: 'Egyptian',
+    });
+    expect(completeResult.tokens).toEqual(WIRE_TOKENS);
+    expect(completeResult.profile).toEqual(wireProfile);
+
+    const getProfileResult = await adapter.getProfile();
+    expect(getProfileResult.profile).toEqual(wireProfile);
+
+    const optionsResult = await adapter.getProfileOptions();
+    expect(optionsResult.profileTypes).toHaveLength(1);
+    expect(optionsResult.nationalities).toHaveLength(1);
   });
 
   it('propagates the verified caller to identity metadata', async () => {

@@ -90,3 +90,22 @@ export type PasswordResetEvent = EventEnvelope<
   typeof PASSWORD_RESET_EVENT_TYPE,
   PasswordResetPayloadV1
 >;
+
+export interface ProfileCompletedPayloadV1 {
+  accountId: string;
+  fullName: string;
+  completedAt: string;
+}
+
+export const PROFILE_COMPLETED_EVENT_TYPE = EVENT_TYPES.profileCompleted;
+export const PROFILE_COMPLETED_VERSION = 1;
+export const PROFILE_COMPLETED_PAYLOAD_KEYS = [
+  'accountId',
+  'fullName',
+  'completedAt',
+] as const satisfies readonly (keyof ProfileCompletedPayloadV1)[];
+
+export type ProfileCompletedEvent = EventEnvelope<
+  typeof PROFILE_COMPLETED_EVENT_TYPE,
+  ProfileCompletedPayloadV1
+>;

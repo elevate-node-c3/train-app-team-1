@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface JwtSigningSettings {
@@ -37,6 +37,11 @@ function privateKeyPemFromEnv(env: NodeJS.ProcessEnv): string {
   if (!existsSync(path)) {
     throw new Error(
       `JWT_PRIVATE_KEY_FILE points to a missing private key file: ${file}`,
+    );
+  }
+  if (statSync(path).isDirectory()) {
+    throw new Error(
+      `JWT_PRIVATE_KEY_FILE points to a directory, not a file: ${file}. If you started Docker before generating keys, run 'npm run keys:generate' and restart Docker.`,
     );
   }
   return readFileSync(path, 'utf8');

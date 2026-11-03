@@ -7,6 +7,7 @@ export * from './health.dto.js';
 export * from './identity/token-contract.js';
 export * from './identity/identity.grpc.js';
 export * from './identity/identity.dto.js';
+export * from './identity/profile.dto.js';
 export * from './identity/password-policy.js';
 export * from './events/event-envelope.js';
 export * from './events/event-types.js';

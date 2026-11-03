@@ -139,6 +139,52 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'يجب إكمال الملف الشخصي قبل إتمام الحجز',
     en: 'Please complete your profile before making a booking',
   },
+
+  // Profile completion
+  [ErrorCode.PROFILE_ALREADY_COMPLETE]: {
+    ar: 'تم إكمال الملف الشخصي مسبقاً',
+    en: 'Profile is already complete',
+  },
+  [ErrorCode.INVALID_FULL_NAME]: {
+    ar: 'الاسم بالكامل غير صالح، يجب إدخال الاسم الأول واسم العائلة على الأقل وبحد أقصى 50 حرفاً',
+    en: 'Invalid full name; must include at least first and family name with a maximum of 50 characters',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_LENGTH]: {
+    ar: 'الرقم القومي غير صالح، يجب أن يتكون من 14 رقماً بالضبط',
+    en: 'Invalid National ID; must be exactly 14 digits',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_CENTURY]: {
+    ar: 'الرقم القومي غير صالح، رقم القرن غير صحيح',
+    en: 'Invalid National ID; invalid century digit',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE]: {
+    ar: 'الرقم القومي غير صالح، تاريخ الميلاد غير صحيح أو في المستقبل',
+    en: 'Invalid National ID; birth date is invalid or in the future',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE]: {
+    ar: 'الرقم القومي غير صالح، كود المحافظة غير صحيح',
+    en: 'Invalid National ID; invalid governorate code',
+  },
+  [ErrorCode.NATIONAL_ID_ALREADY_REGISTERED]: {
+    ar: 'الرقم القومي مسجل بالفعل لحساب آخر',
+    en: 'This National ID is already registered to another account',
+  },
+  [ErrorCode.INVALID_PHONE_FORMAT]: {
+    ar: 'رقم الهاتف غير صالح، يجب أن يكون رقم هاتف مصري صحيح يبدأ بـ 01',
+    en: 'Invalid phone number; must be a valid Egyptian mobile number starting with 01',
+  },
+  [ErrorCode.PHONE_ALREADY_REGISTERED]: {
+    ar: 'رقم الهاتف مسجل بالفعل',
+    en: 'This phone number is already registered',
+  },
+  [ErrorCode.INVALID_PROFILE_TYPE]: {
+    ar: 'نوع الملف الشخصي غير صالح',
+    en: 'Invalid profile type',
+  },
+  [ErrorCode.INVALID_NATIONALITY]: {
+    ar: 'الجنسية غير صالحة',
+    en: 'Invalid nationality',
+  },
 };
 
 /**

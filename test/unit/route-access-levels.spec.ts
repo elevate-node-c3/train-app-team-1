@@ -23,6 +23,7 @@ const BR01_PUBLIC_ROUTES = [
   'POST /auth/refresh',
   'POST /auth/forgot-password',
   'POST /auth/reset-password',
+  'GET /profile/options',
 ] as const;
 
 const HTTP_METHODS: Readonly<Record<number, string>> = {
