@@ -73,20 +73,32 @@ async function insertAll(
   return inserted.length;
 }
 
-async function seed(): Promise<void> {
+/**
+ * Loads the fixture.
+ *
+ * Takes a `DataSource` so an integration spec can pass its own already-open
+ * connection; called with none, it opens and closes the CLI data source, which
+ * is what the npm script does. Only the connection it opened is destroyed --
+ * closing a caller's connection would be a surprise.
+ */
+async function seed(source?: DataSource): Promise<void> {
+  const target = source ?? dataSource;
+  const ownsConnection = source === undefined;
   let initialized = false;
 
   try {
-    await dataSource.initialize();
-    initialized = true;
-    await waitForTripTable(dataSource);
+    if (ownsConnection) {
+      await target.initialize();
+      initialized = true;
+    }
+    await waitForTripTable(target);
 
     const counts: [string, number][] = [];
 
     counts.push([
       'governorate',
       await insertAll(
-        dataSource,
+        target,
         'governorate',
         ['id', 'name_ar', 'name_en', 'sort_order'],
         SEARCH_FIXTURE.governorates.map((row) => [
@@ -101,7 +113,7 @@ async function seed(): Promise<void> {
     counts.push([
       'city',
       await insertAll(
-        dataSource,
+        target,
         'city',
         ['id', 'governorate_id', 'name_ar', 'name_en'],
         SEARCH_FIXTURE.cities.map((row) => [
@@ -116,7 +128,7 @@ async function seed(): Promise<void> {
     counts.push([
       'station',
       await insertAll(
-        dataSource,
+        target,
         'station',
         ['id', 'city_id', 'name_ar', 'name_en', 'alt_spellings', 'is_active'],
         SEARCH_FIXTURE.stations.map((row) => [
@@ -133,7 +145,7 @@ async function seed(): Promise<void> {
     counts.push([
       'train_type',
       await insertAll(
-        dataSource,
+        target,
         'train_type',
         ['id', 'name_ar', 'name_en'],
         SEARCH_FIXTURE.trainTypes.map((row) => [row.id, row.nameAr, row.nameEn]),
@@ -143,7 +155,7 @@ async function seed(): Promise<void> {
     counts.push([
       'travel_class',
       await insertAll(
-        dataSource,
+        target,
         'travel_class',
         ['id', 'name_ar', 'name_en'],
         SEARCH_FIXTURE.travelClasses.map((row) => [
@@ -157,7 +169,7 @@ async function seed(): Promise<void> {
     counts.push([
       'coach_layout',
       await insertAll(
-        dataSource,
+        target,
         'coach_layout',
         ['id', 'layout_name', 'rows'],
         SEARCH_FIXTURE.coachLayouts.map((row) => [
@@ -171,7 +183,7 @@ async function seed(): Promise<void> {
     counts.push([
       'train',
       await insertAll(
-        dataSource,
+        target,
         'train',
         ['id', 'train_number', 'train_type_id'],
         SEARCH_FIXTURE.trains.map((row) => [
@@ -185,7 +197,7 @@ async function seed(): Promise<void> {
     counts.push([
       'train_coach',
       await insertAll(
-        dataSource,
+        target,
         'train_coach',
         [
           'id',
@@ -209,7 +221,7 @@ async function seed(): Promise<void> {
     counts.push([
       'timetable',
       await insertAll(
-        dataSource,
+        target,
         'timetable',
         [
           'id',
@@ -235,7 +247,7 @@ async function seed(): Promise<void> {
     counts.push([
       'timetable_stop',
       await insertAll(
-        dataSource,
+        target,
         'timetable_stop',
         [
           'id',
@@ -261,7 +273,7 @@ async function seed(): Promise<void> {
     counts.push([
       'fare',
       await insertAll(
-        dataSource,
+        target,
         'fare',
         [
           'id',
@@ -287,7 +299,7 @@ async function seed(): Promise<void> {
     counts.push([
       'dated_trip',
       await insertAll(
-        dataSource,
+        target,
         'dated_trip',
         [
           'id',
@@ -315,7 +327,7 @@ async function seed(): Promise<void> {
     counts.push([
       'trip_stop',
       await insertAll(
-        dataSource,
+        target,
         'trip_stop',
         ['id', 'trip_id', 'station_id', 'position', 'arrival_at', 'departure_at'],
         SEARCH_FIXTURE.tripStops.map((row) => [
@@ -337,8 +349,8 @@ async function seed(): Promise<void> {
       );
     }
   } finally {
-    if (initialized && dataSource.isInitialized) {
-      await dataSource.destroy();
+    if (initialized && target.isInitialized) {
+      await target.destroy();
     }
   }
 }
