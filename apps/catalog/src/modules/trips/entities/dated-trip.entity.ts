@@ -11,7 +11,15 @@ import { TimetableEntity } from '../../timetables/entities/timetable.entity.js';
 import { CoachLayoutRow } from '../../trains/entities/coach-layout.entity.js';
 
 
-interface TrainCoachCompositionSnapshotItem {
+/**
+ * One coach of a trip's train, frozen at publication.
+ *
+ * Exported because search reads it to work out the trip's capacity in a travel
+ * class, so the shape is a published contract rather than a private detail. A
+ * published trip must keep describing the train it was published with, even
+ * after the live composition changes.
+ */
+export interface TrainCoachCompositionSnapshotItem {
   position: number;
   coachNumber: number;
 
