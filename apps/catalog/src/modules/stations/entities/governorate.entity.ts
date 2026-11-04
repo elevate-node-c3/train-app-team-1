@@ -1,5 +1,6 @@
 import { Check, Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
-import { CityEntity } from './city.entity.js';
+import type { Relation } from 'typeorm';
+import type { CityEntity } from './city.entity.js';
 
 /*
   Display order is explicit: the design's order is not alphabetical, and it must be identical in Arabic and English.
@@ -20,6 +21,9 @@ export class GovernorateEntity {
   @Column({ name: 'sort_order', type: 'int', unique: true })
   sortOrder!: number;
 
-  @OneToMany(() => CityEntity, (city) => city.governorate)
-  cities!: CityEntity[];
+  // The inverse side names its target instead of importing it. `city` already
+  // imports this file to declare the owning @ManyToOne, so importing it back
+  // at runtime would make the two modules circular.
+  @OneToMany('CityEntity', 'governorate')
+  cities!: Relation<CityEntity[]>;
 }
