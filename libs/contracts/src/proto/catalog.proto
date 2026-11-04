@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package train.catalog.v1;
+
+// The catalog read surface. Search is strictly read-only: it publishes no
+// events and writes no outbox rows (TA-33). Recording a search for "recent
+// searches" is CAT-4 and stays inside catalog.
+service CatalogService {
+  rpc SearchOneWayTrips (SearchOneWayTripsRequest)
+      returns (SearchOneWayTripsResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Time on the wire
+// ---------------------------------------------------------------------------
+
+// A Cairo wall-clock moment a client can render without any date arithmetic.
+//
+// Deliberately NOT google.protobuf.Timestamp. A Timestamp is a UTC instant, so
+// a client configured to Dubai time formatting it would display a shifted hour
+// — exactly what BR-17 forbids. An ISO string alone fails for the same reason
+// in practice, because the likeliest client call, `new Date(s).toLocaleTime
+// String()`, re-renders in the device's zone.
+//
+// `localTime` is meant to be printed verbatim. `iso` is redundant by
+// construction (localDate + 'T' + localTime + utcOffset) and exists only for
+// clients that need the instant itself, such as a sales-close countdown.
+message CivilDateTime {
+  string localDate = 1;  // 'YYYY-MM-DD', Cairo calendar date
+  string localTime = 2;  // 'HH:mm', 24-hour Cairo wall clock
+  string utcOffset = 3;  // '+02:00', or '+03:00' under DST, from IANA tzdata
+  string iso = 4;        // RFC 3339, carrying the offset above
+  string timeZone = 5;   // 'Africa/Cairo' today; carried, never assumed
+
+  reserved 6 to 9;       // unixMillis, seconds-precision localTime
+}
+
+// Both languages always travel, so the client picks and catalog never has to
+// speak one. Accept-Language is resolved at the HTTP edge only (BR-56).
+message LocalizedName {
+  string en = 1;
+  string ar = 2;
+}
+
+message Money {
+  // Integer minor units — piastres for EGP. Never a float, never a decimal
+  // string. Excludes the booking fee, which booking adds at its own stage
+  // (BR-19).
+  //
+  // int32, not int64: proto-loader maps 64-bit integers to JS strings by
+  // default, which would silently turn a fare into a string at the gateway.
+  // int32 holds 21 million EGP in piastres, far beyond any single ticket.
+  int32 amountMinor = 1;
+  string currency = 2;  // ISO 4217, 'EGP'
+}
+
+// ---------------------------------------------------------------------------
+// Request
+// ---------------------------------------------------------------------------
+
+message SearchOneWayTripsRequest {
+  string originStationId = 1;       // uuid, required
+  string destinationStationId = 2;  // uuid, required, must differ from 1
+  string departureDate = 3;         // 'YYYY-MM-DD', Cairo civil date, required
+  string travelClassId = 4;         // uuid, required — every search is one class
+  string language = 5;              // 'ar' | 'en' | '' — a preference, not behaviour
+
+  // Optional train-number filter (BR-18). Wrapped so that "absent" and "0" are
+  // distinguishable; a bare int32 cannot express that in proto3.
+  optional int32 trainNumber = 6;
+
+  // TA-18 slots in here without a breaking change. Unset today and ignored by
+  // the server; an unknown enum value arrives as its number and is treated as
+  // UNSPECIFIED.
+  SearchSort sort = 7;
+  SearchFilters filters = 8;
+
+  reserved 9 to 19;  // return leg, passenger counts
+}
+
+enum SearchSort {
+  // Proto3 decodes an absent field to 0, so UNSPECIFIED must mean the mandated
+  // default: departure time from the passenger's origin, ascending (BR-18).
+  SEARCH_SORT_UNSPECIFIED = 0;
+  SEARCH_SORT_DEPARTURE_ASC = 1;
+  SEARCH_SORT_DURATION_ASC = 2;
+  SEARCH_SORT_FARE_ASC = 3;
+  SEARCH_SORT_ARRIVAL_ASC = 4;
+}
+
+message SearchFilters {
+  repeated string trainTypeIds = 1;
+  optional int32 departAfterMinutes = 2;   // Cairo minutes since midnight
+  optional int32 departBeforeMinutes = 3;
+  optional int32 maxFareMinor = 4;
+  optional bool excludeSoldOut = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Response
+// ---------------------------------------------------------------------------
+
+message SearchOneWayTripsResponse {
+  // Server-decided five-day strip. Always present — even when `trips` is empty
+  // — so the client can always render the picker. The server owns it so the
+  // booking-window rule lives in exactly one place.
+  repeated DateStripDay dateStrip = 1;
+
+  // Complete and unpaginated, ordered by origin departure ascending. One day
+  // between two stations is tens of trips, so the whole day is returned and
+  // CAT-4's filters and sorts will apply to all of it, not to a page.
+  repeated TripResult trips = 2;
+
+  // Set if and only if `trips` is empty. The three reasons are distinguishable
+  // by design: each one tells the traveller a different thing to change.
+  optional EmptyResult emptyResult = 3;
+
+  // The booking window that produced the strip, echoed so the client can grey
+  // out dates and build its own messages from one authority.
+  BookingWindow bookingWindow = 4;
+
+  // The instant the server evaluated time-dependent eligibility. Lets a client
+  // detect a stale response and makes the cache re-filter auditable.
+  CivilDateTime evaluatedAt = 5;
+
+  reserved 6 to 19;  // nextPageToken if pagination ever arrives, facets
+}
+
+message BookingWindow {
+  string firstBookableDate = 1;  // Cairo 'YYYY-MM-DD' — today
+  string lastBookableDate = 2;   // today + 29 days
+  int32 totalDays = 3;           // 30
+}
+
+message DateStripDay {
+  string date = 1;   // Cairo 'YYYY-MM-DD'
+  bool selected = 2; // exactly one day is true
+  bool isToday = 3;
+  // Always true today; kept so an edge-clamped strip can still be rendered
+  // honestly if the strip ever includes a non-bookable day.
+  bool bookable = 4;
+}
+
+message TripResult {
+  string tripId = 1;
+  int32 trainNumber = 2;
+  LocalizedName trainType = 3;
+  TravelClass travelClass = 4;
+
+  TripEndpoint departure = 5;  // the PASSENGER's origin, not the train's
+  TripEndpoint arrival = 6;    // the PASSENGER's destination
+
+  // Computed from the two stored instants, never from wall-clock fields, so
+  // midnight and daylight-saving crossings are arithmetically irrelevant.
+  int32 durationMinutes = 7;
+
+  // Stops strictly between the two endpoints; both endpoints excluded (BR-17).
+  int32 intermediateStops = 8;
+
+  // Behind the Sprint-3 inventory seam. Today this is the trip's capacity in
+  // the requested class; from Sprint 3 it is the real per-segment count
+  // (BR-24). Neither this field nor any cache key changes then.
+  int32 availableSeats = 9;
+  // A trip with no seats left is RETURNED and marked, not hidden (BR-16). A
+  // train with no coach of the requested class is not a result at all.
+  bool soldOut = 10;
+
+  Money fare = 11;  // excludes the booking fee
+
+  reserved 12 to 29;  // amenities, per-coach breakdown, cheapest-class hint
+}
+
+message TravelClass {
+  string id = 1;
+  LocalizedName name = 2;
+}
+
+message TripEndpoint {
+  string stationId = 1;
+  LocalizedName name = 2;
+  CivilDateTime at = 3;  // departure at the origin, arrival at the destination
+}
+
+// ---------------------------------------------------------------------------
+// Empty results
+// ---------------------------------------------------------------------------
+
+message EmptyResult {
+  SearchEmptyReason reason = 1;
+
+  // Parameters for the gateway's localized sentence, e.g.
+  // {'lastBookableDate': '2026-12-03'}. Catalog never speaks a language, so it
+  // supplies the values and the edge supplies the words.
+  map<string, string> params = 2;
+}
+
+enum SearchEmptyReason {
+  SEARCH_EMPTY_REASON_UNSPECIFIED = 0;
+  // No published timetable stops at both stations in this travel order.
+  // The traveller should change the stations.
+  SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED = 1;
+  // The route is served, but nothing sellable departs the passenger's origin
+  // on the selected Cairo date. The traveller should change the date.
+  SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE = 2;
+  // A train number was supplied and that train does not serve this pair in
+  // this direction. The traveller should change or clear the train number.
+  SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE = 3;
+}
