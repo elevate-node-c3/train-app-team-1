@@ -18,6 +18,7 @@ export * from './auth/access-level.decorator.js';
 export * from './auth/current-caller.decorator.js';
 export * from './caller/caller-metadata.constants.js';
 export * from './caller/caller-metadata.middleware.js';
+export * from './cache/cache-aside.service.js';
 export * from './cache/redis-client.service.js';
 export * from './cache/redis.module.js';
 export * from './health/health.service.js';
