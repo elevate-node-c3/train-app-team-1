@@ -72,6 +72,36 @@ const RESPONSE_KEYS: Record<keyof SearchOneWayTripsResponse, true> = {
   evaluatedAt: true,
 };
 
+describe('the catalog contract surface', () => {
+  // Every spec in this folder imports its subject directly, so a module left
+  // out of the barrel passes all of them and then fails at the first
+  // cross-package import -- which is how apps actually consume this. Asserting
+  // the barrel is what makes those specs representative.
+  it('re-exports every catalog module from @app/contracts', async () => {
+    const barrel = await import('../index.js');
+
+    for (const name of [
+      'CATALOG_PACKAGE_NAME',
+      'CATALOG_SERVICE_NAME',
+      'getCatalogProtoPath',
+      'FARE_CURRENCY',
+      'CAIRO_TIME_ZONE',
+      'cairoCivilDateOf',
+      'cairoLocalTimeOf',
+      'cairoDayBounds',
+      'cairoToday',
+      'civilDateTimeOf',
+      'durationMinutesBetween',
+      'addCivilDays',
+      'BOOKING_WINDOW_DAYS',
+      'bookingWindowFor',
+      'isWithinBookingWindow',
+    ]) {
+      expect(barrel, `${name} is missing from the barrel`).toHaveProperty(name);
+    }
+  });
+});
+
 describe('the catalog search gRPC contract', () => {
   it('resolves catalog.proto in this layout', () => {
     const path = getCatalogProtoPath();
