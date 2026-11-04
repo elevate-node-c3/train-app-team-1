@@ -9,7 +9,7 @@ import {
   PrimaryColumn,
 } from 'typeorm';
 import { GovernorateEntity } from './governorate.entity.js';
-import { StationEntity } from './station.entity.js';
+import type { StationEntity } from './station.entity.js';
 import type { Relation } from 'typeorm';
 
 @Entity('city')
@@ -36,6 +36,8 @@ export class CityEntity {
   @Column({ name: 'name_en', type: 'text' })
   nameEn!: string;
 
-  @OneToMany(() => StationEntity, (station) => station.city)
+  // Named, not imported: `station` imports this file for its owning
+  // @ManyToOne, so a runtime import back would be circular.
+  @OneToMany('StationEntity', 'city')
   stations!: Relation<StationEntity[]>;
 }

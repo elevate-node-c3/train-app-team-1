@@ -17,7 +17,12 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 const APPS_DIR = join(process.cwd(), 'apps');
 
 /** Apps whose `src/modules` tree follows the module-first layout. */
-const MODULE_FIRST_APPS = new Set(['gateway', 'identity', 'notification']);
+const MODULE_FIRST_APPS = new Set([
+  'gateway',
+  'identity',
+  'notification',
+  'catalog',
+]);
 
 const LAYERS = [
   'domain',
@@ -346,9 +351,19 @@ describe('Feature module boundaries (§2.5)', () => {
           }
 
           if (specifier.startsWith('.')) {
-            if (!typeOnly) {
+            // A relation needs its target class at runtime: TypeORM's
+            // `@ManyToOne(() => OtherEntity)` evaluates that arrow when the
+            // metadata is built, so the import cannot be type-only. Entity to
+            // entity is therefore allowed; anything else relative must stay
+            // type-only, which is what keeps a row object from reaching into a
+            // service, a repository or a module.
+            //
+            // The cycle this permits is caught separately, below.
+            const entityToEntity = /\.entity(\.js|\.ts)?$/.test(specifier);
+
+            if (!typeOnly && !entityToEntity) {
               violations.push(
-                `${file} has a runtime import from '${specifier}' — use a type-only sibling import`,
+                `${file} has a runtime import from '${specifier}' — only another *.entity module may be imported at runtime`,
               );
             }
             continue;
@@ -363,6 +378,68 @@ describe('Feature module boundaries (§2.5)', () => {
       }
 
       expect(violations).toEqual([]);
+    });
+
+    /**
+     * Entities may reference each other at runtime, but the graph they form
+     * must stay acyclic.
+     *
+     * Two entity modules that import each other are a genuine ESM cycle: one
+     * of them is evaluated while the other is still a half-initialised module
+     * record, so a decorator that touches the other class gets `undefined`.
+     * TypeORM's lazy `() => Entity` arrow usually defers past the hazard, but
+     * it depends on load order and fails without a useful message when it does
+     * fail.
+     *
+     * The fix is never to drop the relation: an inverse side takes its target
+     * as a string -- `@OneToMany('StationEntity', 'city')` -- and imports the
+     * class with `import type`. The relation still works in both directions
+     * and the back-edge disappears.
+     */
+    it('keeps the entity runtime-import graph acyclic', () => {
+      const edges = new Map<string, string[]>();
+
+      for (const file of allAppFiles()) {
+        if (!file.endsWith('.entity.ts')) continue;
+        const source = withoutComments(readFileSync(file, 'utf8'));
+        const targets: string[] = [];
+
+        for (const { specifier, typeOnly } of importStatementsOf(source)) {
+          if (typeOnly || !specifier.startsWith('.')) continue;
+          if (!/\.entity(\.js|\.ts)?$/.test(specifier)) continue;
+
+          // '../x/y.entity.js' resolves to the '.ts' that actually exists.
+          targets.push(
+            resolve(dirname(file), specifier).replace(/\.js$/, '.ts'),
+          );
+        }
+
+        edges.set(file, targets);
+      }
+
+      const cycles: string[] = [];
+      const visiting = new Set<string>();
+      const done = new Set<string>();
+
+      const walk = (node: string, trail: string[]): void => {
+        if (visiting.has(node)) {
+          const loop = [...trail.slice(trail.indexOf(node)), node];
+          cycles.push(loop.map((entry) => basename(entry)).join(' -> '));
+          return;
+        }
+        if (done.has(node)) return;
+
+        visiting.add(node);
+        for (const next of edges.get(node) ?? []) {
+          walk(next, [...trail, node]);
+        }
+        visiting.delete(node);
+        done.add(node);
+      };
+
+      for (const node of edges.keys()) walk(node, []);
+
+      expect([...new Set(cycles)]).toEqual([]);
     });
 
     it('keeps single-file groups at the module root', () => {

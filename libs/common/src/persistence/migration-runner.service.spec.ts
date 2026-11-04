@@ -338,7 +338,7 @@ describe('Migration infrastructure (§2.1)', () => {
   });
 
   describe('migration scripts', () => {
-    it('exposes run, show and revert against an explicit data source', () => {
+    it('exposes generate, run, show and revert against an explicit data source', () => {
       const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 
       // `-d` is left without a value on purpose: the caller appends the data
@@ -347,6 +347,7 @@ describe('Migration infrastructure (§2.1)', () => {
       //   npm run migration:show -- apps/identity/src/database/data-source.ts
       expect(pkg.devDependencies.tsx).toBeDefined();
       for (const command of [
+        'migration:generate',
         'migration:run',
         'migration:show',
         'migration:revert',
@@ -360,9 +361,15 @@ describe('Migration infrastructure (§2.1)', () => {
         'tsx apps/identity/src/database/seeds/staff-accounts.seed.ts',
       );
 
-      // migration:generate is deliberately absent — migrations here are
-      // hand-written, and a generated one would not match the reviewed DDL.
-      expect(pkg.scripts['migration:generate']).toBeUndefined();
+      // migration:generate takes the same shape, and the same convention puts
+      // its required positional path second:
+      //   npm run migration:generate -- apps/catalog/src/database/data-source.ts \
+      //     apps/catalog/src/database/migrations/AddSomething
+      // A generated migration is a starting point, not reviewed DDL: read the
+      // SQL it emits and edit it before committing.
+      expect(pkg.scripts['catalog:migration:generate']).toBe(
+        'tsx node_modules/typeorm/cli.js migration:generate -d apps/catalog/src/database/data-source.ts',
+      );
     });
   });
 });
