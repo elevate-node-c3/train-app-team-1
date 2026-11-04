@@ -147,17 +147,26 @@ function cairoDayStart(civilDate: string): Date {
   return new Date(corrected);
 }
 
-function nextCivilDate(civilDate: string): string {
+/**
+ * Calendar arithmetic on a civil date, which has no time zone and therefore no
+ * DST. Day `n` of a strip or a booking window is this, never an instant plus
+ * `n * 86_400_000` -- that would drift by an hour twice a year.
+ */
+export function addCivilDays(civilDate: string, days: number): string {
   const [year, month, day] = civilDate.split('-').map(Number);
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
 
-  // Formatted from UTC fields, not through Cairo: this is calendar arithmetic
-  // on the civil date itself, which has no time zone.
+  // Read back through UTC fields, not through Cairo: the arithmetic is on the
+  // civil date itself.
   return [
-    String(next.getUTCFullYear()).padStart(4, '0'),
-    String(next.getUTCMonth() + 1).padStart(2, '0'),
-    String(next.getUTCDate()).padStart(2, '0'),
+    String(shifted.getUTCFullYear()).padStart(4, '0'),
+    String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+    String(shifted.getUTCDate()).padStart(2, '0'),
   ].join('-');
+}
+
+function nextCivilDate(civilDate: string): string {
+  return addCivilDays(civilDate, 1);
 }
 
 /**
