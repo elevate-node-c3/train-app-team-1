@@ -78,10 +78,16 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
  * The HTTP exception a catalog refusal becomes, or null to let the transport
  * status decide.
  *
- * The field details go into the envelope's `details`, which is what the
- * traveller's client renders beside each input. The strip and window ride
- * along so a refused date can still be replaced with a valid one in the same
- * screen.
+ * The fields travel under `message`, which is the channel `HttpExceptionFilter`
+ * actually reads: `extractValidationDetails` walks `response.message` and
+ * already understands objects carrying `field`, `issue` and `action`. Putting
+ * them under a `details` key of our own invention looked right and was silently
+ * dropped, so the traveller got a 400 naming nothing.
+ *
+ * The strip and window that travelled with the refusal stop here. `ApiErrorDetail`
+ * has nowhere to put them, and widening a shared envelope for one feature is a
+ * bigger decision than this story should take on its own -- so they are not
+ * forwarded rather than being attached somewhere that quietly discards them.
  */
 export function parseCatalogBusinessError(
   error: unknown,
@@ -92,11 +98,7 @@ export function parseCatalogBusinessError(
   return new HttpException(
     {
       code: refusal.code,
-      details: refusal.details,
-      ...(refusal.dateStrip ? { dateStrip: refusal.dateStrip } : {}),
-      ...(refusal.bookingWindow
-        ? { bookingWindow: refusal.bookingWindow }
-        : {}),
+      message: refusal.details,
     },
     HTTP_STATUS_BY_ERROR_CODE[refusal.code] ??
       HttpStatus.INTERNAL_SERVER_ERROR,

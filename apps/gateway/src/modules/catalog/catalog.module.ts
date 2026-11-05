@@ -43,6 +43,20 @@ const CATALOG_CLIENT = 'CATALOG_GRPC';
             package: CATALOG_PACKAGE_NAME,
             protoPath: getCatalogProtoPath(),
             url: downstreamGrpcUrlsFromEnv().catalog,
+            loader: {
+              // Without this an enum decodes to its number, and the empty
+              // result's reason IS the message-catalogue key -- so a reason of
+              // `1` silently resolves to the generic error sentence instead of
+              // "change the stations". The contract declares string names.
+              enums: String,
+              // A repeated field defaults to absent when empty, which makes a
+              // client distinguish "no trains" from a missing key. Always an
+              // array, so it cannot.
+              arrays: true,
+              // `defaults` is deliberately NOT set: it would populate every
+              // scalar with its zero value and destroy the distinction between
+              // an absent optional train number and train number 0.
+            },
           },
         }),
       },

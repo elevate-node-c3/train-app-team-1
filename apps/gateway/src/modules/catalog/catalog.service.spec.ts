@@ -102,6 +102,29 @@ describe('the gateway search service', () => {
       expect(result.evaluatedAt).toEqual(baseResponse.evaluatedAt);
     });
 
+    /**
+     * proto3 omits an empty repeated field, so a day with no trips comes back
+     * with no `trips` key at all. A REST client must not have to know that
+     * absent means empty -- that is the difference between "no trains" and
+     * "the server forgot to tell me".
+     */
+    it('turns an omitted empty array back into an empty array', async () => {
+      const { service } = serviceWith({
+        ...baseResponse,
+        trips: undefined as never,
+        dateStrip: undefined as never,
+        emptyResult: {
+          reason: 'SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE' as never,
+          params: {},
+        },
+      });
+
+      const result = await service.searchOneWay(query(), 'en');
+
+      expect(result.trips).toEqual([]);
+      expect(result.dateStrip).toEqual([]);
+    });
+
     it('carries no empty result when there are trips', async () => {
       const { service } = serviceWith({
         ...baseResponse,
