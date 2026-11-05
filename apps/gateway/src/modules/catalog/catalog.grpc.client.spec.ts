@@ -141,10 +141,12 @@ describe('calling catalog over gRPC', () => {
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       const body = error.getResponse() as {
         code: string;
-        details: { field: string }[];
+        // Under `message`, because that is the channel the envelope filter
+        // reads when turning an exception into error.details.
+        message: { field: string }[];
       };
       expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
-      expect(body.details[0].field).toBe('to');
+      expect(body.message[0].field).toBe('to');
     });
 
     // The no-leak rule: an unrecognised code is not forwarded, and the call
