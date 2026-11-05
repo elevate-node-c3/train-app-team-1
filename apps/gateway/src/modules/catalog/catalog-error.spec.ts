@@ -33,22 +33,15 @@ describe('decoding a catalog refusal', () => {
     expect(refusal?.details[0].action).not.toBe('');
   });
 
-  it('restores the strip and window when they travelled', () => {
+  // Anything beyond the code and the fields is ignored rather than decoded:
+  // the envelope has nowhere to put it, so decoding it would be dead weight.
+  it('ignores keys the envelope cannot carry', () => {
     const refusal = decodeCatalogRefusal(
-      refusalDetails({
-        dateStrip: [
-          { date: '2026-06-15', selected: true, isToday: true, bookable: true },
-        ],
-        bookingWindow: {
-          firstBookableDate: '2026-06-15',
-          lastBookableDate: '2026-07-14',
-          totalDays: 30,
-        },
-      }),
+      refusalDetails({ dateStrip: [{ date: '2026-06-15' }] }),
     );
 
-    expect(refusal?.dateStrip).toHaveLength(1);
-    expect(refusal?.bookingWindow?.lastBookableDate).toBe('2026-07-14');
+    expect(refusal).not.toBeNull();
+    expect(Object.keys(refusal!).sort()).toEqual(['code', 'details']);
   });
 
   /**

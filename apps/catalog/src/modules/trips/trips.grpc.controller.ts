@@ -19,11 +19,10 @@ import { TripSearchService } from './trip-search.service.js';
  * the gateway restores the code after validating it against the enum, so an
  * unknown string can never reach a traveller.
  *
- * The date strip and window ride along. They are small -- five dates and three
- * fields -- and sending them keeps catalog the single decider of which days
- * are offered. The alternative, letting the gateway compute its own strip,
- * would split that decision across two services even though both import the
- * same booking-window function.
+ * The refusal carries only the code and the fields. The date strip and window
+ * went with it for a while, so a client could re-render the picker beside the
+ * error, but `ApiErrorDetail` has nowhere to put them and nothing at the edge
+ * consumed them -- so they are not sent rather than sent and discarded.
  */
 function toRpcException(error: unknown): unknown {
   if (!isCatalogSearchError(error)) return error;
@@ -33,8 +32,6 @@ function toRpcException(error: unknown): unknown {
     details: JSON.stringify({
       code: error.code,
       details: error.details,
-      dateStrip: error.dateStrip,
-      bookingWindow: error.bookingWindow,
     }),
     message: error.message,
   });
