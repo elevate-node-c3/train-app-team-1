@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import type { ApiResponse, VerifyEmailResponseDto } from '@app/contracts';
@@ -7,8 +6,10 @@ import { renderVerificationEmail } from '../../../apps/notification/src/modules/
 
 import {
   AUTH_BASE_URL,
+  GATEWAY_URL,
   clearMailpit,
   compose,
+  composeUpBuild,
   signUp,
   waitForEmailCode,
 } from './stack.js';
@@ -33,9 +34,7 @@ export const SEARCH_STACK = [
   'catalog',
 ] as const;
 
-const BUILD_TIMEOUT_MS = 20 * 60_000;
-
-export const TRIPS_SEARCH_URL = `${process.env.GATEWAY_URL ?? 'http://localhost:3000'}/api/v1/trips/search`;
+export const TRIPS_SEARCH_URL = `${GATEWAY_URL}/api/v1/trips/search`;
 
 /**
  * The subject the notification service actually sends, asked of the template
@@ -53,20 +52,7 @@ export const SIGN_UP_SUBJECT = renderVerificationEmail({
 
 export function startSearchStack(): void {
   compose('down', '-v', '--remove-orphans');
-  execFileSync(
-    'docker',
-    [
-      'compose',
-      'up',
-      '-d',
-      '--build',
-      '--wait',
-      '--wait-timeout',
-      '600',
-      ...SEARCH_STACK,
-    ],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: BUILD_TIMEOUT_MS },
-  );
+  composeUpBuild(SEARCH_STACK);
 }
 
 /**

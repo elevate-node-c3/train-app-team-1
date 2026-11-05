@@ -74,8 +74,42 @@ function docker(args: string[], timeoutMs: number): string {
   }
 }
 
+/** A service this harness can exec into or wait on. */
+export type ComposeService =
+  | 'postgres'
+  | 'redis'
+  | 'rabbitmq'
+  | 'mailpit'
+  | 'gateway'
+  | 'identity'
+  | 'notification'
+  | 'catalog';
+
 export function compose(...args: string[]): string {
   return docker(['compose', ...args], COMPOSE_TIMEOUT_MS);
+}
+
+/**
+ * Builds and starts a slice of the project, on the first-build budget.
+ *
+ * Goes through `docker()` rather than calling execFileSync directly, so a
+ * failed build reports its stderr and the seed passwords in COMPOSE_ENV are
+ * present -- both of which a bare execFileSync silently drops.
+ */
+export function composeUpBuild(services: readonly string[]): void {
+  docker(
+    [
+      'compose',
+      'up',
+      '-d',
+      '--build',
+      '--wait',
+      '--wait-timeout',
+      '600',
+      ...services,
+    ],
+    BUILD_TIMEOUT_MS,
+  );
 }
 
 /** Builds and starts the backbone's slice of the Compose project. */
@@ -166,7 +200,7 @@ const READY_SCRIPT =
   '.catch(() => process.exit(1));';
 
 export async function waitForServiceReady(
-  service: 'identity' | 'notification',
+  service: ComposeService,
   timeoutMs = 180_000,
 ): Promise<void> {
   await waitFor(

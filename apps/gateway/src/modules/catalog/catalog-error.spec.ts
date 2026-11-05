@@ -138,4 +138,27 @@ describe('turning a refusal into an HTTP error', () => {
     expect(parseCatalogBusinessError(new Error('boom'))).toBeNull();
     expect(parseCatalogBusinessError(undefined)).toBeNull();
   });
+
+  /**
+   * `HttpExceptionFilter` only reads `message` for validation details on a
+   * 400, so a refusal whose code mapped elsewhere would arrive naming no
+   * field at all -- BR-57's failure, relocated.
+   *
+   * Catalog only ever refuses with VALIDATION_ERROR today, and this pins that
+   * so the day someone adds a second refusal code, this fails and points at
+   * the reason rather than the fields quietly vanishing.
+   */
+  it('only carries fields on codes the envelope surfaces them for', () => {
+    const exception = parseCatalogBusinessError({
+      details: refusalDetails(),
+    });
+    const body = exception?.getResponse() as { message?: unknown };
+
+    if (Array.isArray(body.message) && body.message.length > 0) {
+      expect(
+        exception?.getStatus(),
+        'details only reach error.details on a 400; this refusal would lose them',
+      ).toBe(HttpStatus.BAD_REQUEST);
+    }
+  });
 });

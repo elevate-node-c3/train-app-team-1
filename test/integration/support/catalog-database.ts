@@ -51,15 +51,20 @@ let dataSource: DataSource | null = null;
 /**
  * Fails fast, and says what to do about it.
  *
- * Without this, a stopped container produces thirty seconds of ioredis retry
- * warnings and then reports every test as *skipped* -- because `beforeAll`
- * threw -- which reads like "nothing to run" rather than "start the database".
- * The exit code is still non-zero, so a gate catches it; a person reading the
- * output is the one who was being misled. The e2e tier tears the stack down
- * with `compose down -v`, so this is the normal way to arrive here.
+ * Without this, a stopped container produces around thirty seconds of driver
+ * retry warnings and then reports every test as *skipped* -- because
+ * `beforeAll` threw -- which reads like "nothing to run" rather than "start
+ * the database". The exit code is still non-zero, so a gate catches it; the
+ * person reading the output is the one being misled. The e2e tier ends with
+ * `compose down -v`, so this is the normal way to arrive here.
+ *
+ * Exported because Redis needs the same treatment for the same reason.
  */
-async function assertDatabaseReachable(): Promise<void> {
-  const url = new URL(CATALOG_DATABASE_URL);
+export async function assertReachable(
+  label: string,
+  hostname: string,
+  port: number,
+): Promise<void> {
   const { Socket } = await import('node:net');
 
   await new Promise<void>((resolve, reject) => {
@@ -69,7 +74,7 @@ async function assertDatabaseReachable(): Promise<void> {
       reject(
         new Error(
           [
-            `Cannot reach Postgres at ${url.host} for the integration tier.`,
+            `Cannot reach ${label} at ${hostname}:${port} for the integration tier.`,
             '',
             'Start it with:  docker compose up -d postgres redis',
             'Then migrate:   DATABASE_URL=postgres://catalog:catalog_dev@127.0.0.1:15432/catalog npm run catalog:migration:run',
@@ -84,11 +89,18 @@ async function assertDatabaseReachable(): Promise<void> {
     socket.setTimeout(2000);
     socket.once('error', fail);
     socket.once('timeout', fail);
-    socket.connect(Number(url.port), url.hostname, () => {
+    socket.connect(port, hostname, () => {
       socket.end();
       resolve();
     });
   });
+}
+
+async function assertDatabaseReachable(): Promise<void> {
+  const url = new URL(CATALOG_DATABASE_URL);
+  // An absent port parses as '', and Number('') is 0 -- which would report
+  // Postgres unreachable when it is merely on the default port.
+  await assertReachable('Postgres', url.hostname, Number(url.port || 5432));
 }
 
 /**
