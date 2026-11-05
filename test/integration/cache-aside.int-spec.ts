@@ -1,7 +1,11 @@
 import { CacheAsideService } from '../../libs/common/src/cache/cache-aside.service.js';
 import { RedisClientService } from '../../libs/common/src/cache/redis-client.service.js';
-import Redis from 'ioredis';
+// Named, as `redis-client.service.ts` imports it: the default export is a
+// namespace under this module resolution, not the constructor.
+import { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { assertReachable } from './support/catalog-database.js';
 
 /**
  * The cache against a real Redis.
@@ -19,6 +23,12 @@ describe('cache-aside against Redis', () => {
   let probe: Redis;
 
   beforeAll(async () => {
+    // Same reason as the database probe: ioredis retries for half a minute
+    // before giving up, and the tests then report as skipped rather than as
+    // "start Redis".
+    const url = new URL(REDIS_URL);
+    await assertReachable('Redis', url.hostname, Number(url.port || 6379));
+
     process.env.REDIS_URL = REDIS_URL;
     redis = new RedisClientService();
     await redis.onModuleInit();

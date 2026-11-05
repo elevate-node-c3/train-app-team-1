@@ -324,5 +324,13 @@ function cairoOffsetOn(civilDate: string): string {
     .formatToParts(midday)
     .find((part) => part.type === 'timeZoneName')?.value;
 
-  return (name ?? 'GMT+02:00').replace('GMT', '') || '+02:00';
+  const raw = (name ?? '').replace('GMT', '').trim();
+  // ICU may spell it '+3' rather than '+03:00', and '+3' is not a valid ISO
+  // offset -- `new Date('...T06:00:00+3')` is an Invalid Date, which would
+  // seed null instants and fail far from the cause.
+  const match = /^([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(raw);
+  if (!match) return '+02:00';
+
+  const [, sign, hours, minutes = '00'] = match;
+  return `${sign}${hours.padStart(2, '0')}:${minutes}`;
 }
