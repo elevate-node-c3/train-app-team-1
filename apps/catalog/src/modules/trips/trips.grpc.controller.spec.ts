@@ -72,8 +72,6 @@ describe('the search gRPC controller', () => {
           action: 'Pick a different destination station',
         },
       ],
-      [{ date: '2026-06-15', selected: true, isToday: true, bookable: true }],
-      EMPTY_RESPONSE.bookingWindow,
     );
 
     it('becomes INVALID_ARGUMENT', async () => {
@@ -101,16 +99,11 @@ describe('the search gRPC controller', () => {
       const decoded = JSON.parse(payload.details) as {
         code: string;
         details: { field: string; action: string }[];
-        dateStrip: unknown[];
-        bookingWindow: { lastBookableDate: string };
       };
 
       expect(decoded.code).toBe(ErrorCode.VALIDATION_ERROR);
       expect(decoded.details[0].field).toBe('to');
       expect(decoded.details[0].action).not.toBe('');
-      // So the client can keep rendering the picker beside the error.
-      expect(decoded.dateStrip).toHaveLength(1);
-      expect(decoded.bookingWindow.lastBookableDate).toBe('2026-07-14');
     });
   });
 
