@@ -2,8 +2,6 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
-  type BookingWindow,
-  type DateStripDay,
   type ValidationErrorDetail,
 } from '@app/contracts';
 
@@ -24,8 +22,6 @@ import {
 interface CatalogRefusal {
   code: ErrorCode;
   details: ValidationErrorDetail[];
-  dateStrip?: DateStripDay[];
-  bookingWindow?: BookingWindow;
 }
 
 function isValidationDetail(value: unknown): value is ValidationErrorDetail {
@@ -65,12 +61,6 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
     details: Array.isArray(record.details)
       ? record.details.filter(isValidationDetail)
       : [],
-    ...(typeof record.bookingWindow === 'object' && record.bookingWindow !== null
-      ? { bookingWindow: record.bookingWindow as BookingWindow }
-      : {}),
-    ...(Array.isArray(record.dateStrip)
-      ? { dateStrip: record.dateStrip as DateStripDay[] }
-      : {}),
   };
 }
 
