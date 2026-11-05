@@ -116,17 +116,26 @@ describe('turning a refusal into an HTTP error', () => {
     expect(exception?.getStatus()).toBe(HttpStatus.BAD_REQUEST);
   });
 
-  it('puts the code and the fields in the response body', () => {
+  /**
+   * Under `message`, not a key of our own: that is the channel
+   * `HttpExceptionFilter.extractValidationDetails` reads, and it already
+   * understands objects carrying field, issue and action. A parallel `details`
+   * key looked right and was silently dropped, so a traveller got a 400
+   * naming nothing.
+   */
+  it('puts the fields where the envelope filter will find them', () => {
     const exception = parseCatalogBusinessError({
       details: refusalDetails(),
     });
 
     const body = exception?.getResponse() as {
       code: string;
-      details: { field: string }[];
+      message: { field: string; issue: string; action: string }[];
     };
     expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
-    expect(body.details[0].field).toBe('to');
+    expect(Array.isArray(body.message)).toBe(true);
+    expect(body.message[0].field).toBe('to');
+    expect(body.message[0].action).not.toBe('');
   });
 
   // Null means "this was not a business refusal", which is what tells the

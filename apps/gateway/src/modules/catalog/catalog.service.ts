@@ -50,6 +50,12 @@ export class CatalogService {
 
     return {
       ...rest,
+      // proto3 omits an empty repeated field, so a day with no trips arrives
+      // with no `trips` key at all. The REST contract must not make a client
+      // guess that absent means empty -- it is the difference between "no
+      // trains" and "the server forgot to tell me".
+      trips: response.trips ?? [],
+      dateStrip: response.dateStrip ?? [],
       ...(emptyResult
         ? {
             emptyResult: {
