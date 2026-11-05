@@ -40,9 +40,14 @@ describe('cache-aside against Redis', () => {
   });
 
   afterAll(async () => {
-    await probe.del('int:cache:trip');
-    probe.disconnect();
-    await redis.onModuleDestroy();
+    // Guarded because afterAll still runs when beforeAll threw -- without this
+    // a missing Redis produces a confusing "cannot read properties of
+    // undefined" that buries the actual reason.
+    if (probe !== undefined) {
+      await probe.del('int:cache:trip');
+      probe.disconnect();
+    }
+    if (redis !== undefined) await redis.onModuleDestroy();
   });
 
   it('is actually connected, so the rest of this file means something', () => {
