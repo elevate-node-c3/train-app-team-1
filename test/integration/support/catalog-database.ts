@@ -137,10 +137,39 @@ export async function catalogDataSource(): Promise<DataSource> {
     extra: { connectionTimeoutMillis: 5000 },
   });
 
-  await dataSource.initialize();
-  await dataSource.runMigrations();
+  // A listening socket is not a ready server: Postgres accepts connections
+  // during start-up and then drops them with "Connection terminated
+  // unexpectedly". The socket probe above is for "the container is gone"; this
+  // short retry is for "it is still waking up", which is what `docker compose
+  // up -d` immediately followed by a test run looks like.
+  await withRetries(() => dataSource!.initialize(), 'connect to Postgres');
+  await withRetries(() => dataSource!.runMigrations(), 'apply migrations');
 
   return dataSource;
+}
+
+async function withRetries<T>(
+  work: () => Promise<T>,
+  description: string,
+  attempts = 10,
+  delayMs = 500,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await work();
+    } catch (error: unknown) {
+      lastError = error;
+      await new Promise((settle) => setTimeout(settle, delayMs));
+    }
+  }
+
+  throw new Error(
+    `Failed to ${description} after ${attempts} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
 }
 
 export async function closeCatalogDataSource(): Promise<void> {
