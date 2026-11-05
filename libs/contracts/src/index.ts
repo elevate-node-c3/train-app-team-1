@@ -10,6 +10,7 @@ export * from './identity/identity.dto.js';
 export * from './identity/password-policy.js';
 export * from './catalog/catalog.grpc.js';
 export * from './catalog/catalog.dto.js';
+export * from './catalog/cairo-time.js';
 export * from './events/event-envelope.js';
 export * from './events/event-types.js';
 export * from './events/verification-code-issued.js';
