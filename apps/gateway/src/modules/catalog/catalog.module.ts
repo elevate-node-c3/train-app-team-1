@@ -43,19 +43,25 @@ const CATALOG_CLIENT = 'CATALOG_GRPC';
             package: CATALOG_PACKAGE_NAME,
             protoPath: getCatalogProtoPath(),
             url: downstreamGrpcUrlsFromEnv().catalog,
+            // Nest passes this straight to proto-loader's loadSync and merges
+            // nothing, so these two are the whole decode configuration.
+            // Measured against catalog.proto rather than assumed:
+            //
+            //   {}                      -> trips absent, reason 1
+            //   { arrays: true }        -> trips [],     reason 1
+            //   { enums: String, arrays: true } -> trips [], reason the name
             loader: {
-              // Without this an enum decodes to its number, and the empty
-              // result's reason IS the message-catalogue key -- so a reason of
-              // `1` silently resolves to the generic error sentence instead of
-              // "change the stations". The contract declares string names.
+              // The empty result's reason IS the message-catalogue key, so a
+              // numeric `1` resolves to the generic error sentence instead of
+              // "change the stations".
               enums: String,
-              // A repeated field defaults to absent when empty, which makes a
-              // client distinguish "no trains" from a missing key. Always an
-              // array, so it cannot.
+              // An empty repeated field is otherwise absent, making a client
+              // distinguish "no trains" from a missing key.
               arrays: true,
-              // `defaults` is deliberately NOT set: it would populate every
-              // scalar with its zero value and destroy the distinction between
-              // an absent optional train number and train number 0.
+              // `defaults: true` is not set because it adds nothing here: it
+              // also populates empty arrays, but `arrays` already does, and it
+              // does NOT affect the optional train number -- proto3 explicit
+              // presence is respected either way, which was measured.
             },
           },
         }),

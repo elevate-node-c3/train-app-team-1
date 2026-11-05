@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   EMAIL_QUEUE,
+  GATEWAY_URL,
   compose,
   stopStack,
   waitFor,
@@ -173,7 +174,7 @@ describe('One-way search, edge to catalog', () => {
   describe('who may search', () => {
     it('refuses an anonymous request', async () => {
       const response = await fetch(
-        `http://localhost:${process.env.GATEWAY_PORT ?? '3000'}${TRIPS}?from=${fixture.stations.alexandria}&to=${fixture.stations.ramsis}&departureDate=${fixture.searchDate}&travelClassId=${fixture.travelClasses.first}`,
+        `${GATEWAY_URL}${TRIPS}?from=${fixture.stations.alexandria}&to=${fixture.stations.ramsis}&departureDate=${fixture.searchDate}&travelClassId=${fixture.travelClasses.first}`,
       );
 
       expect(response.status).toBe(401);
@@ -401,10 +402,14 @@ describe('One-way search, edge to catalog', () => {
      * within a bound.
      */
     it('recovers once catalog is back', async () => {
+      // Polled every five seconds, not twice a second: the route allows 60
+      // requests a minute per caller, and a tight loop would spend that budget
+      // on 429s and then never observe the 200 it is waiting for.
       await waitFor(
         'search to succeed again after catalog restarted',
         async () => (await search()).status === 200,
         60_000,
+        5_000,
       );
 
       const { status, body } = await search();
