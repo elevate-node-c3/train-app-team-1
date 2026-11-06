@@ -9,6 +9,7 @@ import {
   type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
+  type PassengerDto,
   type RefreshTokenRequestDto,
   type ResendVerificationRequestDto,
   type ResendVerificationResponseDto,
@@ -35,6 +36,7 @@ import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
 import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
+import { PassengersService } from './services/passengers.service.js';
 
 /**
  * gRPC status per business code. The business code itself travels in
@@ -82,6 +84,12 @@ const GRPC_STATUS_BY_ERROR: Partial<Record<ErrorCode, grpc.status>> = {
   [ErrorCode.PHONE_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
   [ErrorCode.INVALID_PROFILE_TYPE]: grpc.status.INVALID_ARGUMENT,
   [ErrorCode.INVALID_NATIONALITY]: grpc.status.INVALID_ARGUMENT,
+
+  // Saved passengers
+  [ErrorCode.PASSENGER_NOT_FOUND]: grpc.status.NOT_FOUND,
+  [ErrorCode.PASSENGER_LIMIT_REACHED]: grpc.status.FAILED_PRECONDITION,
+  [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: grpc.status.FAILED_PRECONDITION,
+  [ErrorCode.NATIONAL_ID_LOCKED]: grpc.status.FAILED_PRECONDITION,
 };
 
 function toRpcException(error: unknown): unknown {
@@ -127,6 +135,33 @@ interface ProfileWire {
   bookable: boolean;
 }
 
+interface ListPassengersRequestWire {
+  accountId: string;
+  language?: string;
+}
+
+interface AddPassengerRequestWire {
+  accountId: string;
+  fullName: string;
+  nationalId: string;
+  profileType: string;
+  language?: string;
+}
+
+interface UpdatePassengerRequestWire {
+  passengerId: string;
+  accountId: string;
+  fullName: string;
+  nationalId: string;
+  profileType: string;
+  language?: string;
+}
+
+interface DeletePassengerRequestWire {
+  passengerId: string;
+  accountId: string;
+}
+
 /**
  * The gRPC transport adapter. It owns no business rule: it reads the caller
  * from CLS (restored from metadata by the interceptor), calls one service, and
@@ -140,6 +175,7 @@ export class AuthGrpcController {
     private readonly sessions: SessionsService,
     private readonly passwords: PasswordsService,
     private readonly profiles: ProfileService,
+    private readonly passengers: PassengersService,
     private readonly cls: ClsService,
   ) {}
 
@@ -333,6 +369,49 @@ export class AuthGrpcController {
   }> {
     return this.run(async () => {
       return this.profiles.getProfileOptions();
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ListPassengers')
+  async listPassengers(
+    request: ListPassengersRequestWire,
+  ): Promise<{ passengers: PassengerDto[] }> {
+    return this.run(async () => {
+      const passengers = await this.passengers.listPassengers(
+        request.accountId,
+        request.language,
+      );
+      return { passengers };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'AddPassenger')
+  async addPassenger(
+    request: AddPassengerRequestWire,
+  ): Promise<{ passenger: PassengerDto }> {
+    return this.run(async () => {
+      const passenger = await this.passengers.addPassenger(request);
+      return { passenger };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'UpdatePassenger')
+  async updatePassenger(
+    request: UpdatePassengerRequestWire,
+  ): Promise<{ passenger: PassengerDto }> {
+    return this.run(async () => {
+      const passenger = await this.passengers.updatePassenger(request);
+      return { passenger };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'DeletePassenger')
+  async deletePassenger(
+    request: DeletePassengerRequestWire,
+  ): Promise<{ success: boolean }> {
+    return this.run(async () => {
+      await this.passengers.deletePassenger(request);
+      return { success: true };
     });
   }
 

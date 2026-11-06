@@ -4,6 +4,10 @@ import { OutboxModule } from '@app/messaging';
 import { tokenSettingsFromEnv } from '../../config/token-settings.js';
 import { AuthGrpcController } from './auth.grpc.controller.js';
 import { BcryptPasswordHasher } from './bcrypt-password.hasher.js';
+import {
+  BOOKING_TICKET_CHECK,
+  StubBookingTicketCheckAdapter,
+} from './booking-ticket-check.adapter.js';
 import { AccountEntity } from './entities/account.entity.js';
 import { DeviceCredentialEntity } from './entities/device-credential.entity.js';
 import { NationalityEntity } from './entities/nationality.entity.js';
@@ -28,6 +32,7 @@ import { VerificationCodeRepository } from './repositories/verification-code.rep
 import { VerificationRequestRepository } from './repositories/verification-request.repository.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
+import { PassengersService } from './services/passengers.service.js';
 import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
 import { SessionIssuer } from './session.issuer.js';
@@ -60,10 +65,12 @@ const ENTITIES = [
     SessionsService,
     PasswordsService,
     ProfileService,
+    PassengersService,
     VerificationCodeIssuer,
     VerificationRatePolicy,
     SessionIssuer,
     { provide: TOKEN_SETTINGS, useFactory: tokenSettingsFromEnv },
+    { provide: BOOKING_TICKET_CHECK, useClass: StubBookingTicketCheckAdapter },
     AccountRepository,
     PassengerRepository,
     ProfileTypeRepository,
@@ -78,6 +85,6 @@ const ENTITIES = [
     IdentityJwtSigner,
     NodeRefreshTokenHasher,
   ],
-  exports: [AccountsService, ProfileService],
+  exports: [AccountsService, ProfileService, PassengersService],
 })
 export class AuthModule {}
