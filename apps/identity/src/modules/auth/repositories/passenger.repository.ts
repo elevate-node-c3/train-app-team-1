@@ -76,15 +76,21 @@ export class PassengerRepository {
     ctx: TransactionContext | null,
     id: string,
     accountId: string,
+    options?: { forUpdate?: boolean },
   ): Promise<PassengerEntity | null> {
     const repo = ctx
       ? entityManagerOf(ctx).getRepository(PassengerEntity)
       : this.dataSource.getRepository(PassengerEntity);
-    return repo
+    const query = repo
       .createQueryBuilder('passenger')
       .where('passenger.id = :id', { id })
-      .andWhere('passenger.account_id = :accountId', { accountId })
-      .getOne();
+      .andWhere('passenger.account_id = :accountId', { accountId });
+
+    if (options?.forUpdate && ctx) {
+      query.setLock('pessimistic_write');
+    }
+
+    return query.getOne();
   }
 
   async delete(
