@@ -43,17 +43,17 @@ export interface DeletePassengerCommand {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '23505'
-  );
+  if (typeof error === 'object' && error !== null) {
+    const err = error as { code?: unknown; driverError?: { code?: unknown } };
+    return err.code === '23505' || err.driverError?.code === '23505';
+  }
+  return false;
 }
 
 function constraintOf(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'constraint' in error) {
-    return String((error as { constraint: unknown }).constraint);
+  if (typeof error === 'object' && error !== null) {
+    const err = error as { constraint?: unknown; driverError?: { constraint?: unknown } };
+    return String(err.constraint || err.driverError?.constraint || '');
   }
   return '';
 }
@@ -279,12 +279,13 @@ export class PassengersService {
             ctx,
             command.accountId,
           );
-          if (account) {
-            account.fullName = nameResult.normalized;
-            account.nationalId = nidResult.normalized;
-            account.profileType = command.profileType;
-            await this.accounts.update(ctx, account);
+          if (!account) {
+            throw new AuthError(ErrorCode.UNAUTHORIZED);
           }
+          account.fullName = nameResult.normalized;
+          account.nationalId = nidResult.normalized;
+          account.profileType = command.profileType;
+          await this.accounts.update(ctx, account);
         }
 
         passenger.fullName = nameResult.normalized;

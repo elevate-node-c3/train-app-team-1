@@ -12,7 +12,7 @@ import {
   Put,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CALLER_ACCOUNT_ID_KEY, RateLimit, RequireAccess } from '@app/common';
+import { CALLER_ACCOUNT_ID_KEY, RateLimit, RequireAccess, resolveLanguage } from '@app/common';
 import {
   ErrorCode,
   type ListPassengersResponseDto,
@@ -40,7 +40,7 @@ export class PassengersController {
     @Headers('accept-language') acceptLanguage?: string,
   ): Promise<ListPassengersResponseDto> {
     const accountId = this.getAccountId();
-    const language = this.resolveLanguage(acceptLanguage);
+    const language = resolveLanguage(acceptLanguage);
     return this.identity.listPassengers(accountId, language);
   }
 
@@ -53,7 +53,7 @@ export class PassengersController {
     @Headers('accept-language') acceptLanguage?: string,
   ): Promise<{ passenger: PassengerDto }> {
     const accountId = this.getAccountId();
-    const language = this.resolveLanguage(acceptLanguage);
+    const language = resolveLanguage(acceptLanguage);
     const passenger = await this.identity.addPassenger({
       accountId,
       fullName: body.fullName,
@@ -74,7 +74,7 @@ export class PassengersController {
     @Headers('accept-language') acceptLanguage?: string,
   ): Promise<{ passenger: PassengerDto }> {
     const accountId = this.getAccountId();
-    const language = this.resolveLanguage(acceptLanguage);
+    const language = resolveLanguage(acceptLanguage);
     const passenger = await this.identity.updatePassenger({
       passengerId: id,
       accountId,
@@ -104,15 +104,5 @@ export class PassengersController {
       );
     }
     return accountId;
-  }
-
-  private resolveLanguage(acceptLanguage?: string): string {
-    if (
-      acceptLanguage &&
-      acceptLanguage.trim().toLowerCase().startsWith('en')
-    ) {
-      return 'en';
-    }
-    return 'ar';
   }
 }

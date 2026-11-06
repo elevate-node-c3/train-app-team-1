@@ -440,6 +440,19 @@ describe('PassengersService', () => {
         code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
       });
     });
+
+    it('catches DB unique violation wrapped in driverError and maps to NATIONAL_ID_ALREADY_REGISTERED', async () => {
+      mockPassengers.save.mockRejectedValue({
+        driverError: {
+          code: '23505',
+          constraint: 'uq_passenger_nid_account',
+        },
+      });
+
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
+        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+      });
+    });
   });
 
   describe('updatePassenger', () => {
@@ -648,6 +661,59 @@ describe('PassengersService', () => {
       mockAccounts.update.mockRejectedValue({
         code: '23505',
         constraint: 'uq_account_national_id',
+      });
+
+      const command: UpdatePassengerCommand = {
+        passengerId: 'pass-self',
+        accountId: 'acc-123',
+        fullName: 'Ahmed Hussein',
+        nationalId: validCompanionNid1,
+        profileType: 'Regular',
+      };
+
+      await expect(service.updatePassenger(command)).rejects.toMatchObject({
+        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+      });
+    });
+
+    it('rejects self-passenger update with UNAUTHORIZED if account is not found in database', async () => {
+      const selfPassenger = createPassengerEntity({
+        id: 'pass-self',
+        accountId: 'acc-123',
+        nationalId: validSelfNid,
+        isSelf: true,
+      });
+      mockPassengers.findByIdAndAccountId.mockResolvedValue(selfPassenger);
+      mockAccounts.findByIdForUpdate.mockResolvedValue(null);
+
+      const command: UpdatePassengerCommand = {
+        passengerId: 'pass-self',
+        accountId: 'acc-123',
+        fullName: 'Ahmed Hussein',
+        nationalId: validSelfNid,
+        profileType: 'Regular',
+      };
+
+      await expect(service.updatePassenger(command)).rejects.toMatchObject({
+        code: ErrorCode.UNAUTHORIZED,
+      });
+    });
+
+    it('catches DB unique violation wrapped in driverError on update and maps to NATIONAL_ID_ALREADY_REGISTERED', async () => {
+      const selfPassenger = createPassengerEntity({
+        id: 'pass-self',
+        accountId: 'acc-123',
+        nationalId: validSelfNid,
+        isSelf: true,
+      });
+      mockPassengers.findByIdAndAccountId.mockResolvedValue(selfPassenger);
+      mockBookingTicketCheck.hasIssuedTickets.mockResolvedValue(false);
+
+      mockAccounts.update.mockRejectedValue({
+        driverError: {
+          code: '23505',
+          constraint: 'uq_account_national_id',
+        },
       });
 
       const command: UpdatePassengerCommand = {
