@@ -723,6 +723,305 @@
       ]
     },
     {
+      "name": "Profile (Gateway)",
+      "description": "Profile completion and lookup endpoints (Sprint 2). Requires verified traveller authentication for reading and completing profile. Options endpoint is public.",
+      "item": [
+        {
+          "name": "Get Profile Options",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Profile options returned successfully\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.profileTypes).to.be.an(\"array\");",
+                  "    pm.expect(json.data.nationalities).to.be.an(\"array\");",
+                  "    pm.expect(json.data.profileTypes.length).to.be.above(0);",
+                  "    pm.expect(json.data.nationalities.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "options"
+              ]
+            },
+            "description": "Public lookup for allowed profile types and nationalities (e.g. Regular, Egyptian)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile - Before Completion (Incomplete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Profile is incomplete with null fields\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.bookable).to.be.false;",
+                  "    pm.expect(json.data.fullName).to.be.null;",
+                  "    pm.expect(json.data.phoneNumber).to.be.null;",
+                  "    pm.expect(json.data.nationalId).to.be.null;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile"
+              ]
+            },
+            "description": "Reads the profile of the signed-in traveller before completion. Returns bookable: false and null fields."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Profile completed and bookable token received\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.profile.bookable).to.be.true;",
+                  "    pm.expect(json.data.profile.fullName).to.eql(\"Ahmed Hussein\");",
+                  "    pm.expect(json.data.profile.phoneNumber).to.eql(\"01001234567\");",
+                  "    pm.expect(json.data.profile.nationalId).to.eql(\"28505150101235\");",
+                  "    pm.expect(json.data.tokens.accessToken).to.be.a(\"string\");",
+                  "    pm.environment.set(\"accessToken\", json.data.tokens.accessToken);",
+                  "    pm.environment.set(\"refreshToken\", json.data.tokens.refreshToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Ahmed Hussein\",\n  \"phoneNumber\": \"01001234567\",\n  \"nationalId\": \"28505150101235\",\n  \"profileType\": \"Regular\",\n  \"nationality\": \"Egyptian\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "complete"
+              ]
+            },
+            "description": "Completes the profile of the verified traveller: full name, Egyptian phone, 14-digit National ID, profile type, and nationality. Creates/adopts self passenger and returns new bookable token pair."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile - After Completion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Profile returned with full owner data and bookable=true\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.bookable).to.be.true;",
+                  "    pm.expect(json.data.fullName).to.eql(\"Ahmed Hussein\");",
+                  "    pm.expect(json.data.phoneNumber).to.eql(\"01001234567\");",
+                  "    pm.expect(json.data.nationalId).to.eql(\"28505150101235\");",
+                  "    pm.expect(json.data.profileType).to.eql(\"Regular\");",
+                  "    pm.expect(json.data.nationality).to.eql(\"Egyptian\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile"
+              ]
+            },
+            "description": "Reads the completed profile. Full National ID and phone returned only to their authenticated owner."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Profile - Already Completed (Refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test(\"PROFILE_ALREADY_COMPLETE error returned\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.error.code).to.eql(\"PROFILE_ALREADY_COMPLETE\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Ahmed Hussein\",\n  \"phoneNumber\": \"01001234567\",\n  \"nationalId\": \"28505150101235\",\n  \"profileType\": \"Regular\",\n  \"nationality\": \"Egyptian\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "complete"
+              ]
+            },
+            "description": "Attempting to complete an already completed profile is refused with code PROFILE_ALREADY_COMPLETE."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Standalone Microservices (Host Dev Mode)",
       "description": "Direct endpoints when running individual services locally on host (e.g. npm run start:dev identity).",
       "item": [

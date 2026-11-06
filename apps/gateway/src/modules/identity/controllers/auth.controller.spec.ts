@@ -67,7 +67,7 @@ function harness(): {
   };
   return {
     controller: new AuthController(identity as unknown as IdentityService),
-    identity,
+    identity: identity as any,
   };
 }
 

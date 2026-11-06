@@ -37,6 +37,64 @@ export interface VerifyEmailWireResponse {
   maskedEmail: string;
 }
 
+export interface WireProfileData {
+  accountId: string;
+  fullName: string;
+  phoneNumber: string;
+  nationalId: string;
+  profileType: string;
+  nationality: string;
+  bookable: boolean;
+}
+
+export interface WireCompleteProfileResponse {
+  tokens: WireTokenPair;
+  profile: WireProfileData;
+}
+
+export interface WireGetProfileResponse {
+  profile: WireProfileData;
+}
+
+export interface WireProfileTypeItem {
+  code: string;
+  nameAr: string;
+  nameEn: string;
+}
+
+export interface WireNationalityItem {
+  code: string;
+  nameAr: string;
+  nameEn: string;
+}
+
+export interface WireGetProfileOptionsResponse {
+  profileTypes: WireProfileTypeItem[];
+  nationalities: WireNationalityItem[];
+}
+
+export interface WirePassengerItem {
+  id: string;
+  fullName: string;
+  nationalId: string;
+  profileType: string;
+  typeName: string;
+  isSelf: boolean;
+  createdAt: string;
+}
+
+export interface WireListPassengersResponse {
+  passengers: WirePassengerItem[];
+}
+
+export interface WirePassengerResponse {
+  passenger: WirePassengerItem;
+}
+
+export interface WireDeletePassengerResponse {
+  success: boolean;
+}
+
 type Callback<T> = (error: grpc.ServiceError | null, response?: T) => void;
 
 export interface IdentityGrpcServiceClient extends grpc.Client {
@@ -92,6 +150,67 @@ export interface IdentityGrpcServiceClient extends grpc.Client {
     metadata: grpc.Metadata,
     options: grpc.CallOptions,
     callback: Callback<ResetPasswordResponseDto>,
+  ): grpc.ClientUnaryCall;
+  completeProfile(
+    request: {
+      fullName: string;
+      phoneNumber: string;
+      nationalId: string;
+      profileType: string;
+      nationality: string;
+    },
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WireCompleteProfileResponse>,
+  ): grpc.ClientUnaryCall;
+  getProfile(
+    request: object,
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WireGetProfileResponse>,
+  ): grpc.ClientUnaryCall;
+  getProfileOptions(
+    request: object,
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WireGetProfileOptionsResponse>,
+  ): grpc.ClientUnaryCall;
+  listPassengers(
+    request: { accountId: string; language: string },
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WireListPassengersResponse>,
+  ): grpc.ClientUnaryCall;
+  addPassenger(
+    request: {
+      accountId: string;
+      fullName: string;
+      nationalId: string;
+      profileType: string;
+      language: string;
+    },
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WirePassengerResponse>,
+  ): grpc.ClientUnaryCall;
+  updatePassenger(
+    request: {
+      passengerId: string;
+      accountId: string;
+      fullName: string;
+      nationalId: string;
+      profileType: string;
+      language: string;
+    },
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WirePassengerResponse>,
+  ): grpc.ClientUnaryCall;
+  deletePassenger(
+    request: { passengerId: string; accountId: string },
+    metadata: grpc.Metadata,
+    options: grpc.CallOptions,
+    callback: Callback<WireDeletePassengerResponse>,
   ): grpc.ClientUnaryCall;
 }
 

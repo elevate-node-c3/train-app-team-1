@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ErrorCode, HTTP_STATUS_BY_ERROR_CODE } from '@app/contracts';
+import { MESSAGE_CATALOGUE } from '@app/common';
 import {
   CLAIM_OUTBOX_SQL,
   INSERT_OUTBOX_SQL,
@@ -253,5 +255,33 @@ describe('Schema agreement', () => {
     expect(tableBody(notificationDdl, 'email_delivery')).toMatch(
       /outcome <> 'accepted'[\s\S]*?accepted_at IS NOT NULL AND latency_ms IS NOT NULL/,
     );
+  });
+});
+
+describe('Passenger error codes and messages', () => {
+  it('defines HTTP status mappings for passenger error codes', () => {
+    expect(HTTP_STATUS_BY_ERROR_CODE[ErrorCode.PASSENGER_NOT_FOUND]).toBe(404);
+    expect(HTTP_STATUS_BY_ERROR_CODE[ErrorCode.PASSENGER_LIMIT_REACHED]).toBe(422);
+    expect(HTTP_STATUS_BY_ERROR_CODE[ErrorCode.CANNOT_DELETE_SELF_PASSENGER]).toBe(422);
+    expect(HTTP_STATUS_BY_ERROR_CODE[ErrorCode.NATIONAL_ID_LOCKED]).toBe(422);
+  });
+
+  it('defines bilingual error messages in catalogue for passenger error codes', () => {
+    expect(MESSAGE_CATALOGUE[ErrorCode.PASSENGER_NOT_FOUND]).toEqual({
+      ar: 'المسافر غير موجود',
+      en: 'Passenger not found',
+    });
+    expect(MESSAGE_CATALOGUE[ErrorCode.PASSENGER_LIMIT_REACHED]).toEqual({
+      ar: 'تم الوصول إلى الحد الأقصى للمسافرين (10 مسافرين)',
+      en: 'Passenger limit reached (maximum 10 companions)',
+    });
+    expect(MESSAGE_CATALOGUE[ErrorCode.CANNOT_DELETE_SELF_PASSENGER]).toEqual({
+      ar: 'لا يمكن حذف المسافر الأساسي',
+      en: 'Cannot delete self passenger',
+    });
+    expect(MESSAGE_CATALOGUE[ErrorCode.NATIONAL_ID_LOCKED]).toEqual({
+      ar: 'لا يمكن تعديل الرقم القومي بعد إصدار التذكرة',
+      en: 'National ID cannot be changed once a ticket has been issued',
+    });
   });
 });

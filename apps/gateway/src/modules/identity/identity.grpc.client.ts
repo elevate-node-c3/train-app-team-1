@@ -13,6 +13,7 @@ import * as grpc from '@grpc/grpc-js';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
+  type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
   type RefreshTokenRequestDto,
@@ -34,6 +35,12 @@ import {
   type IdentityGrpcServiceClient,
   type UnaryMethod,
   type VerifyEmailWireResponse,
+  type WireCompleteProfileResponse,
+  type WireDeletePassengerResponse,
+  type WireGetProfileOptionsResponse,
+  type WireGetProfileResponse,
+  type WireListPassengersResponse,
+  type WirePassengerResponse,
   type WireRefreshResponse,
   type WireSignInResponse,
 } from './identity.types.js';
@@ -142,6 +149,67 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       email: input.email,
       code: input.code,
       newPassword: input.newPassword,
+    });
+  }
+
+  completeProfile(
+    input: CompleteProfileRequestDto,
+  ): Promise<WireCompleteProfileResponse> {
+    return this.unary<WireCompleteProfileResponse>('completeProfile', {
+      fullName: input.fullName,
+      phoneNumber: input.phoneNumber,
+      nationalId: input.nationalId,
+      profileType: input.profileType,
+      nationality: input.nationality,
+    });
+  }
+
+  getProfile(): Promise<WireGetProfileResponse> {
+    return this.unary<WireGetProfileResponse>('getProfile', {});
+  }
+
+  getProfileOptions(): Promise<WireGetProfileOptionsResponse> {
+    return this.unary<WireGetProfileOptionsResponse>('getProfileOptions', {});
+  }
+
+  listPassengers(
+    accountId: string,
+    language: string,
+  ): Promise<WireListPassengersResponse> {
+    return this.unary<WireListPassengersResponse>('listPassengers', {
+      accountId,
+      language,
+    });
+  }
+
+  addPassenger(input: {
+    accountId: string;
+    fullName: string;
+    nationalId: string;
+    profileType: string;
+    language: string;
+  }): Promise<WirePassengerResponse> {
+    return this.unary<WirePassengerResponse>('addPassenger', input);
+  }
+
+  updatePassenger(input: {
+    passengerId: string;
+    accountId: string;
+    fullName: string;
+    nationalId: string;
+    profileType: string;
+    language: string;
+  }): Promise<WirePassengerResponse> {
+    return this.unary<WirePassengerResponse>('updatePassenger', input);
+  }
+
+  deletePassenger(
+    passengerId: string,
+    accountId: string,
+  ): Promise<WireDeletePassengerResponse> {
+    return this.unary<WireDeletePassengerResponse>('deletePassenger', {
+      passengerId,
+      accountId,
     });
   }
 

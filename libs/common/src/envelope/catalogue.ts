@@ -2,6 +2,14 @@ import { ErrorCode } from '@app/contracts';
 
 export type SupportedLanguage = 'ar' | 'en';
 
+/**
+ * Domain Event Catalogue Note:
+ * Saved passenger CRUD events (add, update, delete) are intentionally NOT published
+ * to the message broker / outbox. The booking service reads passenger details
+ * directly from identity during hold creation in Sprint 3, eliminating unnecessary
+ * event fan-out and companion roster duplication.
+ */
+
 export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.SUCCESS]: {
     ar: 'تمت العملية بنجاح',
@@ -138,6 +146,70 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.PROFILE_INCOMPLETE]: {
     ar: 'يجب إكمال الملف الشخصي قبل إتمام الحجز',
     en: 'Please complete your profile before making a booking',
+  },
+
+  // Profile completion
+  [ErrorCode.PROFILE_ALREADY_COMPLETE]: {
+    ar: 'تم إكمال الملف الشخصي مسبقاً',
+    en: 'Profile is already complete',
+  },
+  [ErrorCode.INVALID_FULL_NAME]: {
+    ar: 'الاسم بالكامل غير صالح، يجب إدخال الاسم الأول واسم العائلة على الأقل وبحد أقصى 50 حرفاً',
+    en: 'Invalid full name; must include at least first and family name with a maximum of 50 characters',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_LENGTH]: {
+    ar: 'الرقم القومي غير صالح، يجب أن يتكون من 14 رقماً بالضبط',
+    en: 'Invalid National ID; must be exactly 14 digits',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_CENTURY]: {
+    ar: 'الرقم القومي غير صالح، رقم القرن غير صحيح',
+    en: 'Invalid National ID; invalid century digit',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE]: {
+    ar: 'الرقم القومي غير صالح، تاريخ الميلاد غير صحيح أو في المستقبل',
+    en: 'Invalid National ID; birth date is invalid or in the future',
+  },
+  [ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE]: {
+    ar: 'الرقم القومي غير صالح، كود المحافظة غير صحيح',
+    en: 'Invalid National ID; invalid governorate code',
+  },
+  [ErrorCode.NATIONAL_ID_ALREADY_REGISTERED]: {
+    ar: 'الرقم القومي مسجل بالفعل لحساب آخر',
+    en: 'This National ID is already registered to another account',
+  },
+  [ErrorCode.INVALID_PHONE_FORMAT]: {
+    ar: 'رقم الهاتف غير صالح، يجب أن يكون رقم هاتف مصري صحيح يبدأ بـ 01',
+    en: 'Invalid phone number; must be a valid Egyptian mobile number starting with 01',
+  },
+  [ErrorCode.PHONE_ALREADY_REGISTERED]: {
+    ar: 'رقم الهاتف مسجل بالفعل',
+    en: 'This phone number is already registered',
+  },
+  [ErrorCode.INVALID_PROFILE_TYPE]: {
+    ar: 'نوع الملف الشخصي غير صالح',
+    en: 'Invalid profile type',
+  },
+  [ErrorCode.INVALID_NATIONALITY]: {
+    ar: 'الجنسية غير صالحة',
+    en: 'Invalid nationality',
+  },
+
+  // Saved passengers
+  [ErrorCode.PASSENGER_NOT_FOUND]: {
+    ar: 'المسافر غير موجود',
+    en: 'Passenger not found',
+  },
+  [ErrorCode.PASSENGER_LIMIT_REACHED]: {
+    ar: 'تم الوصول إلى الحد الأقصى للمسافرين (10 مسافرين)',
+    en: 'Passenger limit reached (maximum 10 companions)',
+  },
+  [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: {
+    ar: 'لا يمكن حذف المسافر الأساسي',
+    en: 'Cannot delete self passenger',
+  },
+  [ErrorCode.NATIONAL_ID_LOCKED]: {
+    ar: 'لا يمكن تعديل الرقم القومي بعد إصدار التذكرة',
+    en: 'National ID cannot be changed once a ticket has been issued',
   },
 };
 
