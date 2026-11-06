@@ -13,6 +13,7 @@ export const EVENT_TYPES = {
   emailVerified: 'identity.email.verified',
   sessionRevoked: 'identity.session.revoked',
   passwordReset: 'identity.password.reset',
+  profileCompleted: 'identity.profile.completed',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

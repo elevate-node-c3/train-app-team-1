@@ -6,6 +6,9 @@ import { AuthGrpcController } from './auth.grpc.controller.js';
 import { BcryptPasswordHasher } from './bcrypt-password.hasher.js';
 import { AccountEntity } from './entities/account.entity.js';
 import { DeviceCredentialEntity } from './entities/device-credential.entity.js';
+import { NationalityEntity } from './entities/nationality.entity.js';
+import { PassengerEntity } from './entities/passenger.entity.js';
+import { ProfileTypeEntity } from './entities/profile-type.entity.js';
 import { RefreshTokenEntity } from './entities/refresh-token.entity.js';
 import { SessionEntity } from './entities/session.entity.js';
 import { SignInLockoutEntity } from './entities/sign-in-lockout.entity.js';
@@ -15,6 +18,9 @@ import { IdentityJwtSigner } from './identity-jwt.signer.js';
 import { NodeRefreshTokenHasher } from './node-refresh-token.hasher.js';
 import { AccountRepository } from './repositories/account.repository.js';
 import { DeviceCredentialRepository } from './repositories/device-credential.repository.js';
+import { NationalityRepository } from './repositories/nationality.repository.js';
+import { PassengerRepository } from './repositories/passenger.repository.js';
+import { ProfileTypeRepository } from './repositories/profile-type.repository.js';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository.js';
 import { SessionRepository } from './repositories/session.repository.js';
 import { SignInLockoutRepository } from './repositories/sign-in-lockout.repository.js';
@@ -22,6 +28,7 @@ import { VerificationCodeRepository } from './repositories/verification-code.rep
 import { VerificationRequestRepository } from './repositories/verification-request.repository.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
+import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
 import { SessionIssuer } from './session.issuer.js';
 import { TOKEN_SETTINGS } from './token-settings.js';
@@ -30,6 +37,9 @@ import { VerificationRatePolicy } from './verification-rate.policy.js';
 
 const ENTITIES = [
   AccountEntity,
+  PassengerEntity,
+  ProfileTypeEntity,
+  NationalityEntity,
   VerificationCodeEntity,
   VerificationRequestEntity,
   SignInLockoutEntity,
@@ -49,11 +59,15 @@ const ENTITIES = [
     AccountsService,
     SessionsService,
     PasswordsService,
+    ProfileService,
     VerificationCodeIssuer,
     VerificationRatePolicy,
     SessionIssuer,
     { provide: TOKEN_SETTINGS, useFactory: tokenSettingsFromEnv },
     AccountRepository,
+    PassengerRepository,
+    ProfileTypeRepository,
+    NationalityRepository,
     VerificationCodeRepository,
     VerificationRequestRepository,
     SignInLockoutRepository,
@@ -64,6 +78,6 @@ const ENTITIES = [
     IdentityJwtSigner,
     NodeRefreshTokenHasher,
   ],
-  exports: [AccountsService],
+  exports: [AccountsService, ProfileService],
 })
 export class AuthModule {}

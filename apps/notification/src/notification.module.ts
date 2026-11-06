@@ -8,6 +8,7 @@ import {
 import { MessagingModule } from '@app/messaging';
 import { migrations } from './database/migrations/index.js';
 import { VerificationEmailsModule } from './modules/verification-emails/verification-emails.module.js';
+import { ProfileCompletedModule } from './modules/profile-completed/profile-completed.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /**
@@ -28,6 +29,7 @@ import { ServiceInfoController } from './service-info.controller.js';
     MessagingModule,
     MigrationModule,
     VerificationEmailsModule,
+    ProfileCompletedModule,
   ],
   controllers: [ServiceInfoController],
 })
