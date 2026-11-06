@@ -110,6 +110,30 @@ async function addManyTrips(source: DataSource, count: number): Promise<void> {
   }
 }
 
+/**
+ * Removes the load trips, so a run measures growth it caused itself.
+ *
+ * The inserts are idempotent and the database persists between runs, which
+ * means a second run would otherwise find the extra trips already there, see
+ * no growth, and fail an assertion about its own setup rather than about the
+ * query. Children before parents, in one statement each.
+ */
+async function removeManyTrips(source: DataSource): Promise<void> {
+  await source.query(
+    `DELETE FROM trip_stop WHERE trip_id IN (SELECT id FROM dated_trip WHERE train_id IN (SELECT id FROM train WHERE train_number >= 9000))`,
+  );
+  await source.query(
+    `DELETE FROM dated_trip WHERE train_id IN (SELECT id FROM train WHERE train_number >= 9000)`,
+  );
+  await source.query(
+    `DELETE FROM fare WHERE train_id IN (SELECT id FROM train WHERE train_number >= 9000)`,
+  );
+  await source.query(
+    `DELETE FROM timetable WHERE train_id IN (SELECT id FROM train WHERE train_number >= 9000)`,
+  );
+  await source.query(`DELETE FROM train WHERE train_number >= 9000`);
+}
+
 describe('search stays bounded and complete (TA-28)', () => {
   let source: DataSource;
   let repository: TripSearchRepository;
@@ -117,10 +141,14 @@ describe('search stays bounded and complete (TA-28)', () => {
   beforeAll(async () => {
     source = await catalogDataSource();
     await seedSearchFixture(source);
+    await removeManyTrips(source);
     repository = new TripSearchRepository(source);
   });
 
   afterAll(async () => {
+    // Leave the database as the other specs expect to find it: thirty extra
+    // trips on the Alexandria-Ramsis pair would change their row counts.
+    await removeManyTrips(source);
     await closeCatalogDataSource();
   });
 
