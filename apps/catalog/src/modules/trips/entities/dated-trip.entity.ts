@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -9,7 +10,6 @@ import {
 import { TrainEntity } from '../../trains/entities/train.entity.js';
 import { TimetableEntity } from '../../timetables/entities/timetable.entity.js';
 import { CoachLayoutRow } from '../../trains/entities/coach-layout.entity.js';
-
 
 /**
  * One coach of a trip's train, frozen at publication.
@@ -36,10 +36,15 @@ export interface TrainCoachCompositionSnapshotItem {
   };
 }
 
-
-
-
+/**
+ * A train running on one date, with its composition frozen at publication.
+ *
+ * The index is declared here as well as in its migration. Search uses it to
+ * prune by date and status; which trips actually belong to the searched day is
+ * then decided by the passenger's origin departure, not by `service_date`.
+ */
 @Entity('dated_trip')
+@Index('idx_dated_trip_service_date', ['serviceDate', 'status'])
 export class DatedTripEntity {
   @PrimaryColumn('uuid')
   id!: string;

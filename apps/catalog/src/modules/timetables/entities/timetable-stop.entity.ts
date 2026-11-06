@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -9,7 +10,17 @@ import {
 import { TimetableEntity } from './timetable.entity.js';
 import { StationEntity } from '../../stations/entities/station.entity.js';
 
+/**
+ * A planned stop, in naive Cairo wall-clock time plus a day offset.
+ *
+ * Both indexes are declared here as well as in their migrations. The composite
+ * one serves the empty-result probes, which ask whether a timetable stops at
+ * two stations in travel order -- a question about the plan, not about any
+ * date, which is why it is answered here rather than from the dated trips.
+ */
 @Entity('timetable_stop')
+@Index('idx_timetable_stop_station', ['stationId'])
+@Index('idx_timetable_stop_timetable_station', ['timetable', 'stationId'])
 export class TimetableStopEntity {
   @PrimaryColumn('uuid')
   id!: string;

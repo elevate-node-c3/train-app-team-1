@@ -92,6 +92,37 @@ export async function closeCatalogDataSource(): Promise<void> {
 }
 
 /**
+ * Counts the statements a block of work sends to Postgres.
+ *
+ * TA-28 asks that the query count stay bounded as the result count grows, and
+ * that is only an assertion if something counts. TypeORM's logger sees every
+ * statement a `DataSource` issues, so swapping one in for the duration of a
+ * call measures it directly rather than inferring it from timings or from
+ * `pg_stat_database` deltas.
+ */
+export async function countStatements<T>(
+  source: DataSource,
+  work: () => Promise<T>,
+): Promise<{ result: T; queries: string[] }> {
+  const queries: string[] = [];
+  const original = source.logger;
+
+  source.logger = {
+    ...original,
+    logQuery(query: string) {
+      queries.push(query);
+    },
+  };
+
+  try {
+    const result = await work();
+    return { result, queries };
+  } finally {
+    source.logger = original;
+  }
+}
+
+/**
  * Empties every catalog table.
  *
  * One statement so it is one transaction, and RESTART IDENTITY is deliberately
