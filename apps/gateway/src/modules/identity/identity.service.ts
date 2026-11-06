@@ -4,6 +4,8 @@ import type {
   CompleteProfileResponseDto,
   ForgotPasswordRequestDto,
   ForgotPasswordResponseDto,
+  ListPassengersResponseDto,
+  PassengerDto,
   ProfileOptionsResponseDto,
   ProfileResponseDto,
   RefreshResponseDto,
@@ -137,6 +139,46 @@ export class IdentityService {
       profileTypes: response.profileTypes ?? [],
       nationalities: response.nationalities ?? [],
     };
+  }
+
+  async listPassengers(
+    accountId: string,
+    language: string,
+  ): Promise<ListPassengersResponseDto> {
+    const response = await this.client.listPassengers(accountId, language);
+    return {
+      passengers: response.passengers ?? [],
+    };
+  }
+
+  async addPassenger(input: {
+    accountId: string;
+    fullName: string;
+    nationalId: string;
+    profileType: string;
+    language: string;
+  }): Promise<PassengerDto> {
+    const response = await this.client.addPassenger(input);
+    return response.passenger;
+  }
+
+  async updatePassenger(input: {
+    passengerId: string;
+    accountId: string;
+    fullName: string;
+    nationalId: string;
+    profileType: string;
+    language: string;
+  }): Promise<PassengerDto> {
+    const response = await this.client.updatePassenger(input);
+    return response.passenger;
+  }
+
+  async deletePassenger(
+    passengerId: string,
+    accountId: string,
+  ): Promise<void> {
+    await this.client.deletePassenger(passengerId, accountId);
   }
 }
 
