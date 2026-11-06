@@ -2,6 +2,14 @@ import { ErrorCode } from '@app/contracts';
 
 export type SupportedLanguage = 'ar' | 'en';
 
+/**
+ * Domain Event Catalogue Note:
+ * Saved passenger CRUD events (add, update, delete) are intentionally NOT published
+ * to the message broker / outbox. The booking service reads passenger details
+ * directly from identity during hold creation in Sprint 3, eliminating unnecessary
+ * event fan-out and companion roster duplication.
+ */
+
 export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.SUCCESS]: {
     ar: 'تمت العملية بنجاح',
@@ -184,6 +192,24 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.INVALID_NATIONALITY]: {
     ar: 'الجنسية غير صالحة',
     en: 'Invalid nationality',
+  },
+
+  // Saved passengers
+  [ErrorCode.PASSENGER_NOT_FOUND]: {
+    ar: 'المسافر غير موجود',
+    en: 'Passenger not found',
+  },
+  [ErrorCode.PASSENGER_LIMIT_REACHED]: {
+    ar: 'تم الوصول إلى الحد الأقصى للمسافرين (10 مسافرين)',
+    en: 'Passenger limit reached (maximum 10 companions)',
+  },
+  [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: {
+    ar: 'لا يمكن حذف المسافر الأساسي',
+    en: 'Cannot delete self passenger',
+  },
+  [ErrorCode.NATIONAL_ID_LOCKED]: {
+    ar: 'لا يمكن تعديل الرقم القومي بعد إصدار التذكرة',
+    en: 'National ID cannot be changed once a ticket has been issued',
   },
 };
 

@@ -44,4 +44,10 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.PHONE_ALREADY_REGISTERED]: 409,
   [ErrorCode.INVALID_PROFILE_TYPE]: 400,
   [ErrorCode.INVALID_NATIONALITY]: 400,
+
+  // Saved passengers
+  [ErrorCode.PASSENGER_NOT_FOUND]: 404,
+  [ErrorCode.PASSENGER_LIMIT_REACHED]: 422,
+  [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: 422,
+  [ErrorCode.NATIONAL_ID_LOCKED]: 422,
 };
