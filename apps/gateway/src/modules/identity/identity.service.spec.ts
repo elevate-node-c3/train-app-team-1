@@ -30,6 +30,10 @@ type ClientMethods = Pick<
   | 'signOut'
   | 'forgotPassword'
   | 'resetPassword'
+  | 'listPassengers'
+  | 'addPassenger'
+  | 'updatePassenger'
+  | 'deletePassenger'
 >;
 
 function harness(): {
@@ -45,6 +49,10 @@ function harness(): {
     signOut: vi.fn(),
     forgotPassword: vi.fn(),
     resetPassword: vi.fn(),
+    listPassengers: vi.fn(),
+    addPassenger: vi.fn(),
+    updatePassenger: vi.fn(),
+    deletePassenger: vi.fn(),
   };
   return {
     service: new IdentityService(client as unknown as IdentityGrpcClient),
@@ -183,5 +191,73 @@ describe('IdentityService (edge shaping)', () => {
         newPassword: 'N3w!Passw0rd',
       }),
     ).resolves.toEqual({ reset: true });
+  });
+
+  it('forwards passenger operations (list, add, update, delete)', async () => {
+    const { service, client } = harness();
+    const wirePassenger = {
+      id: 'pass-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      typeName: 'Adult',
+      isSelf: false,
+      createdAt: '2026-11-06T20:00:00.000Z',
+    };
+
+    client.listPassengers.mockResolvedValue({ passengers: [wirePassenger] });
+    client.addPassenger.mockResolvedValue({ passenger: wirePassenger });
+    client.updatePassenger.mockResolvedValue({ passenger: wirePassenger });
+    client.deletePassenger.mockResolvedValue({ success: true });
+
+    const listRes = await service.listPassengers('acc-1', 'en');
+    expect(listRes).toEqual({ passengers: [wirePassenger] });
+    expect(client.listPassengers).toHaveBeenCalledWith('acc-1', 'en');
+
+    const addRes = await service.addPassenger({
+      accountId: 'acc-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+    expect(addRes).toEqual(wirePassenger);
+    expect(client.addPassenger).toHaveBeenCalledWith({
+      accountId: 'acc-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+
+    const updateRes = await service.updatePassenger({
+      passengerId: 'pass-1',
+      accountId: 'acc-1',
+      fullName: 'Omar Ali Updated',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+    expect(updateRes).toEqual(wirePassenger);
+    expect(client.updatePassenger).toHaveBeenCalledWith({
+      passengerId: 'pass-1',
+      accountId: 'acc-1',
+      fullName: 'Omar Ali Updated',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+
+    const deleteRes = await service.deletePassenger('pass-1', 'acc-1');
+    expect(deleteRes).toBeUndefined();
+    expect(client.deletePassenger).toHaveBeenCalledWith('pass-1', 'acc-1');
+  });
+
+  it('handles empty passengers list gracefully', async () => {
+    const { service, client } = harness();
+    client.listPassengers.mockResolvedValue({});
+
+    const listRes = await service.listPassengers('acc-1', 'en');
+    expect(listRes).toEqual({ passengers: [] });
   });
 });
