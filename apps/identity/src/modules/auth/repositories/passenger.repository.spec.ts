@@ -6,7 +6,7 @@ import { PassengerRepository } from './passenger.repository.js';
 import {
   BOOKING_TICKET_CHECK,
   StubBookingTicketCheckAdapter,
-} from '../ports/booking-ticket-check.port.js';
+} from '../booking-ticket-check.adapter.js';
 
 vi.mock('@app/common/persistence/typeorm-unit-of-work.js', () => ({
   entityManagerOf: vi.fn((ctx: TransactionContext) => (ctx as any).manager ?? ctx),
@@ -26,6 +26,7 @@ describe('PassengerRepository', () => {
       andWhere: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
       addOrderBy: vi.fn().mockReturnThis(),
+      setLock: vi.fn().mockReturnThis(),
       getMany: vi.fn().mockResolvedValue([]),
       getOne: vi.fn().mockResolvedValue(null),
     } as unknown as SelectQueryBuilder<PassengerEntity>;
@@ -101,7 +102,29 @@ describe('PassengerRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('passenger.account_id = :accountId', {
         accountId: 'acc-1',
       });
+      expect(mockQueryBuilder.setLock).not.toHaveBeenCalled();
       expect(result).toEqual(passenger);
+    });
+
+    it('sets pessimistic_write lock when forUpdate is true and context is provided', async () => {
+      const passenger = { id: 'p1', accountId: 'acc-1' } as PassengerEntity;
+      (mockQueryBuilder.getOne as any).mockResolvedValue(passenger);
+
+      const result = await repository.findByIdAndAccountId(mockCtx, 'p1', 'acc-1', {
+        forUpdate: true,
+      });
+
+      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(result).toEqual(passenger);
+    });
+
+    it('does not set lock when forUpdate is true but context is null', async () => {
+      await repository.findByIdAndAccountId(null, 'p1', 'acc-1', {
+        forUpdate: true,
+      });
+
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(PassengerEntity);
+      expect(mockQueryBuilder.setLock).not.toHaveBeenCalled();
     });
 
     it('uses dataSource when context is null', async () => {
