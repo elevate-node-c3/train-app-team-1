@@ -1,0 +1,66 @@
+import { Controller, UseInterceptors } from '@nestjs/common';
+import { GrpcMethod, RpcException } from '@nestjs/microservices';
+import * as grpc from '@grpc/grpc-js';
+import { GrpcCorrelationInterceptor } from '@app/common';
+import {
+  CATALOG_SERVICE_NAME,
+  type SearchOneWayTripsRequest,
+  type SearchOneWayTripsResponse,
+} from '@app/contracts';
+
+import { isCatalogSearchError } from './catalog-search-error.js';
+import { TripSearchService } from './trip-search.service.js';
+
+/**
+ * Turns a refusal into a gRPC status.
+ *
+ * The business code travels in `details`, as identity's controller does it:
+ * the status only tells a generic client how to categorise the failure, and
+ * the gateway restores the code after validating it against the enum, so an
+ * unknown string can never reach a traveller.
+ *
+ * The date strip and window ride along. They are small -- five dates and three
+ * fields -- and sending them keeps catalog the single decider of which days
+ * are offered. The alternative, letting the gateway compute its own strip,
+ * would split that decision across two services even though both import the
+ * same booking-window function.
+ */
+function toRpcException(error: unknown): unknown {
+  if (!isCatalogSearchError(error)) return error;
+
+  return new RpcException({
+    code: grpc.status.INVALID_ARGUMENT,
+    details: JSON.stringify({
+      code: error.code,
+      details: error.details,
+      dateStrip: error.dateStrip,
+      bookingWindow: error.bookingWindow,
+    }),
+    message: error.message,
+  });
+}
+
+@Controller()
+@UseInterceptors(GrpcCorrelationInterceptor)
+export class TripsGrpcController {
+  constructor(private readonly search: TripSearchService) {}
+
+  /**
+   * `now` is captured here, once, and threaded through the whole search.
+   *
+   * The transport is the only honest place for it: a service that called
+   * `new Date()` itself could not be tested against a frozen clock, and two
+   * calls inside one request could disagree about whether a trip's sales are
+   * still open.
+   */
+  @GrpcMethod(CATALOG_SERVICE_NAME, 'SearchOneWayTrips')
+  async searchOneWayTrips(
+    request: SearchOneWayTripsRequest,
+  ): Promise<SearchOneWayTripsResponse> {
+    try {
+      return await this.search.search(request, new Date());
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
+  }
+}
