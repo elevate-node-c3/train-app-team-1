@@ -430,5 +430,18 @@ A complete Postman Collection and Environment are provided in `postman/`:
 1. Open Postman -> click **Import**.
 2. Select both JSON files from the `postman/` folder.
 3. Select the **Train App - Local Environment** active environment.
-4. Execute queries against Gateway (`/health`, `/health/ready`, `/health/live`, `/api/v1/ping-all`, `/api/v1/auth/*`) or standalone microservice health endpoints. Built-in test scripts validate status codes, bilingual envelopes, and extract the correlation ID, account id, and token pair into environment variables automatically.
+4. Execute queries against Gateway (`/health`, `/health/ready`, `/health/live`, `/api/v1/ping-all`, `/api/v1/auth/*`, `/api/v1/trips/search`) or standalone microservice health endpoints. Built-in test scripts validate status codes, bilingual envelopes, and extract the correlation ID, account id, and token pair into environment variables automatically.
+
+### Trip Search (TA-17)
+
+The **Trip Search (Gateway)** folder covers one-way search: the happy path, the optional train-number filter (ASCII and Arabic-Indic digits), both empty-result reasons in Arabic and English, and the refusals that name the field to change.
+
+It needs two things first:
+
+1. A verified traveller. Run **Authentication (Gateway) > Sign In**; the folder inherits the bearer `{{accessToken}}` it stores. Search has no guest mode.
+2. The catalog search fixture, loaded once catalog has migrated:
+   ```bash
+   npm run catalog:seed:search
+   ```
+   The `searchFrom`, `searchTo`, `searchUnservedFrom`, `searchTravelClassId` and `searchTrainNumber` variables are that fixture's fixed ids. `searchDepartureDate` is filled in automatically with the Cairo date three days out -- the day the fixture puts trips on -- whenever it is left blank.
 
