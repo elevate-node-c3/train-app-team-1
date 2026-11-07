@@ -11,6 +11,19 @@ import {
 import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
+/**
+ * The stub `recordFailure` spies are built from, carrying the repository's own
+ * parameter list. `vi.fn(async () => {})` records its calls as an empty tuple,
+ * so reading `calls[0][2]` -- the message, which is what these specs are
+ * about -- did not typecheck.
+ */
+async function recordFailureStub(
+  _ctx: TransactionContext,
+  _id: string,
+  _lastError: string,
+  _nextAttemptAt: Date,
+): Promise<void> {}
+
 const EVENT: EventEnvelope = {
   id: '11111111-1111-4111-8111-111111111111',
   type: 'identity.verification-code.issued',
@@ -115,7 +128,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       rowFrom(appendParams(EVENT)),
       rowFrom(appendParams({ ...EVENT, id: 'second' })),
     ];
-    const recordFailure = vi.fn(async () => {});
+    const recordFailure = vi.fn(recordFailureStub);
     const markPublished = vi.fn(async () => {});
     const outbox = {
       claimBatch: async () => rows,
@@ -155,7 +168,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
 
   it('never stores the payload in last_error', async () => {
     const rows = [rowFrom(appendParams(EVENT))];
-    const recordFailure = vi.fn(async () => {});
+    const recordFailure = vi.fn(recordFailureStub);
     const relay = new OutboxRelayService(
       {
         withTransaction: async <T>(work: (c: TransactionContext) => Promise<T>) =>
