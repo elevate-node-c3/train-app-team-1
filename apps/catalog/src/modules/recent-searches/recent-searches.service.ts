@@ -82,8 +82,15 @@ export class RecentSearchesService {
    * `language` on the request is carried, never acted on here.
    */
   private toWire(row: RecentSearchRow, now: Date): RecentSearch {
-    const stale =
-      row.departureDate === null || row.departureDate < cairoToday(now);
+    // A missing departure date is treated as stale: there is nothing to
+    // repeat, which is the same thing a passed date means to a client.
+    const repeatable =
+      row.departureDate !== null && row.departureDate >= cairoToday(now)
+        ? {
+            departureDate: row.departureDate,
+            ...(row.returnDate === null ? {} : { returnDate: row.returnDate }),
+          }
+        : {};
 
     return {
       origin: {
@@ -100,12 +107,7 @@ export class RecentSearchesService {
       },
       kind: KIND_ON_THE_WIRE[row.kind],
       ...(row.trainNumber === null ? {} : { trainNumber: row.trainNumber }),
-      ...(stale
-        ? {}
-        : {
-            departureDate: row.departureDate,
-            ...(row.returnDate === null ? {} : { returnDate: row.returnDate }),
-          }),
+      ...repeatable,
       searchedAt: civilDateTimeOf(row.searchedAt),
     };
   }

@@ -32,13 +32,16 @@ function e2eUuid(group: number, item: number): string {
 export interface E2eSearchFixture {
   /** A date three days out, comfortably inside the booking window. */
   searchDate: string;
+  /** Two days after that: the return date for the round-trip flow. */
+  returnDate: string;
   /** Today, in Cairo. */
   today: string;
   /** The first date past the window, which must be refused. */
   pastWindowDate: string;
   stations: typeof IDS.stations;
   travelClasses: typeof IDS.travelClasses;
-  trainNumbers: { mainLine: number };
+  trainTypes: typeof IDS.trainTypes;
+  trainNumbers: { mainLine: number; sleeper: number; returning: number };
 }
 
 /**
@@ -59,20 +62,49 @@ export async function seedSearchE2e(): Promise<E2eSearchFixture> {
 
   const today = cairoToday(new Date());
   const searchDate = addCivilDays(today, 3);
+  const returnDate = addCivilDays(searchDate, 2);
 
   try {
     await insertNetwork(source);
     await insertDatedTrips(source, searchDate);
+    await insertFilterPairTrips(source, searchDate);
+    await insertReturnTrips(source, searchDate, returnDate);
 
     return {
       searchDate,
+      returnDate,
       today,
       // today + 30 is the first day outside the 30-day window.
       pastWindowDate: addCivilDays(today, 30),
       stations: IDS.stations,
       travelClasses: IDS.travelClasses,
-      trainNumbers: { mainLine: 903 },
+      trainTypes: IDS.trainTypes,
+      trainNumbers: { mainLine: 903, sleeper: 980, returning: 904 },
     };
+  } finally {
+    await source.destroy();
+  }
+}
+
+/**
+ * Empties the recent-search table.
+ *
+ * "The last five, newest first" is a count, so a suite asserting on it has to
+ * know where the count started. Separate from the seed because the searches
+ * that fill it are made by the specs, not by the fixture, and a suite that
+ * runs after another one's searches needs to reset without re-seeding trips.
+ */
+export async function clearRecentSearches(): Promise<void> {
+  const source = new DataSource({
+    type: 'postgres',
+    url: CATALOG_DATABASE_URL,
+    synchronize: false,
+    extra: { connectionTimeoutMillis: 5000 },
+  });
+  await source.initialize();
+
+  try {
+    await source.query('DELETE FROM recent_search');
   } finally {
     await source.destroy();
   }
@@ -310,6 +342,277 @@ async function insertDatedTrips(
       index + 1,
       arrival === null ? null : at(arrival),
       departure === null ? null : at(departure),
+    ]),
+  );
+}
+
+/**
+ * A day with two train types on one pair, for the filters to choose between.
+ *
+ * Deliberately on **Tanta -> Ramsis**, not the Alexandria -> Ramsis pair the
+ * TA-17 specs use: those assert that the day holds exactly one trip, and that
+ * is a real assertion about the one-way search rather than a detail of the
+ * fixture. Adding a second trip there would have made me weaken them.
+ *
+ * Tanta -> Ramsis already has the main line (07:05 -> 08:40) but no fare, so
+ * both fares are added here too -- an unpriced trip is dropped as unsellable,
+ * which would leave the pair with one result and nothing to filter. The
+ * sleeper is dearer, so the fare sort and the maximum-fare filter both have an
+ * order to produce.
+ */
+async function insertFilterPairTrips(
+  source: DataSource,
+  serviceDate: string,
+): Promise<void> {
+  const tripId = e2eUuid(82, 1);
+  const offset = cairoOffsetOn(serviceDate);
+  const at = (time: string) => new Date(`${serviceDate}T${time}:00${offset}`);
+
+  const snapshot = SEARCH_FIXTURE.datedTrips.find(
+    (trip) => trip.id === IDS.trips.mainLine,
+  )!.compositionSnapshot;
+
+  await insert(
+    source,
+    'dated_trip',
+    [
+      'id',
+      'train_id',
+      'timetable_id',
+      'service_date',
+      'timetable_version',
+      'composition_snapshot',
+      'status',
+    ],
+    [
+      [
+        tripId,
+        IDS.trains.overnight,
+        IDS.timetables.overnight,
+        serviceDate,
+        1,
+        JSON.stringify(snapshot),
+        'published',
+      ],
+    ],
+  );
+
+  await insert(
+    source,
+    'trip_stop',
+    ['id', 'trip_id', 'station_id', 'position', 'arrival_at', 'departure_at'],
+    [
+      [e2eUuid(83, 1), tripId, IDS.stations.tanta, 1, null, at('10:00')],
+      [e2eUuid(83, 2), tripId, IDS.stations.banha, 2, at('11:00'), at('11:05')],
+      [e2eUuid(83, 3), tripId, IDS.stations.ramsis, 3, at('13:00'), null],
+    ],
+  );
+
+  await insert(
+    source,
+    'fare',
+    [
+      'id',
+      'train_id',
+      'travel_class_id',
+      'origin_station_id',
+      'destination_station_id',
+      'amount_piastres',
+      'effective_from',
+    ],
+    [
+      // The cheap one: express, leaving in the morning.
+      [
+        e2eUuid(84, 1),
+        IDS.trains.mainLine,
+        IDS.travelClasses.first,
+        IDS.stations.tanta,
+        IDS.stations.ramsis,
+        9_000,
+        new Date('2026-01-01T00:00:00Z'),
+      ],
+      // The dear one: sleeper, leaving later.
+      [
+        e2eUuid(84, 2),
+        IDS.trains.overnight,
+        IDS.travelClasses.first,
+        IDS.stations.tanta,
+        IDS.stations.ramsis,
+        25_000,
+        new Date('2026-01-01T00:00:00Z'),
+      ],
+    ],
+  );
+}
+
+/**
+ * The reverse route, so a round trip has a second list.
+ *
+ * Three trips across two dates, each on its own train because `dated_trip` is
+ * unique on (train_id, service_date):
+ *
+ * - one on the OUTBOUND date, departing 06:30 -- before the outbound trip
+ *   reaches Ramsis at 08:40, so a same-day return finds only a train that has
+ *   already gone. That is the story's "nothing leaves after your outbound
+ *   arrives" case, reachable without a 23:50 trip.
+ * - two on the return date, which any outbound arrival precedes.
+ *
+ * The timetable stops matter even though search reads `trip_stop`: the
+ * empty-result probes ask the timetables whether the reverse pair is served at
+ * all, and without them an empty return list would blame the stations.
+ */
+async function insertReturnTrips(
+  source: DataSource,
+  outboundDate: string,
+  returnDate: string,
+): Promise<void> {
+  const trains = [
+    { id: e2eUuid(85, 1), number: 904, timetableId: e2eUuid(86, 1) },
+    { id: e2eUuid(85, 2), number: 905, timetableId: e2eUuid(86, 2) },
+  ];
+
+  await insert(
+    source,
+    'train',
+    ['id', 'train_number', 'train_type_id'],
+    trains.map((train) => [train.id, train.number, IDS.trainTypes.express]),
+  );
+
+  await insert(
+    source,
+    'timetable',
+    [
+      'id',
+      'train_id',
+      'running_days',
+      'effective_from',
+      'effective_until',
+      'version',
+      'status',
+    ],
+    trains.map((train) => [
+      train.timetableId,
+      train.id,
+      [0, 1, 2, 3, 4, 5, 6],
+      '2026-01-01',
+      null,
+      1,
+      'published',
+    ]),
+  );
+
+  await insert(
+    source,
+    'timetable_stop',
+    [
+      'id',
+      'timetable_id',
+      'station_id',
+      'position',
+      'day_offset',
+      'arrival_time',
+      'departure_time',
+    ],
+    trains.flatMap((train, index) => [
+      [
+        e2eUuid(87, index * 2 + 1),
+        train.timetableId,
+        IDS.stations.ramsis,
+        1,
+        0,
+        null,
+        '09:00',
+      ],
+      [
+        e2eUuid(87, index * 2 + 2),
+        train.timetableId,
+        IDS.stations.alexandria,
+        2,
+        0,
+        '12:00',
+        null,
+      ],
+    ]),
+  );
+
+  const snapshot = JSON.stringify(
+    SEARCH_FIXTURE.datedTrips.find((trip) => trip.id === IDS.trips.mainLine)!
+      .compositionSnapshot,
+  );
+
+  // [train, service date, departure, arrival]
+  const runs: [(typeof trains)[number], string, string, string][] = [
+    [trains[0], outboundDate, '06:30', '09:30'],
+    [trains[0], returnDate, '09:00', '12:00'],
+    [trains[1], returnDate, '18:00', '21:00'],
+  ];
+
+  await insert(
+    source,
+    'dated_trip',
+    [
+      'id',
+      'train_id',
+      'timetable_id',
+      'service_date',
+      'timetable_version',
+      'composition_snapshot',
+      'status',
+    ],
+    runs.map(([train, date], index) => [
+      e2eUuid(88, index + 1),
+      train.id,
+      train.timetableId,
+      date,
+      1,
+      snapshot,
+      'published',
+    ]),
+  );
+
+  await insert(
+    source,
+    'trip_stop',
+    ['id', 'trip_id', 'station_id', 'position', 'arrival_at', 'departure_at'],
+    runs.flatMap(([, date, departure, arrival], index) => {
+      const offset = cairoOffsetOn(date);
+      const at = (time: string) => new Date(`${date}T${time}:00${offset}`);
+      const tripId = e2eUuid(88, index + 1);
+
+      return [
+        [e2eUuid(89, index * 2 + 1), tripId, IDS.stations.ramsis, 1, null, at(departure)],
+        [
+          e2eUuid(89, index * 2 + 2),
+          tripId,
+          IDS.stations.alexandria,
+          2,
+          at(arrival),
+          null,
+        ],
+      ];
+    }),
+  );
+
+  await insert(
+    source,
+    'fare',
+    [
+      'id',
+      'train_id',
+      'travel_class_id',
+      'origin_station_id',
+      'destination_station_id',
+      'amount_piastres',
+      'effective_from',
+    ],
+    trains.map((train, index) => [
+      e2eUuid(84, index + 3),
+      train.id,
+      IDS.travelClasses.first,
+      IDS.stations.ramsis,
+      IDS.stations.alexandria,
+      14_000,
+      new Date('2026-01-01T00:00:00Z'),
     ]),
   );
 }
