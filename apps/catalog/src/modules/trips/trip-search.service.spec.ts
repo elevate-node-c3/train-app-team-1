@@ -434,7 +434,7 @@ describe('the search service', () => {
     });
 
     it('blames the filters when they removed a day that had trips', async () => {
-      const { service } = makeService({
+      const { service, repository } = makeService({
         rows: [row({ trainTypeId: EXPRESS_TYPE, farePiastres: 15_500 })],
       });
 
@@ -452,6 +452,9 @@ describe('the search service', () => {
         minFareMinor: '15500',
         maxFareMinor: '15500',
       });
+      // A day whose trips the filters removed has already proved the route is
+      // served, so the probes are not worth a statement.
+      expect(repository.probeRouteServed).not.toHaveBeenCalled();
     });
 
     it('keeps filters and sort out of the cache key', async () => {
