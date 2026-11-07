@@ -45,7 +45,12 @@ function clientWith(
   searchOneWayTrips: CatalogGrpcClient['searchOneWayTrips'],
 ): CatalogGrpcClientService {
   const cls = { get: () => undefined, set: () => undefined } as unknown as ClsService;
-  return new CatalogGrpcClientService({ searchOneWayTrips }, cls);
+  // Only the one method: these specs call only `searchOneWayTrips`, and a stub
+  // for the other three would suggest they are exercised here.
+  return new CatalogGrpcClientService(
+    { searchOneWayTrips } as CatalogGrpcClient,
+    cls,
+  );
 }
 
 /** A client with every method stubbed by one factory, for the shared-path specs. */

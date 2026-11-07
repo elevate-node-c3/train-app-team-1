@@ -34,7 +34,8 @@ export const SEARCH_STACK = [
   'catalog',
 ] as const;
 
-export const TRIPS_SEARCH_URL = `${GATEWAY_URL}/api/v1/trips/search`;
+export const TRIPS_URL = `${GATEWAY_URL}/api/v1/trips`;
+export const TRIPS_SEARCH_URL = `${TRIPS_URL}/search`;
 
 /**
  * The subject the notification service actually sends, asked of the template
@@ -96,18 +97,47 @@ export interface SearchQuery {
   travelClassId?: string;
   trainNumber?: string;
   language?: string;
+  /** TA-18: the round-trip intent, and the filters. */
+  returnDate?: string;
+  sort?: string;
+  trainTypeIds?: string;
+  departAfter?: string;
+  departBefore?: string;
+  maxFare?: string;
+  excludeSoldOut?: string;
 }
 
-/** Calls the endpoint the way a client would. */
-export async function searchTrips(
-  query: SearchQuery,
-  options: { token?: string; acceptLanguage?: string } = {},
-): Promise<{ status: number; body: ApiResponse<unknown> }> {
-  const url = new URL(TRIPS_SEARCH_URL);
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined) url.searchParams.set(key, value);
-  }
+export interface ReturnSearchQuery {
+  outboundTripId?: string;
+  outboundFrom?: string;
+  outboundTo?: string;
+  returnDate?: string;
+  travelClassId?: string;
+  sort?: string;
+  maxFare?: string;
+}
 
+export interface CallOptions {
+  token?: string;
+  acceptLanguage?: string;
+}
+
+interface Called {
+  status: number;
+  body: ApiResponse<unknown>;
+}
+
+/**
+ * One GET, the way a client would make it.
+ *
+ * Every helper below goes through here so the correlation id, the bearer and
+ * the language header are attached the same way on every route -- a route
+ * tested without a token would pass for the wrong reason.
+ */
+async function get(
+  url: URL,
+  options: CallOptions = {},
+): Promise<Called> {
   const response = await fetch(url, {
     headers: {
       'x-correlation-id': `e2e-search-${randomUUID()}`,
@@ -122,4 +152,44 @@ export async function searchTrips(
     status: response.status,
     body: (await response.json()) as ApiResponse<unknown>,
   };
+}
+
+/** Builds the URL, skipping absent parameters rather than sending 'undefined'. */
+function urlWith(base: string, query: object): URL {
+  const url = new URL(base);
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === 'string') url.searchParams.set(key, value);
+  }
+  return url;
+}
+
+export async function searchTrips(
+  query: SearchQuery,
+  options: CallOptions = {},
+): Promise<Called> {
+  return get(urlWith(TRIPS_SEARCH_URL, query), options);
+}
+
+/** The second list of a round trip, for a chosen outbound trip. */
+export async function searchReturnTrips(
+  query: ReturnSearchQuery,
+  options: CallOptions = {},
+): Promise<Called> {
+  return get(urlWith(`${TRIPS_SEARCH_URL}/return`, query), options);
+}
+
+/** What the design's "4 Stops" opens. */
+export async function tripStops(
+  tripId: string,
+  query: { from?: string; to?: string },
+  options: CallOptions = {},
+): Promise<Called> {
+  return get(urlWith(`${TRIPS_URL}/${tripId}/stops`, query), options);
+}
+
+/** The signed-in traveller's recent searches. */
+export async function recentSearches(
+  options: CallOptions = {},
+): Promise<Called> {
+  return get(urlWith(`${TRIPS_URL}/recent-searches`, {}), options);
 }
