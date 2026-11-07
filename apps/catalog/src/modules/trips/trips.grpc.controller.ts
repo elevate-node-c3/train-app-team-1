@@ -7,10 +7,13 @@ import {
   type GetTripStopsRequest,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
+  type SearchReturnTripsRequest,
+  type SearchReturnTripsResponse,
   type TripStopsResponse,
 } from '@app/contracts';
 
 import { isCatalogSearchError } from './catalog-search-error.js';
+import { TripReturnSearchService } from './trip-return-search.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { TripStopsService } from './trip-stops.service.js';
 
@@ -45,6 +48,7 @@ function toRpcException(error: unknown): unknown {
 export class TripsGrpcController {
   constructor(
     private readonly search: TripSearchService,
+    private readonly returnSearch: TripReturnSearchService,
     private readonly stops: TripStopsService,
   ) {}
 
@@ -62,6 +66,24 @@ export class TripsGrpcController {
   ): Promise<SearchOneWayTripsResponse> {
     try {
       return await this.search.search(request, new Date());
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
+  }
+
+  /**
+   * The second list of a round trip.
+   *
+   * `now` is captured here too, and for the same reason. The arrival that
+   * bounds this list is NOT captured here: the service reads it from the trip
+   * itself, so no clock and no client can move it.
+   */
+  @GrpcMethod(CATALOG_SERVICE_NAME, 'SearchReturnTrips')
+  async searchReturnTrips(
+    request: SearchReturnTripsRequest,
+  ): Promise<SearchReturnTripsResponse> {
+    try {
+      return await this.returnSearch.search(request, new Date());
     } catch (error: unknown) {
       throw toRpcException(error);
     }

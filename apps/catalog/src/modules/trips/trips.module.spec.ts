@@ -8,6 +8,8 @@ import { CatalogReferenceRepository } from './catalog-reference.repository.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { SeatAvailabilityService } from './seat-availability.service.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
+import { TripDayService } from './trip-day.service.js';
+import { TripReturnSearchService } from './trip-return-search.service.js';
 import { TripSearchRepository } from './trip-search.repository.js';
 import { TripSearchService } from './trip-search.service.js';
 import { TripStopsRepository } from './trip-stops.repository.js';
@@ -66,7 +68,7 @@ describe('the trips module wiring', () => {
     expect(service).toBeInstanceOf(TripSearchService);
   });
 
-  it('gives the gRPC controller the search and stops services', async () => {
+  it('gives the gRPC controller all three services', async () => {
     const moduleRef = await compile();
 
     const controller = moduleRef.get(TripsGrpcController);
@@ -77,9 +79,32 @@ describe('the trips module wiring', () => {
     expect(
       (controller as unknown as { search?: unknown }).search,
     ).toBeInstanceOf(TripSearchService);
+    expect(
+      (controller as unknown as { returnSearch?: unknown }).returnSearch,
+    ).toBeInstanceOf(TripReturnSearchService);
     expect((controller as unknown as { stops?: unknown }).stops).toBeInstanceOf(
       TripStopsService,
     );
+  });
+
+  /**
+   * Both legs must read a day through the same seam, or the round trip
+   * fragments the cache. Construction is the only place that can be checked.
+   */
+  it('gives both search legs the same day service instance', async () => {
+    const moduleRef = await compile();
+
+    const day = moduleRef.get(TripDayService);
+    const outbound = moduleRef.get(TripSearchService) as unknown as {
+      day: unknown;
+    };
+    const returning = moduleRef.get(TripReturnSearchService) as unknown as {
+      day: unknown;
+    };
+
+    expect(day).toBeInstanceOf(TripDayService);
+    expect(outbound.day).toBe(day);
+    expect(returning.day).toBe(day);
   });
 
   it('provides both repositories, the stops service and the availability seam', async () => {

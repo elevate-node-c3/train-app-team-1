@@ -13,6 +13,14 @@ export interface EmptyReasonFacts {
   trainServesRoute: boolean;
   /** Trips existed, but the request's own filters removed every one. */
   filtersExcludedAll: boolean;
+  /**
+   * Return leg only: the day had trips, and every one of them departs before
+   * the chosen outbound trip arrives.
+   *
+   * Optional because the one-way leg cannot be in this state at all, and a
+   * flag a caller must remember to pass as `false` is a flag someone forgets.
+   */
+  nothingAfterOutboundArrival?: boolean;
 }
 
 /**
@@ -34,6 +42,13 @@ export function emptyReasonFor(facts: EmptyReasonFacts): SearchEmptyReason {
 
   if (facts.trainNumberGiven && !facts.trainServesRoute) {
     return 'SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE';
+  }
+
+  // Ranked above the filters on purpose. When the arrival bound emptied the
+  // list, the filters never had anything to remove, and blaming them would
+  // send the traveller to tweak a filter that was never the problem.
+  if (facts.nothingAfterOutboundArrival === true) {
+    return 'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL';
   }
 
   // The route and train are fine, and the day had trips until the filters were
