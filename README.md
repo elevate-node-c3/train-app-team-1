@@ -439,9 +439,35 @@ The **Trip Search (Gateway)** folder covers one-way search: the happy path, the 
 It needs two things first:
 
 1. A verified traveller. Run **Authentication (Gateway) > Sign In**; the folder inherits the bearer `{{accessToken}}` it stores. Search has no guest mode.
-2. The catalog search fixture, loaded once catalog has migrated:
+2. Trips on a date you can actually search, loaded once catalog has migrated:
    ```bash
-   npm run catalog:seed:search
+   npm run catalog:seed:today
    ```
-   The `searchFrom`, `searchTo`, `searchUnservedFrom`, `searchTravelClassId` and `searchTrainNumber` variables are that fixture's fixed ids. `searchDepartureDate` is filled in automatically with the Cairo date three days out -- the day the fixture puts trips on -- whenever it is left blank.
+   The `searchFrom`, `searchTo`, `searchUnservedFrom`, `searchTravelClassId` and `searchTrainNumber` variables are that network's fixed ids. `searchDepartureDate` is filled in automatically with the Cairo date three days out -- the day this seed puts trips on -- whenever it is left blank.
+
+   > `npm run catalog:seed:search` loads the same network but keeps the fixture's **June 2026** dates. The integration specs search those with a frozen clock; a Postman request cannot, because the real booking window is thirty days from today. Use `catalog:seed:today` for anything you drive by hand, and `catalog:seed:search` only when you want the fixture's own dates in the database.
+
+### Round trip, filters, stops and recent searches (TA-18)
+
+The same folder continues with the second half of the story:
+
+| Request | What it shows |
+| --- | --- |
+| **Filtered and Sorted Search** | A departure window in Cairo wall-clock time, a fare ceiling in piastres, and `sort` -- plus `filterOptions`, which describes the day *before* the filters apply so a client can always undo one |
+| **Filter by Train Type** | `trainTypeIds` as CSV; a query string has no arrays, and the repeated-key form changes shape with the number of values |
+| **Empty Result - Filters Excluded All** | There *are* trains that day, so the sentence names the filters rather than sending the traveller back to the date picker |
+| **Round Trip - Outbound Leg** | The first of two calls. The return date does not change this list; it lets BR-20 refuse an impossible one up front, and makes the recent-search entry a round trip. Stores `{{outboundTripId}}` |
+| **Round Trip - Return Leg** | The second list, bounded by the chosen trip's arrival -- which the server reads itself, so no arrival time is sent |
+| **Round Trip - Refusal, Return Before Departure** | The BR-20 refusal, naming `returnDate` and carrying the range to pick from |
+| **A Trip's Stops** | What the design's "4 Stops" opens: the passenger's own segment, in travel order, each stop with its Cairo time |
+| **Recent Searches** | The last five, newest first |
+
+Three things worth knowing:
+
+- **Run the outbound leg first.** The return call and the stops request both read `{{outboundTripId}}`, which that request's test script stores.
+- **The filter requests use Tanta -> Ramsis** (`{{searchFilterFrom}}` / `{{searchFilterTo}}`). It is the only pair the seed gives two train types and two fares, so it is the only one where a train-type filter or a fare sort has anything to do.
+- **Recent searches are per traveller.** Sign in as somebody else and the list is empty -- that is the rule (§2.3 rule 6), not a bug. Pass `--clear-recent` to the seed to start from an empty list:
+  ```bash
+  npm run catalog:seed:today -- --clear-recent
+  ```
 

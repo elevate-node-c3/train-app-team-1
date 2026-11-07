@@ -27,6 +27,7 @@
     "keys:generate": "node scripts/generate-dev-keys.mjs",
     "seed:staff": "tsx apps/identity/src/database/seeds/staff-accounts.seed.ts",
     "catalog:seed:search": "tsx apps/catalog/src/database/seeds/search-fixture.seed.ts",
+    "catalog:seed:today": "tsx scripts/seed-today-trips.ts",
     "migration:show": "tsx node_modules/typeorm/cli.js migration:show -d",
     "migration:run": "tsx node_modules/typeorm/cli.js migration:run -d",
     "migration:revert": "tsx node_modules/typeorm/cli.js migration:revert -d"
