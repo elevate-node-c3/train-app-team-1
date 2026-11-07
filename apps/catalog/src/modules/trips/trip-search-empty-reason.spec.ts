@@ -90,19 +90,78 @@ describe('choosing the empty-result reason', () => {
     ).toBe('SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED');
   });
 
+  describe('the return leg', () => {
+    it('blames the outbound arrival when nothing leaves after it', () => {
+      expect(
+        emptyReasonFor({
+          routeServed: true,
+          trainNumberGiven: false,
+          trainServesRoute: false,
+          filtersExcludedAll: false,
+          nothingAfterOutboundArrival: true,
+        }),
+      ).toBe('SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL');
+    });
+
+    // Changing a filter cannot bring back a train that left before the
+    // traveller landed, so the arrival is the thing to say.
+    it('outranks the filters', () => {
+      expect(
+        emptyReasonFor({
+          routeServed: true,
+          trainNumberGiven: false,
+          trainServesRoute: false,
+          filtersExcludedAll: true,
+          nothingAfterOutboundArrival: true,
+        }),
+      ).toBe('SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL');
+    });
+
+    it('is outranked by an unserved reverse route', () => {
+      expect(
+        emptyReasonFor({
+          routeServed: false,
+          trainNumberGiven: false,
+          trainServesRoute: false,
+          filtersExcludedAll: false,
+          nothingAfterOutboundArrival: true,
+        }),
+      ).toBe('SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED');
+    });
+
+    // The one-way leg cannot be in this state, so it never passes the flag.
+    it('is absent for the one-way leg', () => {
+      expect(
+        emptyReasonFor({
+          routeServed: true,
+          trainNumberGiven: false,
+          trainServesRoute: false,
+          filtersExcludedAll: false,
+        }),
+      ).toBe('SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE');
+    });
+  });
+
   it('never returns UNSPECIFIED, which would say nothing to the traveller', () => {
     for (const routeServed of [true, false]) {
       for (const trainNumberGiven of [true, false]) {
         for (const trainServesRoute of [true, false]) {
           for (const filtersExcludedAll of [true, false]) {
-            expect(
-              emptyReasonFor({
-                routeServed,
-                trainNumberGiven,
-                trainServesRoute,
-                filtersExcludedAll,
-              }),
-            ).not.toBe('SEARCH_EMPTY_REASON_UNSPECIFIED');
+            for (const nothingAfterOutboundArrival of [
+              true,
+              false,
+              undefined,
+            ]) {
+              expect(
+                emptyReasonFor({
+                  routeServed,
+                  trainNumberGiven,
+                  trainServesRoute,
+                  filtersExcludedAll,
+                  nothingAfterOutboundArrival,
+                }),
+              ).not.toBe('SEARCH_EMPTY_REASON_UNSPECIFIED');
+            }
           }
         }
       }

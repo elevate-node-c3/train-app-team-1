@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CatalogSearchError } from './catalog-search-error.js';
 import { SeatAvailabilityService } from './seat-availability.service.js';
+import { TripDayService } from './trip-day.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { searchCacheKey, type CachedStaticTrip } from './trip-search-cache.js';
 import type { TripSearchRow } from './trip-search.types.js';
@@ -118,14 +119,19 @@ function makeService(
 
   const availability = new SeatAvailabilityService();
 
+  // The real day service over the mocked repository and cache: the cache key
+  // and the TTL are its decisions, and this spec asserts on both, so stubbing
+  // it would stub out the thing being checked.
+  const day = new TripDayService(repository as never, cache as never);
+
   const service = new TripSearchService(
     repository as never,
     references as never,
     availability,
-    cache as never,
+    day,
   );
 
-  return { service, repository, references, cache, availability };
+  return { service, repository, references, cache, availability, day };
 }
 
 describe('the search service', () => {

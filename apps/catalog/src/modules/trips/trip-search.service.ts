@@ -1,41 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CacheAsideService } from '@app/common';
 import {
   ErrorCode,
-  FARE_CURRENCY,
   bookingWindowFor,
   civilDateTimeOf,
-  durationMinutesBetween,
   type FilterOptions,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
-  type TripResult,
 } from '@app/contracts';
 
 import { CatalogReferenceRepository } from './catalog-reference.repository.js';
 import { CatalogSearchError } from './catalog-search-error.js';
 import { buildDateStrip } from './date-strip.js';
 import { SeatAvailabilityService } from './seat-availability.service.js';
+import { TripDayService } from './trip-day.service.js';
+import { buildTripList } from './trip-result.js';
 import { TripSearchRepository } from './trip-search.repository.js';
-import {
-  cacheTtlSecondsFor,
-  isCachedStaticTrip,
-  searchCacheKey,
-  type CachedStaticTrip,
-} from './trip-search-cache.js';
 import { emptyReasonFor } from './trip-search-empty-reason.js';
-import {
-  applyFilters,
-  filterOptionsFor,
-  validateFilters,
-} from './trip-search-filters.js';
-import { sortTrips } from './trip-search-sort.js';
+import { filterOptionsFor, validateFilters } from './trip-search-filters.js';
 import {
   validateSearchReferences,
   validateSearchShape,
 } from './trip-search-validation.js';
 import { applyDynamicEligibility } from './trip-sellability.js';
-import type { TripSearchRow } from './trip-search.types.js';
 
 /**
  * One-way search.
@@ -66,7 +52,7 @@ export class TripSearchService {
     private readonly trips: TripSearchRepository,
     private readonly references: CatalogReferenceRepository,
     private readonly availability: SeatAvailabilityService,
-    private readonly cache: CacheAsideService,
+    private readonly day: TripDayService,
   ) {}
 
   async search(
@@ -79,7 +65,16 @@ export class TripSearchService {
     await this.refuseInvalid(request, now);
 
     const trainNumber = request.trainNumber ?? null;
-    const statics = await this.staticTrips(request, trainNumber, now);
+    const statics = await this.day.staticTripsFor(
+      {
+        originStationId: request.originStationId,
+        destinationStationId: request.destinationStationId,
+        serviceDate: request.departureDate,
+        travelClassId: request.travelClassId,
+        trainNumber,
+      },
+      now,
+    );
 
     // Hit or miss, the same filter, so a cached list cannot outlive the sales
     // it was cached with.
@@ -100,20 +95,14 @@ export class TripSearchService {
       })),
     );
 
-    // The availability call the response already needs answers the sold-out
-    // filter too, so applying it adds no query.
-    const soldOutTripIds = new Set(
-      eligible
-        .filter((trip) => (seats.get(trip.tripId) ?? 0) === 0)
-        .map((trip) => trip.tripId),
-    );
-
-    const filtered = applyFilters(eligible, request.filters, soldOutTripIds);
-
-    const trips = sortTrips(
-      filtered.filter((trip) => this.isSellable(trip)),
-      request.sort,
-    ).map((trip) => this.toTripResult(trip, request, seats));
+    const { trips, filteredCount } = buildTripList({
+      eligible,
+      seats,
+      travelClassId: request.travelClassId,
+      filters: request.filters,
+      sort: request.sort,
+      onUnpriced: (trip) => this.warnUnpriced(trip),
+    });
 
     return {
       dateStrip,
@@ -127,7 +116,7 @@ export class TripSearchService {
               request,
               trainNumber,
               filterOptions,
-              eligible.length > 0 && filtered.length === 0,
+              eligible.length > 0 && filteredCount === 0,
             ),
           }
         : {}),
@@ -163,136 +152,15 @@ export class TripSearchService {
   }
 
   /**
-   * The static projection, from the cache when it is there and from Postgres
-   * when it is not.
-   *
-   * A cached entry that does not match the current shape is treated as a miss:
-   * it parses as JSON and would otherwise put `undefined` into a traveller's
-   * results.
-   */
-  private async staticTrips(
-    request: SearchOneWayTripsRequest,
-    trainNumber: number | null,
-    now: Date,
-  ): Promise<CachedStaticTrip[]> {
-    const key = searchCacheKey({
-      originStationId: request.originStationId,
-      destinationStationId: request.destinationStationId,
-      serviceDate: request.departureDate,
-      travelClassId: request.travelClassId,
-      trainNumber,
-    });
-
-    const cached = await this.cache.get<unknown[]>(key);
-    if (Array.isArray(cached) && cached.every(isCachedStaticTrip)) {
-      return cached;
-    }
-
-    const rows = await this.trips.findCandidates({
-      originStationId: request.originStationId,
-      destinationStationId: request.destinationStationId,
-      travelClassId: request.travelClassId,
-      serviceDate: request.departureDate,
-      trainNumber,
-      now,
-    });
-
-    const statics = rows.map((row) => this.toStatic(row));
-    await this.cache.set(
-      key,
-      statics,
-      cacheTtlSecondsFor(request.departureDate, now),
-    );
-
-    return statics;
-  }
-
-  /**
-   * A row becomes its cacheable projection.
-   *
-   * The duration is computed here, from the two instants, so it is right
-   * across midnight and across a daylight-saving change -- and so it is
-   * computed once rather than on every cache read.
-   */
-  private toStatic(row: TripSearchRow): CachedStaticTrip {
-    return {
-      tripId: row.tripId,
-      trainNumber: row.trainNumber,
-      trainTypeId: row.trainTypeId,
-      trainTypeEn: row.trainTypeEn,
-      trainTypeAr: row.trainTypeAr,
-      travelClassNameEn: row.travelClassNameEn,
-      travelClassNameAr: row.travelClassNameAr,
-      originStationId: row.originStationId,
-      originNameEn: row.originNameEn,
-      originNameAr: row.originNameAr,
-      destinationStationId: row.destinationStationId,
-      destinationNameEn: row.destinationNameEn,
-      destinationNameAr: row.destinationNameAr,
-      originDepartureMillis: row.originDepartureAt.getTime(),
-      destinationArrivalMillis: row.destinationArrivalAt.getTime(),
-      durationMinutes: durationMinutesBetween(
-        row.originDepartureAt,
-        row.destinationArrivalAt,
-      ),
-      intermediateStops: row.intermediateStops,
-      classCapacity: row.classCapacity,
-      farePiastres: row.farePiastres,
-    };
-  }
-
-  /**
    * A trip with no fare for the segment cannot be booked, so offering it would
    * strand the traveller one screen later. Logged, because a sellable trip
    * without a price is a data gap someone should fix rather than a normal
    * state.
    */
-  private isSellable(trip: CachedStaticTrip): boolean {
-    if (trip.farePiastres === null) {
-      this.logger.warn(
-        `Trip ${trip.tripId} has no fare for ${trip.originStationId} -> ${trip.destinationStationId}; excluded from search`,
-      );
-      return false;
-    }
-    return true;
-  }
-
-  private toTripResult(
-    trip: CachedStaticTrip,
-    request: SearchOneWayTripsRequest,
-    seats: Map<string, number>,
-  ): TripResult {
-    const availableSeats = seats.get(trip.tripId) ?? 0;
-
-    return {
-      tripId: trip.tripId,
-      trainNumber: trip.trainNumber,
-      trainType: { en: trip.trainTypeEn, ar: trip.trainTypeAr },
-      travelClass: {
-        id: request.travelClassId,
-        name: { en: trip.travelClassNameEn, ar: trip.travelClassNameAr },
-      },
-      departure: {
-        stationId: trip.originStationId,
-        name: { en: trip.originNameEn, ar: trip.originNameAr },
-        at: civilDateTimeOf(new Date(trip.originDepartureMillis)),
-      },
-      arrival: {
-        stationId: trip.destinationStationId,
-        name: { en: trip.destinationNameEn, ar: trip.destinationNameAr },
-        at: civilDateTimeOf(new Date(trip.destinationArrivalMillis)),
-      },
-      durationMinutes: trip.durationMinutes,
-      intermediateStops: trip.intermediateStops,
-      availableSeats,
-      // Returned and marked, never hidden (BR-16).
-      soldOut: availableSeats === 0,
-      fare: {
-        // Non-null by the time a trip reaches here; isSellable dropped the rest.
-        amountMinor: trip.farePiastres ?? 0,
-        currency: FARE_CURRENCY,
-      },
-    };
+  private warnUnpriced(trip: { tripId: string; originStationId: string; destinationStationId: string }): void {
+    this.logger.warn(
+      `Trip ${trip.tripId} has no fare for ${trip.originStationId} -> ${trip.destinationStationId}; excluded from search`,
+    );
   }
 
   /**
