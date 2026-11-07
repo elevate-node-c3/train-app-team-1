@@ -1,6 +1,7 @@
 import {
   ErrorCode,
   type SearchOneWayTripsResponse,
+  type SearchReturnTripsResponse,
   type TripStopsResponse,
 } from '@app/contracts';
 import { RpcException } from '@nestjs/microservices';
@@ -9,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CatalogSearchError } from './catalog-search-error.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
+import type { TripReturnSearchService } from './trip-return-search.service.js';
 import type { TripSearchService } from './trip-search.service.js';
 import type { TripStopsService } from './trip-stops.service.js';
 
@@ -39,9 +41,11 @@ const request = {
 function controllerWith(
   search: Partial<TripSearchService>,
   stops: Partial<TripStopsService> = {},
+  returnSearch: Partial<TripReturnSearchService> = {},
 ) {
   return new TripsGrpcController(
     search as TripSearchService,
+    returnSearch as TripReturnSearchService,
     stops as TripStopsService,
   );
 }
@@ -166,6 +170,58 @@ describe('the search gRPC controller', () => {
         .catch((caught: unknown) => caught)) as RpcException;
 
       expect(error).toBeInstanceOf(RpcException);
+      const payload = error.getError() as { details: string };
+      expect(JSON.parse(payload.details).code).toBe(
+        ErrorCode.RESOURCE_NOT_FOUND,
+      );
+    });
+  });
+
+  describe('the return RPC', () => {
+    const returnRequest = {
+      outboundTripId: '44444444-4444-4444-8444-444444444444',
+      outboundOriginStationId: request.originStationId,
+      outboundDestinationStationId: request.destinationStationId,
+      returnDate: '2026-06-25',
+      travelClassId: request.travelClassId,
+    };
+
+    const returnResponse = {
+      trips: [],
+      evaluatedAt: EMPTY_RESPONSE.evaluatedAt,
+    } satisfies SearchReturnTripsResponse;
+
+    it('passes the request through and captures the instant', async () => {
+      const search = vi.fn().mockResolvedValue(returnResponse);
+      const before = Date.now();
+
+      const response = await controllerWith(
+        {},
+        {},
+        { search },
+      ).searchReturnTrips(returnRequest);
+
+      expect(response).toBe(returnResponse);
+      expect(search.mock.calls[0][0]).toBe(returnRequest);
+      const now = search.mock.calls[0][1] as Date;
+      expect(now.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it('turns a withdrawn outbound trip into a not-found refusal', async () => {
+      const refusal = new CatalogSearchError(ErrorCode.RESOURCE_NOT_FOUND, [
+        {
+          field: 'outboundTripId',
+          rejectedValue: returnRequest.outboundTripId,
+          issue: 'is no longer an available trip between those stations',
+          action: 'Search again and choose an outbound trip',
+        },
+      ]);
+      const search = vi.fn().mockRejectedValue(refusal);
+
+      const error = (await controllerWith({}, {}, { search })
+        .searchReturnTrips(returnRequest)
+        .catch((caught: unknown) => caught)) as RpcException;
+
       const payload = error.getError() as { details: string };
       expect(JSON.parse(payload.details).code).toBe(
         ErrorCode.RESOURCE_NOT_FOUND,
