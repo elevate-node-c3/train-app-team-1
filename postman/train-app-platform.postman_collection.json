@@ -724,7 +724,7 @@
     },
     {
       "name": "Trip Search (Gateway)",
-      "description": "TA-17 one-way search: `GET /api/v1/trips/search`.\n\nRequires a verified traveller, so run **Authentication (Gateway) > Sign In**\nfirst -- these requests inherit the bearer `{{accessToken}}` it stores. There is\nno guest mode.\n\nThe station, travel-class and train-number variables are the fixed ids of the\ncatalog search fixture; load it with `npm run catalog:seed:search` after catalog\nhas migrated. `{{searchDepartureDate}}` is filled in automatically with the Cairo\ndate three days out (the day the fixture puts trips on) whenever it is left blank.\n\nEvery response uses the platform envelope: `success`, `data`, `error`. A refusal\nnames the field to change in `error.details[].field`; a 503 or 504 from a slow or\nstopped catalog carries `error.retryAfterSeconds`.",
+      "description": "TA-17 one-way search: `GET /api/v1/trips/search`.\n\nRequires a verified traveller, so run **Authentication (Gateway) > Sign In**\nfirst -- these requests inherit the bearer `{{accessToken}}` it stores. There is\nno guest mode.\n\nThe station, travel-class and train-number variables are the fixed ids of the\ncatalog search fixture; load it with `npm run catalog:seed:search` after catalog\nhas migrated. `{{searchDepartureDate}}` is filled in automatically with the Cairo\ndate three days out (the day the fixture puts trips on) whenever it is left blank.\n\nEvery response uses the platform envelope: `success`, `data`, `error`. A refusal\nnames the field to change in `error.details[].field`; a 503 or 504 from a slow or\nstopped catalog carries `error.retryAfterSeconds`.\n\n### TA-18: round trip, filters, stops and recent searches\n\nThe later requests cover the second half of the story. `{{searchReturnDate}}` and `{{searchToday}}` are filled in automatically like the departure date; `{{outboundTripId}}` is stored by **Round Trip - Outbound Leg**, so run that before the return call or the stops request.\n\nThe filter requests use the Tanta -> Ramsis pair, which the fixture gives two train types and two fares -- the only pair where a train-type filter and a fare sort have anything to do.\n\nRecent searches are per traveller: sign in as somebody else and the list is empty, which is the rule rather than a bug.",
       "auth": {
         "type": "bearer",
         "bearer": [
@@ -754,8 +754,28 @@
               "        \"searchDepartureDate\",",
               "        `${cairo.getFullYear()}-${pad(cairo.getMonth() + 1)}-${pad(cairo.getDate())}`,",
               "    );",
-              "}"
-            ]
+              "}",
+        "",
+        "// TA-18: the return date is two days after the outbound one, and today is",
+        "// needed for the BR-20 refusal. Both derived the same way, so a run on any",
+        "// day stays inside the booking window.",
+        "const cairoNow = new Date(",
+        "    new Date().toLocaleString(\"en-US\", { timeZone: \"Africa/Cairo\" }),",
+        ");",
+        "const padDay = (n) => String(n).padStart(2, \"0\");",
+        "const asCivilDate = (date) =>",
+        "    `${date.getFullYear()}-${padDay(date.getMonth() + 1)}-${padDay(date.getDate())}`;",
+        "",
+        "if (!pm.environment.get(\"searchToday\")) {",
+        "    pm.environment.set(\"searchToday\", asCivilDate(cairoNow));",
+        "}",
+        "",
+        "if (!pm.environment.get(\"searchReturnDate\")) {",
+        "    const returning = new Date(cairoNow);",
+        "    returning.setDate(returning.getDate() + 5);",
+        "    pm.environment.set(\"searchReturnDate\", asCivilDate(returning));",
+        "}"
+      ]
           }
         }
       ],
@@ -1393,8 +1413,556 @@
             "description": "Search has no guest mode, which is also what makes the results cacheable:\nthey are identical for every caller.\n\nThe token is verified at the edge against a public key, so identity being\ndown does not stop a traveller searching -- and a malformed token is a 401\nhere, not a 500."
           },
           "response": []
+        },
+      {
+        "name": "Filtered and Sorted Search",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"Results are ordered by fare, ascending\", function () {",
+                "    const trips = pm.response.json().data.trips;",
+                "    const fares = trips.map(function (trip) {",
+                "        return trip.fare.amountMinor;",
+                "    });",
+                "    pm.expect(fares).to.deep.equal(fares.slice().sort(function (a, b) {",
+                "        return a - b;",
+                "    }));",
+                "});",
+                "",
+                "pm.test(\"The day describes what it offers to narrow by\", function () {",
+                "    const options = pm.response.json().data.filterOptions;",
+                "    pm.expect(options.trainTypes).to.be.an(\"array\");",
+                "    // Computed over the unfiltered day, so a traveller can always",
+                "    // get back the types their filter removed.",
+                "    pm.expect(options.trainTypes.length).to.be.at.least(1);",
+                "    pm.expect(options.maxFareMinor).to.be.at.least(options.minFareMinor);",
+                "});",
+                "",
+                "// Keep the dearest fare for the \"filters removed everything\" request.",
+                "pm.environment.set(",
+                "    \"searchDayMaxFare\",",
+                "    String(pm.response.json().data.filterOptions.maxFareMinor),",
+                ");"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFilterFrom}}&to={{searchFilterTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&sort=SEARCH_SORT_FARE_ASC&departAfter=00:00&departBefore=23:59&maxFare=30000",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFilterFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchFilterTo}}"
+              },
+              {
+                "key": "departureDate",
+                "value": "{{searchDepartureDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              },
+              {
+                "key": "sort",
+                "value": "SEARCH_SORT_FARE_ASC"
+              },
+              {
+                "key": "departAfter",
+                "value": "00:00"
+              },
+              {
+                "key": "departBefore",
+                "value": "23:59"
+              },
+              {
+                "key": "maxFare",
+                "value": "30000"
+              }
+            ]
+          },
+          "description": "Narrowing a day (BR-18). The window is Cairo wall-clock time and the ceiling is piastres excluding the booking fee. `filterOptions` describes the day *before* these filters apply, so a client can always undo one."
         }
-      ]
+      },
+      {
+        "name": "Filter by Train Type",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"Only the chosen train type comes back\", function () {",
+                "    const trips = pm.response.json().data.trips;",
+                "    pm.expect(trips.length).to.be.at.least(1);",
+                "    trips.forEach(function (trip) {",
+                "        pm.expect(trip.trainType.en).to.equal(\"Sleeper\");",
+                "    });",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFilterFrom}}&to={{searchFilterTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&trainTypeIds={{searchSleeperTypeId}}",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFilterFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchFilterTo}}"
+              },
+              {
+                "key": "departureDate",
+                "value": "{{searchDepartureDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              },
+              {
+                "key": "trainTypeIds",
+                "value": "{{searchSleeperTypeId}}"
+              }
+            ]
+          },
+          "description": "A train-type filter takes a comma-separated list of ids. A query string has no arrays, and the repeated-key form gives a string for one value and an array for two -- CSV is one shape always."
+        }
+      },
+      {
+        "name": "Empty Result - Filters Excluded All",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200 -- an empty list is not an error\", function () {",
+                "    pm.response.to.have.status(200);",
+                "    pm.expect(pm.response.json().success).to.be.true;",
+                "});",
+                "",
+                "pm.test(\"The filters are blamed, not the date\", function () {",
+                "    const data = pm.response.json().data;",
+                "    pm.expect(data.trips).to.be.an(\"array\").that.is.empty;",
+                "    pm.expect(data.emptyResult.reason).to.equal(",
+                "        \"SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL\",",
+                "    );",
+                "    pm.expect(data.emptyResult.message).to.not.equal(\"\");",
+                "});",
+                "",
+                "pm.test(\"The day's real fare range still travels\", function () {",
+                "    const options = pm.response.json().data.filterOptions;",
+                "    pm.expect(options.minFareMinor).to.be.above(1);",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFilterFrom}}&to={{searchFilterTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&maxFare=1",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFilterFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchFilterTo}}"
+              },
+              {
+                "key": "departureDate",
+                "value": "{{searchDepartureDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              },
+              {
+                "key": "maxFare",
+                "value": "1"
+              }
+            ]
+          },
+          "description": "There ARE trains that day; the filters removed them. The sentence has to send the traveller to the filters rather than back to the date picker, and the facets still report the real fare range so a client can show what the ceiling would have to be."
+        }
+      },
+      {
+        "name": "Round Trip - Outbound Leg",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"An outbound trip was found and remembered\", function () {",
+                "    const trips = pm.response.json().data.trips;",
+                "    pm.expect(trips.length).to.be.at.least(1);",
+                "    pm.environment.set(\"outboundTripId\", trips[0].tripId);",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&returnDate={{searchReturnDate}}",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchTo}}"
+              },
+              {
+                "key": "departureDate",
+                "value": "{{searchDepartureDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              },
+              {
+                "key": "returnDate",
+                "value": "{{searchReturnDate}}"
+              }
+            ]
+          },
+          "description": "The first of two calls. The return date does not change this list -- the outbound leg is the same search either way -- but sending it lets BR-20 refuse an impossible return date now rather than after a trip has been chosen, and makes the recent-search entry a round trip.\n\nStores `{{outboundTripId}}` for the return call."
+        }
+      },
+      {
+        "name": "Round Trip - Return Leg",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"The return list runs the reverse route\", function () {",
+                "    const trips = pm.response.json().data.trips;",
+                "    pm.expect(trips.length).to.be.at.least(1);",
+                "    trips.forEach(function (trip) {",
+                "        pm.expect(trip.departure.stationId).to.equal(",
+                "            pm.environment.get(\"searchTo\"),",
+                "        );",
+                "    });",
+                "});",
+                "",
+                "pm.test(\"No second date picker -- the outbound call sent it\", function () {",
+                "    const data = pm.response.json().data;",
+                "    pm.expect(data.dateStrip).to.be.undefined;",
+                "    pm.expect(data.bookingWindow).to.be.undefined;",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search/return?outboundTripId={{outboundTripId}}&outboundFrom={{searchFrom}}&outboundTo={{searchTo}}&returnDate={{searchReturnDate}}&travelClassId={{searchTravelClassId}}",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search",
+              "return"
+            ],
+            "query": [
+              {
+                "key": "outboundTripId",
+                "value": "{{outboundTripId}}"
+              },
+              {
+                "key": "outboundFrom",
+                "value": "{{searchFrom}}"
+              },
+              {
+                "key": "outboundTo",
+                "value": "{{searchTo}}"
+              },
+              {
+                "key": "returnDate",
+                "value": "{{searchReturnDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              }
+            ]
+          },
+          "description": "The second list, computed from the chosen outbound trip. Note what is NOT sent: no arrival time, because the server reads the trip's arrival itself (BR-20), and no train number, because that narrowed the outbound leg only. Every result departs strictly after the outbound arrives.\n\nRun **Round Trip - Outbound Leg** first."
+        }
+      },
+      {
+        "name": "Round Trip - Refusal, Return Before Departure",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 400\", function () {",
+                "    pm.response.to.have.status(400);",
+                "});",
+                "",
+                "pm.test(\"The refusal names the return date and what to do\", function () {",
+                "    const details = pm.response.json().error.details;",
+                "    const detail = details.find(function (one) {",
+                "        return one.field === \"returnDate\";",
+                "    });",
+                "    pm.expect(detail, \"returnDate detail\").to.exist;",
+                "    pm.expect(detail.action).to.not.equal(\"\");",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&returnDate={{searchToday}}",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "search"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchTo}}"
+              },
+              {
+                "key": "departureDate",
+                "value": "{{searchDepartureDate}}"
+              },
+              {
+                "key": "travelClassId",
+                "value": "{{searchTravelClassId}}"
+              },
+              {
+                "key": "returnDate",
+                "value": "{{searchToday}}"
+              }
+            ]
+          },
+          "description": "BR-20 on the outbound call: the traveller learns their return date is impossible one screen before they would otherwise find out. The refusal names `returnDate` and carries the range to pick from."
+        }
+      },
+      {
+        "name": "A Trip's Stops",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"Boarding first, alighting last, in travel order\", function () {",
+                "    const stops = pm.response.json().data.stops;",
+                "    pm.expect(stops.length).to.be.at.least(2);",
+                "    pm.expect(stops[0].boarding).to.be.true;",
+                "    pm.expect(stops[stops.length - 1].alighting).to.be.true;",
+                "});",
+                "",
+                "pm.test(\"Each stop prints a Cairo wall clock\", function () {",
+                "    pm.response.json().data.stops.forEach(function (stop) {",
+                "        const at = stop.departure || stop.arrival;",
+                "        pm.expect(at.timeZone).to.equal(\"Africa/Cairo\");",
+                "        pm.expect(at.localTime).to.match(/^\\d{2}:\\d{2}$/);",
+                "    });",
+                "});",
+                "",
+                "pm.test(\"Names come from the catalogue, in both languages\", function () {",
+                "    pm.response.json().data.stops.forEach(function (stop) {",
+                "        pm.expect(stop.name.en).to.not.equal(\"\");",
+                "        pm.expect(stop.name.ar).to.not.equal(\"\");",
+                "    });",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/{{outboundTripId}}/stops?from={{searchFrom}}&to={{searchTo}}",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "{{outboundTripId}}",
+              "stops"
+            ],
+            "query": [
+              {
+                "key": "from",
+                "value": "{{searchFrom}}"
+              },
+              {
+                "key": "to",
+                "value": "{{searchTo}}"
+              }
+            ]
+          },
+          "description": "What the design's \"4 Stops\" opens: the passenger's own segment, in travel order, each stop with its Cairo time and its date where it changes. The number of stops between always equals the search result's `intermediateStops`.\n\nRun **Round Trip - Outbound Leg** first for `{{outboundTripId}}`."
+        }
+      },
+      {
+        "name": "Recent Searches",
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test(\"Status code is 200\", function () {",
+                "    pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"At most five, newest first\", function () {",
+                "    const entries = pm.response.json().data.recentSearches;",
+                "    pm.expect(entries).to.be.an(\"array\");",
+                "    pm.expect(entries.length).to.be.at.most(5);",
+                "    const times = entries.map(function (entry) {",
+                "        return entry.searchedAt.iso;",
+                "    });",
+                "    pm.expect(times).to.deep.equal(times.slice().sort().reverse());",
+                "});",
+                "",
+                "pm.test(\"Each entry carries what it takes to run it again\", function () {",
+                "    pm.response.json().data.recentSearches.forEach(function (entry) {",
+                "        pm.expect(entry.origin.id).to.not.equal(\"\");",
+                "        pm.expect(entry.origin.name.ar).to.not.equal(\"\");",
+                "        pm.expect(entry.kind).to.be.oneOf([",
+                "            \"RECENT_SEARCH_KIND_ONE_WAY\",",
+                "            \"RECENT_SEARCH_KIND_ROUND_TRIP\",",
+                "        ]);",
+                "        // A date that has passed is withheld, so the client asks",
+                "        // for a new one rather than replaying a dead journey.",
+                "        if (entry.departureDate) {",
+                "            pm.expect(entry.departureDate).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+                "        }",
+                "    });",
+                "});"
+              ]
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "header": [],
+          "url": {
+            "raw": "{{baseUrl}}/api/v1/trips/recent-searches",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v1",
+              "trips",
+              "recent-searches"
+            ],
+            "query": []
+          },
+          "description": "The last five searches of the signed-in traveller, newest first (BR-21). There is no account parameter and there will not be one: the traveller comes from the token, so signing in as somebody else shows their list, not this one.\n\nRun a few searches above first."
+        }
+      }
+    ]
     },
     {
       "name": "Standalone Microservices (Host Dev Mode)",
