@@ -301,6 +301,11 @@ export class TripSearchService {
    * Only asked when there is nothing to return, so the common path never pays
    * for it. The values go in `params` and the sentence is assembled at the
    * edge, which is what keeps catalog free of any language.
+   *
+   * Filters short-circuit the probes. A day whose trips the filters removed has
+   * already proved the route is served and the named train runs it, so asking
+   * Postgres again would spend a statement to learn what the result set just
+   * demonstrated.
    */
   private async explainEmpty(
     request: SearchOneWayTripsRequest,
@@ -308,6 +313,25 @@ export class TripSearchService {
     filterOptions: FilterOptions,
     filtersExcludedAll: boolean,
   ): Promise<SearchOneWayTripsResponse['emptyResult']> {
+    if (filtersExcludedAll) {
+      return {
+        reason: emptyReasonFor({
+          routeServed: true,
+          trainNumberGiven: trainNumber !== null,
+          trainServesRoute: trainNumber !== null,
+          filtersExcludedAll: true,
+        }),
+        params: {
+          searchedDate: request.departureDate,
+          ...(trainNumber === null ? {} : { trainNumber: String(trainNumber) }),
+          // The edge uses these to say "change the filters, not the date": the
+          // day's actual range is what the filter has to admit.
+          minFareMinor: String(filterOptions.minFareMinor),
+          maxFareMinor: String(filterOptions.maxFareMinor),
+        },
+      };
+    }
+
     const probe = await this.trips.probeRouteServed(
       request.originStationId,
       request.destinationStationId,
@@ -324,14 +348,6 @@ export class TripSearchService {
       params: {
         searchedDate: request.departureDate,
         ...(trainNumber === null ? {} : { trainNumber: String(trainNumber) }),
-        // The edge uses these to say "change the filters, not the date": the
-        // day's actual range is what the filter has to admit.
-        ...(filtersExcludedAll
-          ? {
-              minFareMinor: String(filterOptions.minFareMinor),
-              maxFareMinor: String(filterOptions.maxFareMinor),
-            }
-          : {}),
       },
     };
   }
