@@ -60,4 +60,27 @@ export class CacheAsideService {
       );
     }
   }
+
+  /**
+   * Removes a key, or quietly does not.
+   *
+   * Same contract as `get` and `set`: an invalidation that cannot reach Redis
+   * must not fail the caller. The entry will expire on its own TTL, so the
+   * worst case is a stale read for the rest of that lifetime rather than an
+   * error for the traveller.
+   */
+  async del(key: string): Promise<void> {
+    const client = this.redis.isAvailable() ? this.redis.getClient() : null;
+    if (!client) return;
+
+    try {
+      await client.del(key);
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Cache delete failed for ${key}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
 }

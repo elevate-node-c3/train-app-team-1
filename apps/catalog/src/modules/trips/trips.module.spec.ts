@@ -10,6 +10,8 @@ import { SeatAvailabilityService } from './seat-availability.service.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
 import { TripSearchRepository } from './trip-search.repository.js';
 import { TripSearchService } from './trip-search.service.js';
+import { TripStopsRepository } from './trip-stops.repository.js';
+import { TripStopsService } from './trip-stops.service.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
 import { CatalogModule } from '../../catalog.module.js';
 
@@ -30,24 +32,30 @@ import { CatalogModule } from '../../catalog.module.js';
  */
 describe('the trips module wiring', () => {
   async function compile() {
-    return Test.createTestingModule({ imports: [CatalogModule] })
-      .overrideProvider(DataSource)
-      // Enough surface for @nestjs/typeorm's repository factories, which every
-      // feature module's forFeature() registers -- not just this one's.
-      .useValue({
-        options: { type: 'postgres' },
-        entityMetadatas: [],
-        getRepository: () => ({}),
-        getMongoRepository: () => ({}),
-        query: async () => [],
-      })
-      .overrideProvider(getRepositoryToken(DatedTripEntity))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(TripStopEntity))
-      .useValue({})
-      .overrideProvider(CacheAsideService)
-      .useValue({ get: async () => null, set: async () => undefined })
-      .compile();
+    return (
+      Test.createTestingModule({ imports: [CatalogModule] })
+        .overrideProvider(DataSource)
+        // Enough surface for @nestjs/typeorm's repository factories, which every
+        // feature module's forFeature() registers -- not just this one's.
+        .useValue({
+          options: { type: 'postgres' },
+          entityMetadatas: [],
+          getRepository: () => ({}),
+          getMongoRepository: () => ({}),
+          query: async () => [],
+        })
+        .overrideProvider(getRepositoryToken(DatedTripEntity))
+        .useValue({})
+        .overrideProvider(getRepositoryToken(TripStopEntity))
+        .useValue({})
+        .overrideProvider(CacheAsideService)
+        .useValue({
+          get: async () => null,
+          set: async () => undefined,
+          del: async () => undefined,
+        })
+        .compile()
+    );
   }
 
   it('can construct the search service with all four collaborators', async () => {
@@ -58,25 +66,32 @@ describe('the trips module wiring', () => {
     expect(service).toBeInstanceOf(TripSearchService);
   });
 
-  it('gives the gRPC controller the search service', async () => {
+  it('gives the gRPC controller the search and stops services', async () => {
     const moduleRef = await compile();
 
     const controller = moduleRef.get(TripsGrpcController);
 
-    // Asserted on the controller's own dependency: resolving the token
+    // Asserted on the controller's own dependencies: resolving a token
     // container-wide would find a provider in any module, which says nothing
     // about whether this controller can inject it.
     expect(
       (controller as unknown as { search?: unknown }).search,
     ).toBeInstanceOf(TripSearchService);
+    expect((controller as unknown as { stops?: unknown }).stops).toBeInstanceOf(
+      TripStopsService,
+    );
   });
 
-  it('provides both repositories and the availability seam', async () => {
+  it('provides both repositories, the stops service and the availability seam', async () => {
     const moduleRef = await compile();
 
     expect(moduleRef.get(TripSearchRepository)).toBeInstanceOf(
       TripSearchRepository,
     );
+    expect(moduleRef.get(TripStopsRepository)).toBeInstanceOf(
+      TripStopsRepository,
+    );
+    expect(moduleRef.get(TripStopsService)).toBeInstanceOf(TripStopsService);
     expect(moduleRef.get(CatalogReferenceRepository)).toBeInstanceOf(
       CatalogReferenceRepository,
     );
