@@ -69,7 +69,7 @@ export class TripSearchService {
     const bookingWindow = bookingWindowFor(now);
     const dateStrip = buildDateStrip(request.departureDate, now);
 
-    await this.refuseInvalid(request, now, dateStrip, bookingWindow);
+    await this.refuseInvalid(request, now);
 
     const trainNumber = request.trainNumber ?? null;
     const statics = await this.staticTrips(request, trainNumber, now);
@@ -108,17 +108,10 @@ export class TripSearchService {
   private async refuseInvalid(
     request: SearchOneWayTripsRequest,
     now: Date,
-    dateStrip: SearchOneWayTripsResponse['dateStrip'],
-    bookingWindow: SearchOneWayTripsResponse['bookingWindow'],
   ): Promise<void> {
     const shapeDetails = validateSearchShape(request, now);
     if (shapeDetails.length > 0) {
-      throw new CatalogSearchError(
-        ErrorCode.VALIDATION_ERROR,
-        shapeDetails,
-        dateStrip,
-        bookingWindow,
-      );
+      throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, shapeDetails);
     }
 
     const facts = await this.references.resolveReferences({
@@ -132,8 +125,6 @@ export class TripSearchService {
       throw new CatalogSearchError(
         ErrorCode.VALIDATION_ERROR,
         referenceDetails,
-        dateStrip,
-        bookingWindow,
       );
     }
   }

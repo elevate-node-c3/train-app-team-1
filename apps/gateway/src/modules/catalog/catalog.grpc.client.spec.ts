@@ -1,4 +1,5 @@
 import { ErrorCode } from '@app/contracts';
+import type { SearchOneWayTripsResponse } from '@app/contracts';
 import type { CallOptions } from '@grpc/grpc-js';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
@@ -18,7 +19,27 @@ const request = {
   travelClassId: '33333333-3333-4333-8333-333333333333',
 };
 
-const RESPONSE = { dateStrip: [], trips: [] } as never;
+/**
+ * Typed, not `as never`: rxjs declares an `of(value: null)` overload, and
+ * `never` is assignable to `null`, so an untyped stub made `of(RESPONSE)` an
+ * `Observable<null>` that no longer matched the client's own signature.
+ */
+const RESPONSE: SearchOneWayTripsResponse = {
+  dateStrip: [],
+  trips: [],
+  bookingWindow: {
+    firstBookableDate: '2026-06-20',
+    lastBookableDate: '2026-07-19',
+    totalDays: 30,
+  },
+  evaluatedAt: {
+    localDate: '2026-06-20',
+    localTime: '09:00',
+    utcOffset: '+03:00',
+    iso: '2026-06-20T06:00:00.000Z',
+    timeZone: 'Africa/Cairo',
+  },
+};
 
 function clientWith(
   searchOneWayTrips: CatalogGrpcClient['searchOneWayTrips'],
@@ -141,10 +162,12 @@ describe('calling catalog over gRPC', () => {
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       const body = error.getResponse() as {
         code: string;
-        details: { field: string }[];
+        // Under `message`, because that is the channel the envelope filter
+        // reads when turning an exception into error.details.
+        message: { field: string }[];
       };
       expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
-      expect(body.details[0].field).toBe('to');
+      expect(body.message[0].field).toBe('to');
     });
 
     // The no-leak rule: an unrecognised code is not forwarded, and the call

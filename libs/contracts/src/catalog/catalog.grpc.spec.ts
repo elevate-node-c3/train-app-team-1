@@ -15,22 +15,52 @@ import type {
 } from './catalog.dto.js';
 
 /**
- * Field names declared on a loaded message, in declaration order.
+ * The descriptor shapes this spec reads.
  *
- * proto-loader exposes each message as a `MessageTypeDefinition` whose `type`
- * is the protobuf descriptor. Synthetic oneofs — the `_trainNumber` that
- * proto3 `optional` generates — live under `oneofDecl`, not `field`, so the
- * list below is exactly the author-declared fields.
+ * proto-loader types a loaded entry's `type` as a bare `object` — it is the
+ * protobuf descriptor, whose fields it does not describe — so the parts
+ * asserted on below have to be spelled out here.
  */
-function fieldNamesOf(messageName: string): string[] {
-  const definition = loadSync(getCatalogProtoPath());
-  const entry = definition[`${CATALOG_PACKAGE_NAME}.${messageName}`];
+interface MessageDescriptor {
+  field?: { name: string; type: string }[];
+}
 
+interface EnumDescriptor {
+  value?: { name: string; number: number }[];
+}
+
+function descriptorOf(typeName: string): object {
+  const definition = loadSync(getCatalogProtoPath());
+  const entry = definition[`${CATALOG_PACKAGE_NAME}.${typeName}`];
+
+  // A service definition is a map of methods and carries no `type`, so this
+  // also rules out naming one by mistake.
   if (entry === undefined || !('type' in entry)) {
-    throw new Error(`${messageName} is not a message in the loaded descriptor`);
+    throw new Error(`${typeName} is not a message or enum in the descriptor`);
   }
 
-  return (entry.type.field ?? []).map((field) => field.name);
+  return entry.type;
+}
+
+function messageDescriptor(messageName: string): MessageDescriptor {
+  return descriptorOf(messageName) as MessageDescriptor;
+}
+
+function enumDescriptor(enumName: string): EnumDescriptor {
+  return descriptorOf(enumName) as EnumDescriptor;
+}
+
+/**
+ * Field names declared on a loaded message, in declaration order.
+ *
+ * Synthetic oneofs — the `_trainNumber` that proto3 `optional` generates —
+ * live under `oneofDecl`, not `field`, so the list below is exactly the
+ * author-declared fields.
+ */
+function fieldNamesOf(messageName: string): string[] {
+  return (messageDescriptor(messageName).field ?? []).map(
+    (field) => field.name,
+  );
 }
 
 /**
@@ -134,15 +164,7 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('carries the fare as an integer that survives the JS boundary', () => {
-    const amountMinor = loadSync(getCatalogProtoPath())[
-      `${CATALOG_PACKAGE_NAME}.Money`
-    ];
-
-    if (amountMinor === undefined || !('type' in amountMinor)) {
-      throw new Error('Money is not a message in the loaded descriptor');
-    }
-
-    const field = (amountMinor.type.field ?? []).find(
+    const field = (messageDescriptor('Money').field ?? []).find(
       (candidate) => candidate.name === 'amountMinor',
     );
 
@@ -153,16 +175,11 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('defaults the sort to departure-ascending, the mandated order', () => {
-    const definition = loadSync(getCatalogProtoPath());
-    const sort = definition[`${CATALOG_PACKAGE_NAME}.SearchSort`];
-
-    if (sort === undefined || !('type' in sort)) {
-      throw new Error('SearchSort is not an enum in the loaded descriptor');
-    }
-
     // Proto3 enum 0 is the default an absent field decodes to, so TA-18 can
     // add sorts without changing what today's clients get.
-    const zeroValue = (sort.type.value ?? []).find((v) => v.number === 0);
+    const zeroValue = (enumDescriptor('SearchSort').value ?? []).find(
+      (value) => value.number === 0,
+    );
     expect(zeroValue?.name).toBe('SEARCH_SORT_UNSPECIFIED');
   });
 });

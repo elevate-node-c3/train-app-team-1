@@ -33,22 +33,15 @@ describe('decoding a catalog refusal', () => {
     expect(refusal?.details[0].action).not.toBe('');
   });
 
-  it('restores the strip and window when they travelled', () => {
+  // Anything beyond the code and the fields is ignored rather than decoded:
+  // the envelope has nowhere to put it, so decoding it would be dead weight.
+  it('ignores keys the envelope cannot carry', () => {
     const refusal = decodeCatalogRefusal(
-      refusalDetails({
-        dateStrip: [
-          { date: '2026-06-15', selected: true, isToday: true, bookable: true },
-        ],
-        bookingWindow: {
-          firstBookableDate: '2026-06-15',
-          lastBookableDate: '2026-07-14',
-          totalDays: 30,
-        },
-      }),
+      refusalDetails({ dateStrip: [{ date: '2026-06-15' }] }),
     );
 
-    expect(refusal?.dateStrip).toHaveLength(1);
-    expect(refusal?.bookingWindow?.lastBookableDate).toBe('2026-07-14');
+    expect(refusal).not.toBeNull();
+    expect(Object.keys(refusal!).sort()).toEqual(['code', 'details']);
   });
 
   /**
@@ -116,17 +109,26 @@ describe('turning a refusal into an HTTP error', () => {
     expect(exception?.getStatus()).toBe(HttpStatus.BAD_REQUEST);
   });
 
-  it('puts the code and the fields in the response body', () => {
+  /**
+   * Under `message`, not a key of our own: that is the channel
+   * `HttpExceptionFilter.extractValidationDetails` reads, and it already
+   * understands objects carrying field, issue and action. A parallel `details`
+   * key looked right and was silently dropped, so a traveller got a 400
+   * naming nothing.
+   */
+  it('puts the fields where the envelope filter will find them', () => {
     const exception = parseCatalogBusinessError({
       details: refusalDetails(),
     });
 
     const body = exception?.getResponse() as {
       code: string;
-      details: { field: string }[];
+      message: { field: string; issue: string; action: string }[];
     };
     expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
-    expect(body.details[0].field).toBe('to');
+    expect(Array.isArray(body.message)).toBe(true);
+    expect(body.message[0].field).toBe('to');
+    expect(body.message[0].action).not.toBe('');
   });
 
   // Null means "this was not a business refusal", which is what tells the
@@ -135,5 +137,28 @@ describe('turning a refusal into an HTTP error', () => {
     expect(parseCatalogBusinessError({ code: 14 })).toBeNull();
     expect(parseCatalogBusinessError(new Error('boom'))).toBeNull();
     expect(parseCatalogBusinessError(undefined)).toBeNull();
+  });
+
+  /**
+   * `HttpExceptionFilter` only reads `message` for validation details on a
+   * 400, so a refusal whose code mapped elsewhere would arrive naming no
+   * field at all -- BR-57's failure, relocated.
+   *
+   * Catalog only ever refuses with VALIDATION_ERROR today, and this pins that
+   * so the day someone adds a second refusal code, this fails and points at
+   * the reason rather than the fields quietly vanishing.
+   */
+  it('only carries fields on codes the envelope surfaces them for', () => {
+    const exception = parseCatalogBusinessError({
+      details: refusalDetails(),
+    });
+    const body = exception?.getResponse() as { message?: unknown };
+
+    if (Array.isArray(body.message) && body.message.length > 0) {
+      expect(
+        exception?.getStatus(),
+        'details only reach error.details on a 400; this refusal would lose them',
+      ).toBe(HttpStatus.BAD_REQUEST);
+    }
   });
 });

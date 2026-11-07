@@ -24,6 +24,10 @@ async function bootstrap() {
       package: [HEALTH_PACKAGE_NAME, CATALOG_PACKAGE_NAME],
       protoPath: [getHealthProtoPath(), getCatalogProtoPath()],
       url: `0.0.0.0:${grpcPort}`,
+      // Matches the gateway's loader, so an enum is a name on both sides and a
+      // repeated field is always an array. See that module for the measured
+      // behaviour behind these two, and why `defaults` is not among them.
+      loader: { enums: String, arrays: true },
     },
   });
 

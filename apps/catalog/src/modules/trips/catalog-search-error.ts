@@ -1,32 +1,23 @@
-import type {
-  BookingWindow,
-  DateStripDay,
-  ErrorCode,
-  ValidationErrorDetail,
-} from '@app/contracts';
+import type { ErrorCode, ValidationErrorDetail } from '@app/contracts';
 
 /**
  * A refused search.
  *
  * The service names the code and the fields; it deliberately knows nothing
  * about gRPC or HTTP, and the transport adapter turns this into a status.
- * Mirrors identity's `AuthError`, with two additions.
+ * Mirrors identity's `AuthError`, with `details` added because every search
+ * refusal names the field to change and the change to make (BR-57).
  *
- * `details` carries the fields, because every search refusal names what to
- * change (BR-57).
- *
- * The date strip and window travel with the refusal so a client can keep
- * rendering the picker beside the error. A traveller who picked an impossible
- * date needs to see which dates are possible in the same response -- being
- * told "that date is wrong" and then having nothing to choose from is the
- * failure this is avoiding.
+ * It carried the date strip and booking window for a while, so a client could
+ * re-render the picker beside the error. That is a good idea with nowhere to
+ * land: `ApiErrorDetail` has no room for them, and widening a shared envelope
+ * for one feature is a bigger decision than this story should take alone. They
+ * were removed rather than left travelling to a gateway that discarded them.
  */
 export class CatalogSearchError extends Error {
   constructor(
     readonly code: ErrorCode,
     readonly details: ValidationErrorDetail[],
-    readonly dateStrip: DateStripDay[],
-    readonly bookingWindow: BookingWindow,
     message?: string,
   ) {
     super(message ?? code);

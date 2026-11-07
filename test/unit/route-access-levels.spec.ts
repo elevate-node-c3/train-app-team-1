@@ -2,7 +2,7 @@ import { RequestMethod } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import type { AccessLevel, StaffRole } from '@app/contracts';
 import { ACCESS_LEVEL_KEY, STAFF_ROLE_KEY } from '@app/common';
-import { GatewayModule } from '../../apps/gateway/src/gateway.module.ts';
+import { GatewayModule } from '../../apps/gateway/src/gateway.module.js';
 
 /**
  * BR-01's public surface, written out literally. The route walk below proves

@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "c1f7b8a2-94d3-4f90-a7d1-e6a8d7a4e921",
-    "name": "Train App - Platform Skeleton, Health & Auth",
-    "description": "Postman collection covering health, readiness, liveness, unified envelope testing, and the AUTH-1/AUTH-2/AUTH-3 flows across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
+    "name": "Train App - Platform Skeleton, Health, Auth & Search",
+    "description": "Postman collection covering health, readiness, liveness, unified envelope testing, the AUTH-1/AUTH-2/AUTH-3 flows, and TA-17 one-way trip search across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -717,6 +717,680 @@
               ]
             },
             "description": "Consumes the reset code, changes the password and revokes every session of the account."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Trip Search (Gateway)",
+      "description": "TA-17 one-way search: `GET /api/v1/trips/search`.\n\nRequires a verified traveller, so run **Authentication (Gateway) > Sign In**\nfirst -- these requests inherit the bearer `{{accessToken}}` it stores. There is\nno guest mode.\n\nThe station, travel-class and train-number variables are the fixed ids of the\ncatalog search fixture; load it with `npm run catalog:seed:search` after catalog\nhas migrated. `{{searchDepartureDate}}` is filled in automatically with the Cairo\ndate three days out (the day the fixture puts trips on) whenever it is left blank.\n\nEvery response uses the platform envelope: `success`, `data`, `error`. A refusal\nnames the field to change in `error.details[].field`; a 503 or 504 from a slow or\nstopped catalog carries `error.retryAfterSeconds`.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The fixture places its trips three days out, relative to today in",
+              "// Cairo, so a hardcoded date would go stale. Only fills a blank value,",
+              "// leaving a date you set by hand alone.",
+              "if (!pm.environment.get(\"searchDepartureDate\")) {",
+              "    const cairo = new Date(",
+              "        new Date().toLocaleString(\"en-US\", { timeZone: \"Africa/Cairo\" }),",
+              "    );",
+              "    cairo.setDate(cairo.getDate() + 3);",
+              "    const pad = (n) => String(n).padStart(2, \"0\");",
+              "    pm.environment.set(",
+              "        \"searchDepartureDate\",",
+              "        `${cairo.getFullYear()}-${pad(cairo.getMonth() + 1)}-${pad(cairo.getDate())}`,",
+              "    );",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Search One-Way Trips",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Every trip carries what BR-17 requires\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.trips).to.be.an(\"array\");",
+                  "    data.trips.forEach(function (trip) {",
+                  "        pm.expect(trip.trainNumber).to.be.a(\"number\");",
+                  "        pm.expect(trip.trainType.ar).to.not.equal(\"\");",
+                  "        pm.expect(trip.intermediateStops).to.be.at.least(0);",
+                  "        pm.expect(trip.durationMinutes).to.be.above(0);",
+                  "        pm.expect(trip.soldOut).to.be.a(\"boolean\");",
+                  "        pm.expect(Number.isInteger(trip.fare.amountMinor)).to.be.true;",
+                  "        pm.expect(trip.fare.currency).to.equal(\"EGP\");",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"Times are Cairo wall-clock, printed verbatim\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.evaluatedAt.timeZone).to.equal(\"Africa/Cairo\");",
+                  "    data.trips.forEach(function (trip) {",
+                  "        pm.expect(trip.departure.at.timeZone).to.equal(\"Africa/Cairo\");",
+                  "        pm.expect(trip.departure.at.utcOffset).to.match(/^\\+0[23]:00$/);",
+                  "        // Never re-format these through a date library: a client in",
+                  "        // another zone would shift the hour.",
+                  "        pm.expect(trip.departure.at.localTime).to.match(/^\\d{2}:\\d{2}$/);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"Results depart on the searched date, which the strip selects\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    const searched = pm.environment.get(\"searchDepartureDate\");",
+                  "    data.trips.forEach(function (trip) {",
+                  "        pm.expect(trip.departure.at.localDate).to.equal(searched);",
+                  "    });",
+                  "    const selected = data.dateStrip.filter(function (day) {",
+                  "        return day.selected;",
+                  "    });",
+                  "    pm.expect(selected).to.have.lengthOf(1);",
+                  "    pm.expect(selected[0].date).to.equal(searched);",
+                  "});",
+                  "",
+                  "pm.test(\"The booking window that produced the strip is reported\", function () {",
+                  "    const window = pm.response.json().data.bookingWindow;",
+                  "    pm.expect(window.totalDays).to.be.above(0);",
+                  "    pm.expect(window.firstBookableDate <= window.lastBookableDate).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "accept-language",
+                "value": "{{acceptLanguage}}",
+                "type": "text",
+                "description": "Decides the response language (BR-56). Absent means Arabic."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}",
+                  "description": "Origin station uuid, as the station list hands them out."
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}",
+                  "description": "Destination station uuid. Must differ from from."
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}",
+                  "description": "A Cairo civil date, YYYY-MM-DD, inside the 30-day window."
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}",
+                  "description": "Required: every result reports seats and fare for exactly one class."
+                },
+                {
+                  "key": "trainNumber",
+                  "value": "{{searchTrainNumber}}",
+                  "disabled": true,
+                  "description": "Optional narrowing (BR-18). Enable to filter."
+                },
+                {
+                  "key": "language",
+                  "value": "en",
+                  "disabled": true,
+                  "description": "The caller's declared preference, passed on to catalog. Accept-Language is what picks the response language."
+                }
+              ]
+            },
+            "description": "One-way search for a day, a station pair and one travel class.\n\nAnswers trips ordered for the traveller, a five-day date strip around the\nsearched date, the booking window behind it, and the Cairo moment it was\nevaluated at. Fares are integer piastres excluding the booking fee, and\ndurations come from instants, so an overnight or DST-crossing trip is still\ncorrect.\n\nCached per identical request, so two travellers asking the same thing get the\nsame answer; with Redis down it is served the slow way, never refused."
+          },
+          "response": []
+        },
+        {
+          "name": "Search by Train Number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Only the named train comes back\", function () {",
+                  "    const wanted = Number(pm.environment.get(\"searchTrainNumber\"));",
+                  "    pm.response.json().data.trips.forEach(function (trip) {",
+                  "        pm.expect(trip.trainNumber).to.equal(wanted);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "accept-language",
+                "value": "{{acceptLanguage}}",
+                "type": "text",
+                "description": "Decides the response language (BR-56). Absent means Arabic."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&trainNumber={{searchTrainNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}",
+                  "description": "Origin station uuid, as the station list hands them out."
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}",
+                  "description": "Destination station uuid. Must differ from from."
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}",
+                  "description": "A Cairo civil date, YYYY-MM-DD, inside the 30-day window."
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}",
+                  "description": "Required: every result reports seats and fare for exactly one class."
+                },
+                {
+                  "key": "trainNumber",
+                  "value": "{{searchTrainNumber}}"
+                }
+              ]
+            },
+            "description": "BR-18's optional filter. A train number that exists but does not run this route is a 400 naming trainNumber, not an empty result."
+          },
+          "response": []
+        },
+        {
+          "name": "Search by Train Number (Arabic-Indic Digits)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"٩٠٣ is read as 903\", function () {",
+                  "    pm.response.json().data.trips.forEach(function (trip) {",
+                  "        pm.expect(trip.trainNumber).to.equal(903);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "accept-language",
+                "value": "{{acceptLanguage}}",
+                "type": "text",
+                "description": "Decides the response language (BR-56). Absent means Arabic."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&trainNumber=٩٠٣",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}",
+                  "description": "Origin station uuid, as the station list hands them out."
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}",
+                  "description": "Destination station uuid. Must differ from from."
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}",
+                  "description": "A Cairo civil date, YYYY-MM-DD, inside the 30-day window."
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}",
+                  "description": "Required: every result reports seats and fare for exactly one class."
+                },
+                {
+                  "key": "trainNumber",
+                  "value": "٩٠٣"
+                }
+              ]
+            },
+            "description": "A traveller on an Arabic keyboard types ٩٠٣. The gateway normalizes Arabic-Indic and Persian digits to ASCII at the edge, so catalog only ever sees a number."
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Result - Route Not Served",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200, not a refusal\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Empty, and it blames the stations\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.trips).to.eql([]);",
+                  "    pm.expect(data.emptyResult.reason).to.equal(",
+                  "        \"SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED\",",
+                  "    );",
+                  "    pm.expect(data.emptyResult.message).to.not.equal(\"\");",
+                  "});",
+                  "",
+                  "pm.test(\"No Accept-Language means Arabic (BR-56)\", function () {",
+                  "    const message = pm.response.json().data.emptyResult.message;",
+                  "    pm.expect(/[\\u0600-\\u06FF]/.test(message)).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchUnservedFrom}}&to={{searchFrom}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchUnservedFrom}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                }
+              ]
+            },
+            "description": "A direction nothing serves. Not a refusal: the request was valid, the\nanswer is just empty, and `emptyResult` says which input to change.\n\nSent with no `accept-language` header on purpose, to show the Arabic\nfallback. `emptyResult.reason` is a stable enum to branch on and\n`emptyResult.message` the sentence to show; it is set if and only if `trips`\nis empty."
+          },
+          "response": []
+        },
+        {
+          "name": "Empty Result - English Sentence",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The sentence is the English one\", function () {",
+                  "    const empty = pm.response.json().data.emptyResult;",
+                  "    pm.expect(empty.message).to.equal(",
+                  "        \"No train runs between these stations in this direction, please change the stations\",",
+                  "    );",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "accept-language",
+                "value": "en-GB,en;q=0.9",
+                "type": "text",
+                "description": "A real browser header, q-values and all."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchUnservedFrom}}&to={{searchFrom}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchUnservedFrom}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                }
+              ]
+            },
+            "description": "The same empty search in English. The reason enum is identical; only the sentence changes, because the words are chosen at the edge and catalog knows no language at all."
+          },
+          "response": []
+        },
+        {
+          "name": "Refusal - Same Station Twice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal names To, the field to change\", function () {",
+                  "    const details = pm.response.json().error.details || [];",
+                  "    pm.expect(details.map(function (d) { return d.field; })).to.include(\"to\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchFrom}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                }
+              ]
+            },
+            "description": "From and To must differ. The refusal reports against `to` deliberately -- a traveller told \"from is invalid\" would go and change the wrong one."
+          },
+          "response": []
+        },
+        {
+          "name": "Refusal - Malformed Date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal names departureDate\", function () {",
+                  "    const details = pm.response.json().error.details || [];",
+                  "    pm.expect(details.map(function (d) { return d.field; })).to.include(",
+                  "        \"departureDate\",",
+                  "    );",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate=20-06-2026&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}",
+                  "description": "Origin station uuid, as the station list hands them out."
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}",
+                  "description": "Destination station uuid. Must differ from from."
+                },
+                {
+                  "key": "departureDate",
+                  "value": "20-06-2026"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}",
+                  "description": "Required: every result reports seats and fare for exactly one class."
+                }
+              ]
+            },
+            "description": "Refused at the gateway without reaching catalog: the date must be YYYY-MM-DD. A well-formed date outside the 30-day window is also a 400, but from catalog, and its detail carries the date to pick instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Refusal - Unknown Query Parameter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&returnDate={{searchDepartureDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}",
+                  "description": "Origin station uuid, as the station list hands them out."
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}",
+                  "description": "Destination station uuid. Must differ from from."
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}",
+                  "description": "A Cairo civil date, YYYY-MM-DD, inside the 30-day window."
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}",
+                  "description": "Required: every result reports seats and fare for exactly one class."
+                },
+                {
+                  "key": "returnDate",
+                  "value": "{{searchDepartureDate}}",
+                  "description": "Not part of one-way search. Round trips are not this endpoint."
+                }
+              ]
+            },
+            "description": "The global validation pipe forbids parameters the DTO does not declare, so a typo or a stale client fails loudly instead of being silently ignored."
+          },
+          "response": []
+        },
+        {
+          "name": "Refusal - Unauthenticated",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchFrom}}&to={{searchTo}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchTo}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                }
+              ]
+            },
+            "description": "Search has no guest mode, which is also what makes the results cacheable:\nthey are identical for every caller.\n\nThe token is verified at the edge against a public key, so identity being\ndown does not stop a traveller searching -- and a malformed token is a 401\nhere, not a 500."
           },
           "response": []
         }

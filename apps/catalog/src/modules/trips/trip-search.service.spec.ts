@@ -148,7 +148,7 @@ describe('the search service', () => {
   });
 
   describe('refusals', () => {
-    it('names the field, and still carries the strip and window', async () => {
+    it('names the field to change', async () => {
       const { service } = makeService();
 
       const error = await service
@@ -158,21 +158,17 @@ describe('the search service', () => {
       expect(error).toBeInstanceOf(CatalogSearchError);
       const refusal = error as CatalogSearchError;
       expect(refusal.details.map((detail) => detail.field)).toEqual(['to']);
-      // So a client can keep rendering the date picker next to the error.
-      expect(refusal.dateStrip).toHaveLength(5);
-      expect(refusal.bookingWindow.lastBookableDate).toBe('2026-07-14');
     });
 
-    it('states the last bookable date, matching the window it returned', async () => {
+    it('states the last bookable date in the action', async () => {
       const { service } = makeService();
 
       const error = (await service
         .search(request({ departureDate: '2026-08-01' }), NOW)
         .catch((caught: unknown) => caught)) as CatalogSearchError;
 
-      expect(error.details[0].action).toContain(
-        error.bookingWindow.lastBookableDate,
-      );
+      // The traveller needs the date to pick instead, not only a rejection.
+      expect(error.details[0].action).toContain('2026-07-14');
     });
 
     it('refuses an inactive station without touching the database', async () => {

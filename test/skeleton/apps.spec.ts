@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
+import type { Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import * as catalogModule from '../../apps/catalog/src/catalog.module.ts';
-import * as gatewayModule from '../../apps/gateway/src/gateway.module.ts';
-import * as identityModule from '../../apps/identity/src/identity.module.ts';
-import * as inventoryModule from '../../apps/inventory/src/inventory.module.ts';
-import * as bookingModule from '../../apps/booking/src/booking.module.ts';
-import * as paymentModule from '../../apps/payment/src/payment.module.ts';
-import * as notificationModule from '../../apps/notification/src/notification.module.ts';
+import * as catalogModule from '../../apps/catalog/src/catalog.module.js';
+import * as gatewayModule from '../../apps/gateway/src/gateway.module.js';
+import * as identityModule from '../../apps/identity/src/identity.module.js';
+import * as inventoryModule from '../../apps/inventory/src/inventory.module.js';
+import * as bookingModule from '../../apps/booking/src/booking.module.js';
+import * as paymentModule from '../../apps/payment/src/payment.module.js';
+import * as notificationModule from '../../apps/notification/src/notification.module.js';
 
 const SERVICES = [
   'catalog',
@@ -77,10 +78,13 @@ describe('service apps', () => {
     async (service) => {
       const pascal = service[0].toUpperCase() + service.slice(1);
       const mod = MODULES[service];
-      const moduleClass = mod[`${pascal}Module`];
+      // The map is `Record<string, unknown>` because a namespace object says
+      // nothing about its exports; the assertion below is what proves the
+      // module class is actually there.
+      const moduleClass = mod[`${pascal}Module`] as Type<unknown> | undefined;
       expect(moduleClass).toBeDefined();
       await expect(
-        Test.createTestingModule({ imports: [moduleClass] }).compile(),
+        Test.createTestingModule({ imports: [moduleClass!] }).compile(),
       ).resolves.toBeDefined();
     },
   );
