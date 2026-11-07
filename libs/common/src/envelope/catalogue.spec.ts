@@ -19,6 +19,8 @@ const EMPTY_REASON_KEYS: Exclude<
   'SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED',
   'SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE',
   'SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE',
+  'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
+  'SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL',
 ];
 
 describe('the search message catalogue', () => {
@@ -34,15 +36,44 @@ describe('the search message catalogue', () => {
     }
   });
 
-  it('gives the three reasons three different sentences', () => {
+  it('gives every reason a different sentence', () => {
     // The whole point of BR-57: "change the stations" must not read like
-    // "change the date".
+    // "change the date", and neither may read like "change the filters".
     for (const lang of ['ar', 'en'] as const) {
       const sentences = EMPTY_REASON_KEYS.map((key) =>
         resolveMessage(key, lang),
       );
       expect(new Set(sentences).size).toBe(EMPTY_REASON_KEYS.length);
     }
+  });
+
+  /**
+   * The two TA-18 reasons each have to point somewhere the other does not:
+   * the return leg offers two ways out, and the filter sentence has to say
+   * that the date is *not* the thing to change.
+   */
+  it('offers the return leg both ways out, quoting the arrival', () => {
+    const message = resolveMessageWithParams(
+      'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
+      'en',
+      { outboundArrivalTime: '23:50' },
+    );
+
+    expect(message).toContain('23:50');
+    expect(message).toContain('return date');
+    expect(message).toContain('outbound');
+    expect(message).not.toContain('{{');
+  });
+
+  it('tells a filtered-out traveller to change the filters, not the date', () => {
+    const message = resolveMessage(
+      'SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL',
+      'en',
+    );
+
+    expect(message).toContain('filters');
+    // It must not send them to the date picker: there ARE trains that day.
+    expect(message).toContain('are trains on this date');
   });
 
   it('uses the wording the story fixes for an empty date', () => {

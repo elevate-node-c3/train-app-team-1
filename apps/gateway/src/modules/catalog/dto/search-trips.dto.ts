@@ -17,9 +17,9 @@ import {
 import type { EventLanguage } from '@app/contracts';
 
 /** A time of day is 00:00..23:59, so a minute index never reaches 1440. */
-const MINUTES_IN_A_DAY = 24 * 60;
+export const MINUTES_IN_A_DAY = 24 * 60;
 
-const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A time of day a traveller typed: '06:00', '23:59'. */
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -28,7 +28,7 @@ const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const ARABIC_INDIC_DIGITS = /[٠-٩۰-۹]/g;
 
 /** The sort orders the wire accepts (BR-18). */
-const SEARCH_SORTS = [
+export const SEARCH_SORTS = [
   'SEARCH_SORT_DEPARTURE_ASC',
   'SEARCH_SORT_DURATION_ASC',
   'SEARCH_SORT_FARE_ASC',
@@ -63,7 +63,7 @@ function asciiDigitsOf(value: string): string {
  * ASCII and needs no opinion about scripts -- which is why its own validator
  * refuses a non-number rather than trying to interpret one.
  */
-function toAsciiDigits(value: unknown): unknown {
+export function toAsciiDigits(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
   const ascii = asciiDigitsOf(value);
@@ -98,7 +98,7 @@ export function clockTimeToMinutes(value: unknown): unknown {
  * `@IsBoolean` reports the field -- the usual truthiness rules would read
  * `excludeSoldOut=no` as `true`, which is the opposite of what was asked.
  */
-function toBoolean(value: unknown): unknown {
+export function toBoolean(value: unknown): unknown {
   if (value === 'true') return true;
   if (value === 'false') return false;
 
@@ -106,7 +106,7 @@ function toBoolean(value: unknown): unknown {
 }
 
 /** A query string carries a list as CSV; the wire wants an array. */
-function csvToArray(value: unknown): unknown {
+export function csvToArray(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
   const parts = value
