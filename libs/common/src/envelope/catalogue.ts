@@ -171,6 +171,23 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'هذا القطار لا يخدم هذا المسار، يرجى تغيير رقم القطار أو إزالته',
     en: 'This train does not serve this route, please change or clear the train number',
   },
+
+  // --- Round trip and filters (TA-18) --------------------------------------
+  //
+  // Both name a different thing to change, which is the whole point of
+  // keeping them apart from NO_TRIPS_ON_DATE. The research finding was
+  // travellers saying "I don't know what to change: station, date, or
+  // round-trip option" -- so the return-leg sentence offers the two choices
+  // that actually help, and the filter sentence says explicitly that the date
+  // is not the problem.
+  SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL: {
+    ar: 'لا يوجد قطار عودة يتحرك بعد وصول رحلة الذهاب في {{outboundArrivalTime}}، يرجى تغيير تاريخ العودة أو اختيار رحلة ذهاب أخرى',
+    en: 'No return train leaves after your outbound trip arrives at {{outboundArrivalTime}}; please change the return date or pick another outbound trip',
+  },
+  SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL: {
+    ar: 'توجد قطارات في هذا التاريخ ولكن لا يوجد ما يطابق عوامل التصفية المختارة، يرجى تعديل عوامل التصفية',
+    en: 'There are trains on this date, but none match the filters you chose; please adjust the filters',
+  },
   [CATALOG_SEARCH_DATE_OUT_OF_WINDOW]: {
     ar: 'التاريخ المختار خارج فترة الحجز المتاحة، آخر تاريخ متاح للحجز هو {{lastBookableDate}}',
     en: 'The selected date is outside the booking window; the last bookable date is {{lastBookableDate}}',
