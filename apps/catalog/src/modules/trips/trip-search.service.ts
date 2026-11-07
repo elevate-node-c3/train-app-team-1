@@ -8,6 +8,8 @@ import {
   type SearchOneWayTripsResponse,
 } from '@app/contracts';
 
+import { RecentSearchesService } from '../recent-searches/recent-searches.service.js';
+
 import { CatalogReferenceRepository } from './catalog-reference.repository.js';
 import { CatalogSearchError } from './catalog-search-error.js';
 import { buildDateStrip } from './date-strip.js';
@@ -53,11 +55,18 @@ export class TripSearchService {
     private readonly references: CatalogReferenceRepository,
     private readonly availability: SeatAvailabilityService,
     private readonly day: TripDayService,
+    private readonly recentSearches: RecentSearchesService,
   ) {}
 
+  /**
+   * `accountId` is the signed-in traveller, read from caller metadata by the
+   * transport. Absent means an unidentified caller, which search still answers
+   * -- the results are identical for everyone -- but records nothing for.
+   */
   async search(
     request: SearchOneWayTripsRequest,
     now: Date,
+    accountId: string | null = null,
   ): Promise<SearchOneWayTripsResponse> {
     const bookingWindow = bookingWindowFor(now);
     const dateStrip = buildDateStrip(request.departureDate, now);
@@ -104,7 +113,7 @@ export class TripSearchService {
       onUnpriced: (trip) => this.warnUnpriced(trip),
     });
 
-    return {
+    const response: SearchOneWayTripsResponse = {
       dateStrip,
       trips,
       bookingWindow,
@@ -121,6 +130,64 @@ export class TripSearchService {
           }
         : {}),
     };
+
+    this.recordSearch(request, now, accountId, trainNumber);
+
+    return response;
+  }
+
+  /**
+   * Remembers the search, without the traveller waiting for it (BR-21).
+   *
+   * Not awaited, on purpose. Recording must never slow a search down and never
+   * make one fail, and this is the only shape that keeps both promises: the
+   * response is already built, and the write happens on its own.
+   *
+   * The `catch` is belt and braces. `RecentSearchesService.record` already
+   * swallows and logs its own failures, but an unawaited promise that rejects
+   * takes the process down on an unhandled rejection -- and this service should
+   * not stake its own crash-safety on another class's internal discipline.
+   *
+   * Reached only after a successful answer, which is what makes "a valid
+   * search is recorded whether or not it found trains; an invalid request is
+   * not" true by construction -- a refusal threw several steps ago.
+   */
+  private recordSearch(
+    request: SearchOneWayTripsRequest,
+    now: Date,
+    accountId: string | null,
+    trainNumber: number | null,
+  ): void {
+    if (accountId === null) return;
+
+    // The return date is what tells a one-way search from a round trip, and it
+    // is the reason the outbound call carries one at all.
+    const returnDate =
+      request.returnDate === undefined || request.returnDate === ''
+        ? null
+        : request.returnDate;
+
+    void this.recentSearches
+      .record(
+        {
+          accountId,
+          originStationId: request.originStationId,
+          destinationStationId: request.destinationStationId,
+          travelClassId: request.travelClassId,
+          kind: returnDate === null ? 'one_way' : 'round_trip',
+          trainNumber,
+          departureDate: request.departureDate,
+          returnDate,
+        },
+        now,
+      )
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Recording a recent search rejected unexpectedly: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   /** Shape first, then the catalogue, so an obvious refusal costs no queries. */

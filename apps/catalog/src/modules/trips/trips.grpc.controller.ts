@@ -1,7 +1,8 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
 import * as grpc from '@grpc/grpc-js';
-import { GrpcCorrelationInterceptor } from '@app/common';
+import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
+import { ClsService } from 'nestjs-cls';
 import {
   CATALOG_SERVICE_NAME,
   type GetTripStopsRequest,
@@ -50,6 +51,7 @@ export class TripsGrpcController {
     private readonly search: TripSearchService,
     private readonly returnSearch: TripReturnSearchService,
     private readonly stops: TripStopsService,
+    private readonly cls: ClsService,
   ) {}
 
   /**
@@ -59,13 +61,22 @@ export class TripsGrpcController {
    * `new Date()` itself could not be tested against a frozen clock, and two
    * calls inside one request could disagree about whether a trip's sales are
    * still open.
+   *
+   * The traveller comes from the same place, for the same reason -- caller
+   * metadata the gateway minted from a verified token, never a field on the
+   * request. It is only used to record the search; an unidentified caller
+   * still gets results, because they are identical for everyone.
    */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'SearchOneWayTrips')
   async searchOneWayTrips(
     request: SearchOneWayTripsRequest,
   ): Promise<SearchOneWayTripsResponse> {
     try {
-      return await this.search.search(request, new Date());
+      return await this.search.search(
+        request,
+        new Date(),
+        this.cls.get<string>(CALLER_ACCOUNT_ID_KEY) ?? null,
+      );
     } catch (error: unknown) {
       throw toRpcException(error);
     }

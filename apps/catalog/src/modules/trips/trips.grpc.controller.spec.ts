@@ -4,6 +4,7 @@ import {
   type SearchReturnTripsResponse,
   type TripStopsResponse,
 } from '@app/contracts';
+import { CALLER_ACCOUNT_ID_KEY } from '@app/common';
 import { RpcException } from '@nestjs/microservices';
 import * as grpc from '@grpc/grpc-js';
 import { describe, expect, it, vi } from 'vitest';
@@ -38,15 +39,20 @@ const request = {
   travelClassId: '33333333-3333-4333-8333-333333333333',
 };
 
+/** The traveller the gateway's metadata would have put in CLS. */
+const TRAVELLER = '66666666-6666-4666-8666-666666666666';
+
 function controllerWith(
   search: Partial<TripSearchService>,
   stops: Partial<TripStopsService> = {},
   returnSearch: Partial<TripReturnSearchService> = {},
+  caller: Record<string, unknown> = { [CALLER_ACCOUNT_ID_KEY]: TRAVELLER },
 ) {
   return new TripsGrpcController(
     search as TripSearchService,
     returnSearch as TripReturnSearchService,
     stops as TripStopsService,
+    { get: (key: string) => caller[key] } as never,
   );
 }
 
@@ -74,6 +80,30 @@ describe('the search gRPC controller', () => {
     expect(now).toBeInstanceOf(Date);
     expect(now.getTime()).toBeGreaterThanOrEqual(before);
     expect(now.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  /**
+   * The traveller travels in caller metadata, which the gateway mints from a
+   * verified token. The request has no account field, so there is nothing a
+   * client could put there -- and search still answers without one, because
+   * the results are identical for everyone.
+   */
+  describe('the traveller it records for', () => {
+    it('passes the caller from metadata to the service', async () => {
+      const search = vi.fn().mockResolvedValue(EMPTY_RESPONSE);
+
+      await controllerWith({ search }).searchOneWayTrips(request);
+
+      expect(search.mock.calls[0][2]).toBe(TRAVELLER);
+    });
+
+    it('passes null when no caller was forwarded', async () => {
+      const search = vi.fn().mockResolvedValue(EMPTY_RESPONSE);
+
+      await controllerWith({ search }, {}, {}, {}).searchOneWayTrips(request);
+
+      expect(search.mock.calls[0][2]).toBeNull();
+    });
   });
 
   describe('a refusal', () => {

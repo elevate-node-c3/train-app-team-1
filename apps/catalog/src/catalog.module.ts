@@ -12,6 +12,7 @@ import { MessagingModule } from '@app/messaging';
 import { migrations } from './database/migrations/index.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
+import { RecentSearchesModule } from './modules/recent-searches/recent-searches.module.js';
 import { StationsModule } from './modules/stations/stations.module.js';
 import { TrainsModule } from './modules/trains/trains.module.js';
 import { TimetablesModule } from './modules/timetables/timetables.module.js';
@@ -31,6 +32,7 @@ import { TripsModule } from './modules/trips/trips.module.js';
     TimetablesModule,
     FaresModule,
     TripsModule,
+    RecentSearchesModule,
   ],
   controllers: [ServiceInfoController],
 })
