@@ -27,6 +27,11 @@ const UUID_PATTERN =
 
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The identifier shape the catalogue mints; shared with the filter refusals. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
+
 /** What the catalogue knows about the ids a request referenced. */
 export interface SearchReferenceFacts {
   knownStationIds: Set<string>;
@@ -65,7 +70,7 @@ export function validateSearchShape(
     ['from', request.originStationId],
     ['to', request.destinationStationId],
   ] as const) {
-    if (!UUID_PATTERN.test(value ?? '')) {
+    if (!isUuid(value)) {
       details.push({
         field,
         rejectedValue: value,
@@ -89,7 +94,7 @@ export function validateSearchShape(
     });
   }
 
-  if (!UUID_PATTERN.test(request.travelClassId ?? '')) {
+  if (!isUuid(request.travelClassId)) {
     details.push({
       field: 'travelClassId',
       rejectedValue: request.travelClassId,
