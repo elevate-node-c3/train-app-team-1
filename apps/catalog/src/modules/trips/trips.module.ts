@@ -7,6 +7,8 @@ import { TripStopEntity } from './entities/trip-stop.entity.js';
 import { SeatAvailabilityService } from './seat-availability.service.js';
 import { TripSearchRepository } from './trip-search.repository.js';
 import { TripSearchService } from './trip-search.service.js';
+import { TripStopsRepository } from './trip-stops.repository.js';
+import { TripStopsService } from './trip-stops.service.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
 
 /**
@@ -20,9 +22,11 @@ import { TripsGrpcController } from './trips.grpc.controller.js';
   controllers: [TripsGrpcController],
   providers: [
     TripSearchRepository,
+    TripStopsRepository,
     CatalogReferenceRepository,
     SeatAvailabilityService,
     TripSearchService,
+    TripStopsService,
   ],
   exports: [TripSearchService],
 })

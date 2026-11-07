@@ -4,12 +4,15 @@ import * as grpc from '@grpc/grpc-js';
 import { GrpcCorrelationInterceptor } from '@app/common';
 import {
   CATALOG_SERVICE_NAME,
+  type GetTripStopsRequest,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
+  type TripStopsResponse,
 } from '@app/contracts';
 
 import { isCatalogSearchError } from './catalog-search-error.js';
 import { TripSearchService } from './trip-search.service.js';
+import { TripStopsService } from './trip-stops.service.js';
 
 /**
  * Turns a refusal into a gRPC status.
@@ -40,7 +43,10 @@ function toRpcException(error: unknown): unknown {
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
 export class TripsGrpcController {
-  constructor(private readonly search: TripSearchService) {}
+  constructor(
+    private readonly search: TripSearchService,
+    private readonly stops: TripStopsService,
+  ) {}
 
   /**
    * `now` is captured here, once, and threaded through the whole search.
@@ -56,6 +62,22 @@ export class TripsGrpcController {
   ): Promise<SearchOneWayTripsResponse> {
     try {
       return await this.search.search(request, new Date());
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
+  }
+
+  /**
+   * The stops of the pair the search result offered.
+   *
+   * No clock is captured: unlike search, this answer is not a function of
+   * `now`. The cache TTL is the only time-dependent part, and it is chosen
+   * inside the service.
+   */
+  @GrpcMethod(CATALOG_SERVICE_NAME, 'GetTripStops')
+  async getTripStops(request: GetTripStopsRequest): Promise<TripStopsResponse> {
+    try {
+      return await this.stops.stops(request);
     } catch (error: unknown) {
       throw toRpcException(error);
     }
