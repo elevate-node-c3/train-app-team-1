@@ -38,6 +38,17 @@ export interface TripSearchRow {
   farePiastres: number | null;
 }
 
+/** One stop on the passenger's own segment, in travel order. */
+export interface TripStopRow {
+  stationId: string;
+  stationNameEn: string;
+  stationNameAr: string;
+  /** Null at the boarding stop. */
+  arrivalAt: Date | null;
+  /** Null at the alighting stop. */
+  departureAt: Date | null;
+}
+
 /** What the probes found when a search came back empty. */
 export interface RouteServedProbe {
   routeServed: boolean;
