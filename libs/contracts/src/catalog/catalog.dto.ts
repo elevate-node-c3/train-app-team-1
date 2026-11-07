@@ -16,7 +16,9 @@ export type SearchEmptyReason =
   | 'SEARCH_EMPTY_REASON_UNSPECIFIED'
   | 'SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED'
   | 'SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE'
-  | 'SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE';
+  | 'SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE'
+  | 'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL'
+  | 'SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL';
 
 export type SearchSort =
   | 'SEARCH_SORT_UNSPECIFIED'
@@ -55,6 +57,22 @@ export interface SearchFilters {
   departBeforeMinutes?: number;
   maxFareMinor?: number;
   excludeSoldOut?: boolean;
+}
+
+export interface TrainTypeOption {
+  id: string;
+  name: LocalizedName;
+  /** How many of the day's unfiltered trips are this type. */
+  tripCount: number;
+}
+
+/** The choices the day offers, computed before the request's filters apply. */
+export interface FilterOptions {
+  trainTypes: TrainTypeOption[];
+  /** Cheapest priced trip of the day, excluding the booking fee. */
+  minFareMinor: number;
+  /** Most expensive priced trip of the day, excluding the booking fee. */
+  maxFareMinor: number;
 }
 
 export interface SearchOneWayTripsRequest {
@@ -126,4 +144,84 @@ export interface SearchOneWayTripsResponse {
   emptyResult?: EmptyResult;
   bookingWindow: BookingWindow;
   evaluatedAt: CivilDateTime;
+  filterOptions?: FilterOptions;
+}
+
+/**
+ * The return leg. There is deliberately no arrival time: BR-20 makes the
+ * server read the outbound trip's arrival, and no train number, because that
+ * narrowed the outbound leg only.
+ */
+export interface SearchReturnTripsRequest {
+  outboundTripId: string;
+  outboundOriginStationId: string;
+  outboundDestinationStationId: string;
+  /** 'YYYY-MM-DD', a Cairo civil date. */
+  returnDate: string;
+  travelClassId: string;
+  language?: EventLanguage | '';
+  sort?: SearchSort;
+  filters?: SearchFilters;
+}
+
+export interface SearchReturnTripsResponse {
+  trips: TripResult[];
+  /** Set if and only if `trips` is empty. */
+  emptyResult?: EmptyResult;
+  evaluatedAt: CivilDateTime;
+  filterOptions?: FilterOptions;
+}
+
+export interface GetTripStopsRequest {
+  tripId: string;
+  originStationId: string;
+  destinationStationId: string;
+  language?: EventLanguage | '';
+}
+
+export interface TripStop {
+  stationId: string;
+  name: LocalizedName;
+  /** Absent at the first stop. */
+  arrival?: CivilDateTime;
+  /** Absent at the last stop. */
+  departure?: CivilDateTime;
+  boarding: boolean;
+  alighting: boolean;
+}
+
+export interface TripStopsResponse {
+  /** Boarding, every stop between, and alighting, in travel order. */
+  stops: TripStop[];
+}
+
+export type RecentSearchKind =
+  | 'RECENT_SEARCH_KIND_UNSPECIFIED'
+  | 'RECENT_SEARCH_KIND_ONE_WAY'
+  | 'RECENT_SEARCH_KIND_ROUND_TRIP';
+
+export interface RecentSearchStation {
+  id: string;
+  name: LocalizedName;
+}
+
+export interface RecentSearch {
+  origin: RecentSearchStation;
+  destination: RecentSearchStation;
+  travelClass: TravelClass;
+  kind: RecentSearchKind;
+  /** Absent when the traveller did not narrow by train. */
+  trainNumber?: number;
+  /** Absent when too old to repeat; both dates travel together. */
+  departureDate?: string;
+  returnDate?: string;
+  searchedAt: CivilDateTime;
+}
+
+export interface ListRecentSearchesRequest {
+  language?: EventLanguage | '';
+}
+
+export interface ListRecentSearchesResponse {
+  recentSearches: RecentSearch[];
 }

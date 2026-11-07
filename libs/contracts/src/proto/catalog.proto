@@ -8,6 +8,23 @@ package train.catalog.v1;
 service CatalogService {
   rpc SearchOneWayTrips (SearchOneWayTripsRequest)
       returns (SearchOneWayTripsResponse);
+
+  // The return leg of a round trip. The outbound trip decides the lower bound:
+  // its arrival is read by the server (BR-20), never sent by the client, and
+  // the train number narrows the outbound leg only, so it is not on this
+  // request at all.
+  rpc SearchReturnTrips (SearchReturnTripsRequest)
+      returns (SearchReturnTripsResponse);
+
+  // Every stop from boarding to alighting, in travel order. The pair is the
+  // one the search result offered, so the count always matches its
+  // `intermediateStops`.
+  rpc GetTripStops (GetTripStopsRequest) returns (TripStopsResponse);
+
+  // The traveller's five most recent searches. The traveller comes from caller
+  // metadata, never from the request body.
+  rpc ListRecentSearches (ListRecentSearchesRequest)
+      returns (ListRecentSearchesResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +113,24 @@ message SearchFilters {
   optional bool excludeSoldOut = 5;
 }
 
+// The return leg of a round trip. There is deliberately no arrival time here:
+// BR-20 says the server reads the chosen outbound trip's arrival, so a client
+// cannot widen the window by sending one. There is no train number either --
+// it narrowed the outbound leg only.
+message SearchReturnTripsRequest {
+  string outboundTripId = 1;                 // uuid, required
+  string outboundOriginStationId = 2;        // uuid, required
+  string outboundDestinationStationId = 3;   // uuid, required
+  string returnDate = 4;                     // 'YYYY-MM-DD', Cairo civil date
+  string travelClassId = 5;                  // uuid, required
+  string language = 6;                       // 'ar' | 'en' | ''
+
+  SearchSort sort = 7;
+  SearchFilters filters = 8;
+
+  reserved 9 to 19;
+}
+
 // ---------------------------------------------------------------------------
 // Response
 // ---------------------------------------------------------------------------
@@ -123,7 +158,44 @@ message SearchOneWayTripsResponse {
   // detect a stale response and makes the cache re-filter auditable.
   CivilDateTime evaluatedAt = 5;
 
-  reserved 6 to 19;  // nextPageToken if pagination ever arrives, facets
+  // Facets for narrowing the day. Computed over the unfiltered day, so a
+  // client is never offered a train type its current filter already removed.
+  // Field 6 was reserved before anything serialized it, which is why taking it
+  // is not a breaking change.
+  FilterOptions filterOptions = 6;
+
+  reserved 7 to 19;  // nextPageToken if pagination ever arrives
+}
+
+// The choices the day actually offers. Repeated fields are omitted by proto3
+// when empty, so the gateway restores `trainTypes: []` for REST clients.
+message FilterOptions {
+  repeated TrainTypeOption trainTypes = 1;
+  int32 minFareMinor = 2;
+  int32 maxFareMinor = 3;
+}
+
+message TrainTypeOption {
+  string id = 1;
+  LocalizedName name = 2;
+  int32 tripCount = 3;
+}
+
+// The return list. No date strip and no booking window: the outbound call
+// already sent both, and repeating them would let the two disagree.
+message SearchReturnTripsResponse {
+  repeated TripResult trips = 1;
+
+  // Set if and only if `trips` is empty. The return flow distinguishes
+  // "nothing runs that day" from "everything left before the outbound lands".
+  optional EmptyResult emptyResult = 2;
+
+  CivilDateTime evaluatedAt = 3;
+
+  // Over the unfiltered day, exactly as the one-way response.
+  FilterOptions filterOptions = 4;
+
+  reserved 5 to 19;
 }
 
 message BookingWindow {
@@ -205,4 +277,80 @@ enum SearchEmptyReason {
   // A train number was supplied and that train does not serve this pair in
   // this direction. The traveller should change or clear the train number.
   SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE = 3;
+  // The day had return trips, but every one of them departs before the chosen
+  // outbound arrives. The traveller should change the return date or the
+  // outbound trip.
+  SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL = 4;
+  // The day had trips, and the supplied filters removed all of them. The
+  // traveller should change the filters, not the date.
+  SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Stops
+// ---------------------------------------------------------------------------
+
+message GetTripStopsRequest {
+  string tripId = 1;                  // uuid, required
+  string originStationId = 2;         // uuid, required — the passenger's origin
+  string destinationStationId = 3;    // uuid, required
+  string language = 4;                // carried, never used to choose names
+}
+
+message TripStop {
+  string stationId = 1;
+  LocalizedName name = 2;
+
+  // Optional because the first stop has no arrival and the last no departure.
+  // Both are Cairo wall-clock values, so a client prints them verbatim.
+  optional CivilDateTime arrival = 3;
+  optional CivilDateTime departure = 4;
+
+  bool boarding = 5;
+  bool alighting = 6;
+}
+
+message TripStopsResponse {
+  // Boarding stop, every stop between, and the alighting stop, in travel order.
+  repeated TripStop stops = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Recent searches
+// ---------------------------------------------------------------------------
+
+message ListRecentSearchesRequest {
+  string language = 1;  // 'ar' | 'en' | '' — the traveller is caller metadata
+}
+
+message ListRecentSearchesResponse {
+  repeated RecentSearch recentSearches = 1;
+}
+
+message RecentSearchStation {
+  string id = 1;
+  LocalizedName name = 2;
+}
+
+enum RecentSearchKind {
+  RECENT_SEARCH_KIND_UNSPECIFIED = 0;
+  RECENT_SEARCH_KIND_ONE_WAY = 1;
+  RECENT_SEARCH_KIND_ROUND_TRIP = 2;
+}
+
+message RecentSearch {
+  RecentSearchStation origin = 1;
+  RecentSearchStation destination = 2;
+  TravelClass travelClass = 3;
+  RecentSearchKind kind = 4;
+
+  // Absent when the traveller did not narrow by train.
+  optional int32 trainNumber = 5;
+
+  // Absent when the date is too old to repeat. Both travel together: a
+  // round-trip entry with no outbound date cannot be repeated either.
+  optional string departureDate = 6;
+  optional string returnDate = 7;
+
+  CivilDateTime searchedAt = 8;
 }
