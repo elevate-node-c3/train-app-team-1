@@ -38,6 +38,23 @@ export interface TripSearchRow {
   farePiastres: number | null;
 }
 
+/**
+ * The outbound trip's own segment, as the return search reads it.
+ *
+ * The return list may not depart before `originDepartureAt` (BR-20), and that
+ * instant comes from here rather than from anything a client sent. The Cairo
+ * departure date is the civil date the passenger leaves, which is the earliest
+ * return date the server will accept.
+ */
+export interface PassengerSegmentRow {
+  originStationId: string;
+  destinationStationId: string;
+  originDepartureAt: Date;
+  destinationArrivalAt: Date;
+  /** `YYYY-MM-DD` in Cairo, derived from `originDepartureAt`. */
+  cairoDepartureDate: string;
+}
+
 /** One stop on the passenger's own segment, in travel order. */
 export interface TripStopRow {
   stationId: string;

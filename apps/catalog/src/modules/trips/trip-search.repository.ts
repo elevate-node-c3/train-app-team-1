@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { cairoDayBounds } from '@app/contracts';
+import { cairoCivilDateOf, cairoDayBounds } from '@app/contracts';
 import { DataSource } from 'typeorm';
 
 import { StationEntity } from '../stations/entities/station.entity.js';
@@ -14,7 +14,18 @@ import {
   MAX_TRIP_DAY_SPAN_DAYS,
   SELLABLE_TRIP_STATUSES,
 } from './trip-sellability.js';
-import type { RouteServedProbe, TripSearchRow } from './trip-search.types.js';
+import type {
+  PassengerSegmentRow,
+  RouteServedProbe,
+  TripSearchRow,
+} from './trip-search.types.js';
+
+interface RawSegmentRow {
+  origin_station_id: string;
+  destination_station_id: string;
+  origin_departure_at: Date;
+  destination_arrival_at: Date;
+}
 
 interface RawRow {
   trip_id: string;
@@ -229,6 +240,65 @@ export class TripSearchRepository {
             left.trainNumber - right.trainNumber,
         )
     );
+  }
+
+  /**
+   * The one segment a traveller chose as their outbound.
+   *
+   * This is the server's half of BR-20: the return search is bounded by the
+   * departure and arrival instants read here, never by times a client sent.
+   * Non-sellable trips are excluded for the same reason they are absent from
+   * search, so a trip withdrawn between the two lists yields nothing and the
+   * caller can refuse instead of inventing a return bound.
+   *
+   * A loop route can stop at both stations more than once. Ordering the
+   * positions keeps the earliest pairing, which is the same journey search
+   * offered. One statement, one row.
+   */
+  async findPassengerSegment(
+    tripId: string,
+    originStationId: string,
+    destinationStationId: string,
+  ): Promise<PassengerSegmentRow | null> {
+    const raw = await this.dataSource
+      .getRepository(DatedTripEntity)
+      .createQueryBuilder('t')
+      .innerJoin(
+        TripStopEntity,
+        'o',
+        'o.trip = t.id AND o.stationId = :originStationId AND o.departureAt IS NOT NULL',
+      )
+      .innerJoin(
+        TripStopEntity,
+        'd',
+        'd.trip = t.id AND d.stationId = :destinationStationId AND d.position > o.position AND d.arrivalAt IS NOT NULL',
+      )
+      .select('o.station_id', 'origin_station_id')
+      .addSelect('d.station_id', 'destination_station_id')
+      .addSelect('o.departure_at', 'origin_departure_at')
+      .addSelect('d.arrival_at', 'destination_arrival_at')
+      .where('t.id = :tripId')
+      .andWhere('t.status IN (:...sellableStatuses)')
+      .orderBy('o.position', 'ASC')
+      .addOrderBy('d.position', 'ASC')
+      .limit(1)
+      .setParameters({
+        tripId,
+        originStationId,
+        destinationStationId,
+        sellableStatuses: [...SELLABLE_TRIP_STATUSES],
+      })
+      .getRawOne<RawSegmentRow>();
+
+    if (!raw) return null;
+
+    return {
+      originStationId: raw.origin_station_id,
+      destinationStationId: raw.destination_station_id,
+      originDepartureAt: raw.origin_departure_at,
+      destinationArrivalAt: raw.destination_arrival_at,
+      cairoDepartureDate: cairoCivilDateOf(raw.origin_departure_at),
+    };
   }
 
   /**
