@@ -101,6 +101,7 @@ const REQUEST_KEYS: Record<keyof SearchOneWayTripsRequest, true> = {
   travelClassId: true,
   language: true,
   trainNumber: true,
+  returnDate: true,
   sort: true,
   filters: true,
 };

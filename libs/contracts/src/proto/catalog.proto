@@ -86,13 +86,24 @@ message SearchOneWayTripsRequest {
   // distinguishable; a bare int32 cannot express that in proto3.
   optional int32 trainNumber = 6;
 
-  // TA-18 slots in here without a breaking change. Unset today and ignored by
-  // the server; an unknown enum value arrives as its number and is treated as
-  // UNSPECIFIED.
+  // An unknown enum value arrives as its number and is treated as UNSPECIFIED,
+  // so an older server never rejects a newer client's order.
   SearchSort sort = 7;
   SearchFilters filters = 8;
 
-  reserved 9 to 19;  // return leg, passenger counts
+  // The return date of a round trip, on the OUTBOUND search.
+  //
+  // It does not change this list: the outbound leg is the same search either
+  // way. It is here because BR-20 can then refuse an impossible return date now
+  // rather than after the traveller has chosen an outbound trip, and because it
+  // is the only thing that tells catalog this search is a round trip -- which is
+  // what makes its recent-search entry repeatable as one (CAT-4).
+  //
+  // Optional so "absent" and "" stay distinguishable: an empty string from a
+  // client that always sends the field must not read as "one way".
+  optional string returnDate = 9;  // 'YYYY-MM-DD', Cairo civil date
+
+  reserved 10 to 19;  // passenger counts
 }
 
 enum SearchSort {
