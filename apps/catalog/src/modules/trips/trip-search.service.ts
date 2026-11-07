@@ -6,6 +6,7 @@ import {
   bookingWindowFor,
   civilDateTimeOf,
   durationMinutesBetween,
+  type FilterOptions,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
   type TripResult,
@@ -23,6 +24,12 @@ import {
   type CachedStaticTrip,
 } from './trip-search-cache.js';
 import { emptyReasonFor } from './trip-search-empty-reason.js';
+import {
+  applyFilters,
+  filterOptionsFor,
+  validateFilters,
+} from './trip-search-filters.js';
+import { sortTrips } from './trip-search-sort.js';
 import {
   validateSearchReferences,
   validateSearchShape,
@@ -76,11 +83,15 @@ export class TripSearchService {
 
     // Hit or miss, the same filter, so a cached list cannot outlive the sales
     // it was cached with.
-    const sellable = applyDynamicEligibility(statics, now);
+    const eligible = applyDynamicEligibility(statics, now);
+
+    // Facets describe the day before the request's own filters, so narrowing
+    // never hides the choices needed to undo the narrowing.
+    const filterOptions = filterOptionsFor(eligible);
 
     // One batched call for every segment at once.
     const seats = await this.availability.availabilityFor(
-      sellable.map((trip) => ({
+      eligible.map((trip) => ({
         tripId: trip.tripId,
         originStationId: trip.originStationId,
         destinationStationId: trip.destinationStationId,
@@ -89,17 +100,36 @@ export class TripSearchService {
       })),
     );
 
-    const trips = sellable
-      .filter((trip) => this.isSellable(trip))
-      .map((trip) => this.toTripResult(trip, request, seats));
+    // The availability call the response already needs answers the sold-out
+    // filter too, so applying it adds no query.
+    const soldOutTripIds = new Set(
+      eligible
+        .filter((trip) => (seats.get(trip.tripId) ?? 0) === 0)
+        .map((trip) => trip.tripId),
+    );
+
+    const filtered = applyFilters(eligible, request.filters, soldOutTripIds);
+
+    const trips = sortTrips(
+      filtered.filter((trip) => this.isSellable(trip)),
+      request.sort,
+    ).map((trip) => this.toTripResult(trip, request, seats));
 
     return {
       dateStrip,
       trips,
       bookingWindow,
       evaluatedAt: civilDateTimeOf(now),
+      filterOptions,
       ...(trips.length === 0
-        ? { emptyResult: await this.explainEmpty(request, trainNumber) }
+        ? {
+            emptyResult: await this.explainEmpty(
+              request,
+              trainNumber,
+              filterOptions,
+              eligible.length > 0 && filtered.length === 0,
+            ),
+          }
         : {}),
     };
   }
@@ -109,7 +139,10 @@ export class TripSearchService {
     request: SearchOneWayTripsRequest,
     now: Date,
   ): Promise<void> {
-    const shapeDetails = validateSearchShape(request, now);
+    const shapeDetails = [
+      ...validateSearchShape(request, now),
+      ...validateFilters(request.filters),
+    ];
     if (shapeDetails.length > 0) {
       throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, shapeDetails);
     }
@@ -185,6 +218,7 @@ export class TripSearchService {
     return {
       tripId: row.tripId,
       trainNumber: row.trainNumber,
+      trainTypeId: row.trainTypeId,
       trainTypeEn: row.trainTypeEn,
       trainTypeAr: row.trainTypeAr,
       travelClassNameEn: row.travelClassNameEn,
@@ -271,6 +305,8 @@ export class TripSearchService {
   private async explainEmpty(
     request: SearchOneWayTripsRequest,
     trainNumber: number | null,
+    filterOptions: FilterOptions,
+    filtersExcludedAll: boolean,
   ): Promise<SearchOneWayTripsResponse['emptyResult']> {
     const probe = await this.trips.probeRouteServed(
       request.originStationId,
@@ -283,10 +319,19 @@ export class TripSearchService {
         routeServed: probe.routeServed,
         trainNumberGiven: trainNumber !== null,
         trainServesRoute: probe.trainServesRoute,
+        filtersExcludedAll,
       }),
       params: {
         searchedDate: request.departureDate,
         ...(trainNumber === null ? {} : { trainNumber: String(trainNumber) }),
+        // The edge uses these to say "change the filters, not the date": the
+        // day's actual range is what the filter has to admit.
+        ...(filtersExcludedAll
+          ? {
+              minFareMinor: String(filterOptions.minFareMinor),
+              maxFareMinor: String(filterOptions.maxFareMinor),
+            }
+          : {}),
       },
     };
   }

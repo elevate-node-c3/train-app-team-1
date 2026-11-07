@@ -39,6 +39,7 @@ export const SEARCH_CACHE_TTL_TODAY_SECONDS = 60;
 export interface CachedStaticTrip {
   tripId: string;
   trainNumber: number;
+  trainTypeId: string;
   trainTypeEn: string;
   trainTypeAr: string;
   travelClassNameEn: string;
@@ -60,9 +61,11 @@ export interface CachedStaticTrip {
 /**
  * The key for one search.
  *
- * `v1` is a format version: a change to `CachedStaticTrip` becomes a new key
- * rather than a payload today's code cannot read. The segments are uuids and a
- * civil date, already opaque and collision-free, so nothing is hashed.
+ * `v2` is a format version: a change to `CachedStaticTrip` becomes a new key
+ * rather than a payload today's code cannot read. TA-18 added `trainTypeId`,
+ * which the v1 payload does not carry, so the version moved with it. The
+ * segments are uuids and a civil date, already opaque and collision-free, so
+ * nothing is hashed.
  *
  * Station ids are not sorted. Direction is part of the search's identity --
  * Tanta to Banha and Banha to Tanta are different journeys, and on a one-way
@@ -81,7 +84,7 @@ export function searchCacheKey(params: {
 
   return [
     'catalog:search',
-    'v1',
+    'v2',
     params.originStationId,
     params.destinationStationId,
     params.serviceDate,
@@ -108,6 +111,7 @@ const NUMBER_FIELDS = [
 
 const STRING_FIELDS = [
   'tripId',
+  'trainTypeId',
   'trainTypeEn',
   'trainTypeAr',
   'travelClassNameEn',
