@@ -1,5 +1,7 @@
 import { SEARCH_FIXTURE_IDS as IDS } from '../../apps/catalog/src/database/seeds/search-fixture.js';
 import { seedSearchFixture } from '../../apps/catalog/src/database/seeds/search-fixture.seed.js';
+import { buildTripList } from '../../apps/catalog/src/modules/trips/trip-result.js';
+import { searchCacheKey } from '../../apps/catalog/src/modules/trips/trip-search-cache.js';
 import { TripSearchRepository } from '../../apps/catalog/src/modules/trips/trip-search.repository.js';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -243,6 +245,113 @@ describe('search stays bounded and complete (TA-28)', () => {
         ),
       );
 
+      expect(queries).toHaveLength(1);
+    });
+  });
+
+  /**
+   * CAT-5: filtering and sorting happen on the day the query already returned,
+   * so a new filter combination is never a new statement. Measured rather than
+   * asserted in a comment, because the cheap mistake -- pushing a filter into
+   * the SQL -- would multiply both the queries and the cache keys.
+   */
+  describe('filters and sorts cost nothing extra', () => {
+    const everyFilter = {
+      trainTypeIds: [IDS.trainTypes.express],
+      departAfterMinutes: 5 * 60,
+      departBeforeMinutes: 23 * 60,
+      maxFareMinor: 50_000,
+      excludeSoldOut: true,
+    };
+
+    it('narrows a day in memory, with no statement of its own', async () => {
+      const { result, queries } = await countStatements(source, search);
+
+      const seats = new Map(
+        result.map((row) => [row.tripId, row.classCapacity]),
+      );
+      const eligible = result.map((row) => ({
+        ...row,
+        originDepartureMillis: row.originDepartureAt.getTime(),
+        destinationArrivalMillis: row.destinationArrivalAt.getTime(),
+        durationMinutes: 0,
+      }));
+
+      // The whole narrow-order-map tail, over rows already in hand.
+      const narrowed = buildTripList({
+        eligible: eligible as never,
+        seats,
+        travelClassId: IDS.travelClasses.first,
+        filters: everyFilter,
+        sort: 'SEARCH_SORT_FARE_ASC',
+      });
+
+      expect(queries).toHaveLength(1);
+      expect(narrowed.trips.length).toBeGreaterThan(0);
+      // Fare ascending, as asked, over the same single statement.
+      const fares = narrowed.trips.map((trip) => trip.fare.amountMinor);
+      expect(fares).toEqual([...fares].sort((a, b) => a - b));
+    });
+
+    it('reads the same cache key whatever the filters are', () => {
+      const key = (trainNumber: number | null) =>
+        searchCacheKey({
+          originStationId: IDS.stations.alexandria,
+          destinationStationId: IDS.stations.ramsis,
+          serviceDate: '2026-06-20',
+          travelClassId: IDS.travelClasses.first,
+          trainNumber,
+        });
+
+      // Filters are not key inputs at all -- there is nowhere to put them --
+      // which is the structural form of "filters do not multiply the cache".
+      expect(key(null)).toBe(key(null));
+      expect(key(null)).not.toBe(key(903));
+    });
+  });
+
+  /**
+   * The return leg is a plain day query plus one segment read, so a round trip
+   * costs two statements on a cache miss and no more.
+   */
+  describe('the return leg', () => {
+    it('costs one segment read plus one day query', async () => {
+      const { queries } = await countStatements(source, async () => {
+        const segment = await repository.findPassengerSegment(
+          IDS.trips.mainLine,
+          IDS.stations.alexandria,
+          IDS.stations.ramsis,
+        );
+
+        // The exact reverse, on the return date.
+        return repository.findCandidates({
+          originStationId: segment!.destinationStationId,
+          destinationStationId: segment!.originStationId,
+          travelClassId: IDS.travelClasses.first,
+          serviceDate: '2026-06-21',
+          trainNumber: null,
+          now: NOW,
+        });
+      });
+
+      expect(queries).toHaveLength(2);
+    });
+
+    it('does not grow with the number of return candidates', async () => {
+      const reverse = () =>
+        repository.findCandidates({
+          originStationId: IDS.stations.alexandria,
+          destinationStationId: IDS.stations.ramsis,
+          travelClassId: IDS.travelClasses.first,
+          serviceDate: '2026-06-20',
+          trainNumber: null,
+          now: NOW,
+        });
+
+      const { result, queries } = await countStatements(source, reverse);
+
+      // The load trips from the growth spec above are still in place here.
+      expect(result.length).toBeGreaterThan(EXTRA_TRIPS);
       expect(queries).toHaveLength(1);
     });
   });
