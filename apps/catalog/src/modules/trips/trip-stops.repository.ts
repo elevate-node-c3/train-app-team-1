@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { StationEntity } from '../stations/entities/station.entity.js';
+import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
+import { SELLABLE_TRIP_STATUSES } from './trip-sellability.js';
 import type { TripStopRow } from './trip-search.types.js';
 
 interface RawStopRow {
@@ -21,6 +23,12 @@ interface RawStopRow {
  * earliest alighting stop after it -- so the list always agrees with the
  * result that offered it, including on a route that calls at a station twice.
  *
+ * Only sellable trips answer, the same statuses search itself offers. Without
+ * that join a client holding any trip id could read the itinerary of a draft or
+ * withdrawn trip -- timetable data that was deliberately never published -- and
+ * a trip withdrawn between the search and the tap on "4 Stops" would still
+ * describe a journey nobody can take.
+ *
  * `idx_trip_stop_trip_station` serves both the trip filter and the two
  * endpoint lookups, so this needs no index of its own.
  */
@@ -36,6 +44,11 @@ export class TripStopsRepository {
     const raw = await this.dataSource
       .getRepository(TripStopEntity)
       .createQueryBuilder('s')
+      .innerJoin(
+        DatedTripEntity,
+        't',
+        't.id = s.trip AND t.status IN (:...sellableStatuses)',
+      )
       .innerJoin(StationEntity, 'st', 'st.id = s.stationId')
       .select('s.station_id', 'station_id')
       .addSelect('st.name_en', 'station_name_en')
@@ -80,6 +93,7 @@ export class TripStopsRepository {
         tripId: params.tripId,
         originStationId: params.originStationId,
         destinationStationId: params.destinationStationId,
+        sellableStatuses: [...SELLABLE_TRIP_STATUSES],
       })
       .getRawMany<RawStopRow>();
 
