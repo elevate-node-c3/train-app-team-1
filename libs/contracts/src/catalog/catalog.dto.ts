@@ -85,7 +85,15 @@ export interface SearchOneWayTripsRequest {
   language?: EventLanguage | '';
   /** Absent means "any train"; BR-18's optional narrowing filter. */
   trainNumber?: number;
-  /** Unset today. TA-18 implements these server-side without a wire change. */
+  /**
+   * A round trip's return date, carried by the outbound search.
+   *
+   * Does not change the outbound list. It is what lets BR-20 refuse an
+   * impossible return date before the traveller picks an outbound trip, and
+   * what tells catalog the search is a round trip rather than a one-way.
+   */
+  returnDate?: string;
+  /** Applied in memory over the day's cached results, never as a new query. */
   sort?: SearchSort;
   filters?: SearchFilters;
 }

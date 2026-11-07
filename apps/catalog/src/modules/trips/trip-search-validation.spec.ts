@@ -2,6 +2,7 @@ import type { SearchOneWayTripsRequest } from '@app/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
+  validateReturnDate,
   validateSearchReferences,
   validateSearchShape,
 } from './trip-search-validation.js';
@@ -186,6 +187,100 @@ describe('validating the search request shape', () => {
         ),
       ).toEqual(['trainNumber']);
     });
+  });
+
+  /**
+   * The outbound search carries the return date so BR-20 can refuse it here,
+   * one screen before the traveller would otherwise find out.
+   */
+  describe('the return date on an outbound search', () => {
+    it('accepts an absent return date -- that is a one-way search', () => {
+      expect(validateSearchShape(validRequest(), NOW)).toEqual([]);
+    });
+
+    it('accepts an empty string without reading it as a date', () => {
+      // A client that always sends the field sends '' for one way.
+      expect(
+        validateSearchShape(validRequest({ returnDate: '' }), NOW),
+      ).toEqual([]);
+    });
+
+    it('accepts a return date after the departure date', () => {
+      expect(
+        validateSearchShape(validRequest({ returnDate: '2026-06-25' }), NOW),
+      ).toEqual([]);
+    });
+
+    // Out and back on one day is a round trip a traveller can make.
+    it('accepts the same day as the departure date', () => {
+      expect(
+        validateSearchShape(validRequest({ returnDate: '2026-06-20' }), NOW),
+      ).toEqual([]);
+    });
+
+    it('refuses a return date before the departure date, naming it', () => {
+      const details = validateSearchShape(
+        validRequest({ returnDate: '2026-06-19' }),
+        NOW,
+      );
+
+      expect(fieldsOf(details)).toEqual(['returnDate']);
+      // The action carries the date to pick instead, not just the complaint.
+      expect(details[0].action).toContain('2026-06-20');
+    });
+
+    it('refuses a return date past the booking window', () => {
+      const details = validateSearchShape(
+        validRequest({ returnDate: '2026-08-01' }),
+        NOW,
+      );
+
+      expect(fieldsOf(details)).toEqual(['returnDate']);
+      expect(details[0].action).toContain('2026-07-14');
+    });
+
+    it('refuses a malformed return date', () => {
+      expect(
+        fieldsOf(
+          validateSearchShape(validRequest({ returnDate: '20-06-2026' }), NOW),
+        ),
+      ).toEqual(['returnDate']);
+    });
+
+    // A broken departure date must not produce a refusal pointing at the
+    // return date: the traveller would go and change the wrong field.
+    it('does not blame the return date for a broken departure date', () => {
+      const details = validateSearchShape(
+        validRequest({ departureDate: 'nonsense', returnDate: '2026-06-25' }),
+        NOW,
+      );
+
+      expect(fieldsOf(details)).toEqual(['departureDate']);
+    });
+  });
+});
+
+describe('validating a return date (BR-20)', () => {
+  it('refuses a date in the past before complaining about the order', () => {
+    const details = validateReturnDate('2026-06-10', '2026-06-01', NOW);
+
+    expect(fieldsOf(details)).toEqual(['returnDate']);
+    expect(details[0].issue).toContain('past');
+  });
+
+  // The second leg calls this with the chosen trip's own departure date, which
+  // the server read -- so the two legs cannot disagree about one return date.
+  it('compares against whatever departure date the caller supplies', () => {
+    expect(validateReturnDate('2026-06-21', '2026-06-20', NOW)).toEqual([]);
+    expect(
+      fieldsOf(validateReturnDate('2026-06-21', '2026-06-22', NOW)),
+    ).toEqual(['returnDate']);
+  });
+
+  it('still refuses a malformed return date when the departure date is broken', () => {
+    expect(fieldsOf(validateReturnDate('nope', 'nonsense', NOW))).toEqual([
+      'returnDate',
+    ]);
   });
 });
 
