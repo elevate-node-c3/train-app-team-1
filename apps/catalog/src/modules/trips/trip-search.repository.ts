@@ -14,14 +14,12 @@ import {
   MAX_TRIP_DAY_SPAN_DAYS,
   SELLABLE_TRIP_STATUSES,
 } from './trip-sellability.js';
-import type {
-  RouteServedProbe,
-  TripSearchRow,
-} from './trip-search.types.js';
+import type { RouteServedProbe, TripSearchRow } from './trip-search.types.js';
 
 interface RawRow {
   trip_id: string;
   train_number: number;
+  train_type_id: string;
   train_type_en: string;
   train_type_ar: string;
   origin_station_id: string;
@@ -142,6 +140,7 @@ export class TripSearchRepository {
 
       .select('t.id', 'trip_id')
       .addSelect('tr.train_number', 'train_number')
+      .addSelect('ty.id', 'train_type_id')
       .addSelect('ty.name_en', 'train_type_en')
       .addSelect('ty.name_ar', 'train_type_ar')
       .addSelect('o.station_id', 'origin_station_id')
@@ -194,38 +193,42 @@ export class TripSearchRepository {
       })
       .getRawMany<RawRow>();
 
-    return raw
-      .map((row) => ({
-        tripId: row.trip_id,
-        trainNumber: Number(row.train_number),
-        trainTypeEn: row.train_type_en,
-        trainTypeAr: row.train_type_ar,
-        originStationId: row.origin_station_id,
-        originNameEn: row.origin_name_en,
-        originNameAr: row.origin_name_ar,
-        originDepartureAt: row.origin_departure_at,
-        destinationStationId: row.destination_station_id,
-        destinationNameEn: row.destination_name_en,
-        destinationNameAr: row.destination_name_ar,
-        destinationArrivalAt: row.destination_arrival_at,
-        travelClassNameEn: row.travel_class_name_en,
-        travelClassNameAr: row.travel_class_name_ar,
-        intermediateStops: Number(row.intermediate_stops),
-        classCapacity: Number(row.class_capacity),
-        farePiastres:
-          row.fare_piastres === null ? null : Number(row.fare_piastres),
-      }))
-      // A train with no coach of the requested class is not a result at all,
-      // which is a different thing from sold out -- that has capacity and no
-      // seats left, and IS returned.
-      .filter((row) => row.classCapacity > 0)
-      // The default order (BR-18), tie-broken on train number so the output is
-      // deterministic.
-      .sort(
-        (left, right) =>
-          left.originDepartureAt.getTime() - right.originDepartureAt.getTime() ||
-          left.trainNumber - right.trainNumber,
-      );
+    return (
+      raw
+        .map((row) => ({
+          tripId: row.trip_id,
+          trainNumber: Number(row.train_number),
+          trainTypeId: row.train_type_id,
+          trainTypeEn: row.train_type_en,
+          trainTypeAr: row.train_type_ar,
+          originStationId: row.origin_station_id,
+          originNameEn: row.origin_name_en,
+          originNameAr: row.origin_name_ar,
+          originDepartureAt: row.origin_departure_at,
+          destinationStationId: row.destination_station_id,
+          destinationNameEn: row.destination_name_en,
+          destinationNameAr: row.destination_name_ar,
+          destinationArrivalAt: row.destination_arrival_at,
+          travelClassNameEn: row.travel_class_name_en,
+          travelClassNameAr: row.travel_class_name_ar,
+          intermediateStops: Number(row.intermediate_stops),
+          classCapacity: Number(row.class_capacity),
+          farePiastres:
+            row.fare_piastres === null ? null : Number(row.fare_piastres),
+        }))
+        // A train with no coach of the requested class is not a result at all,
+        // which is a different thing from sold out -- that has capacity and no
+        // seats left, and IS returned.
+        .filter((row) => row.classCapacity > 0)
+        // The default order (BR-18), tie-broken on train number so the output is
+        // deterministic.
+        .sort(
+          (left, right) =>
+            left.originDepartureAt.getTime() -
+              right.originDepartureAt.getTime() ||
+            left.trainNumber - right.trainNumber,
+        )
+    );
   }
 
   /**
@@ -257,9 +260,14 @@ export class TripSearchRepository {
       originStationId,
       destinationStationId,
     )
-      .innerJoin(TrainEntity, 'tr', 'tr.id = tm.train AND tr.trainNumber = :trainNumber', {
-        trainNumber,
-      })
+      .innerJoin(
+        TrainEntity,
+        'tr',
+        'tr.id = tm.train AND tr.trainNumber = :trainNumber',
+        {
+          trainNumber,
+        },
+      )
       .getExists();
 
     return { routeServed, trainServesRoute };

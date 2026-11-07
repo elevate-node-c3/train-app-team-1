@@ -26,6 +26,7 @@ const key = (overrides: Partial<Parameters<typeof searchCacheKey>[0]> = {}) =>
 const cachedTrip = (): CachedStaticTrip => ({
   tripId: 'trip-1',
   trainNumber: 903,
+  trainTypeId: '44444444-4444-4444-8444-444444444444',
   trainTypeEn: 'Express',
   trainTypeAr: 'مميز',
   travelClassNameEn: 'First Class',
@@ -52,7 +53,7 @@ describe('the search cache key', () => {
   it('carries a format version, so a shape change is a new key', () => {
     // Otherwise a deploy that changes the stored shape reads yesterday's
     // payload back into today's code.
-    expect(key()).toContain(':v1:');
+    expect(key()).toContain(':v2:');
   });
 
   it('names the catalog search namespace', () => {
@@ -110,7 +111,9 @@ describe('the cached payload', () => {
   // type, so a Date would come back as a string and the eligibility filter
   // compares numbers.
   it('stores instants as numbers that survive a JSON round trip', () => {
-    const revived = JSON.parse(JSON.stringify(cachedTrip())) as CachedStaticTrip;
+    const revived = JSON.parse(
+      JSON.stringify(cachedTrip()),
+    ) as CachedStaticTrip;
 
     expect(typeof revived.originDepartureMillis).toBe('number');
     expect(revived.originDepartureMillis).toBe(
