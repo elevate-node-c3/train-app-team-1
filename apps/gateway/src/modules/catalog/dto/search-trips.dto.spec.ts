@@ -73,9 +73,9 @@ describe('the search query parameters', () => {
   it('rejects an unknown query parameter', () => {
     // forbidNonWhitelisted, so a typo in a parameter name is a 400 rather
     // than a silently ignored filter.
-    expect(validate(validQuery({ returnDate: '2026-06-25' })).fields).toContain(
-      'returnDate',
-    );
+    expect(
+      validate(validQuery({ departAfterMinutes: '360' })).fields,
+    ).toContain('departAfterMinutes');
   });
 
   describe('the train number', () => {
@@ -131,6 +131,190 @@ describe('the search query parameters', () => {
       expect(validate(validQuery({ language: 'fr' })).fields).toContain(
         'language',
       );
+    });
+  });
+
+  describe('the return date', () => {
+    it('is optional, and a one-way search simply omits it', () => {
+      expect(validate(validQuery()).fields).toEqual([]);
+      expect(validate(validQuery({ returnDate: '2026-06-25' })).fields).toEqual(
+        [],
+      );
+    });
+
+    it('requires YYYY-MM-DD form', () => {
+      expect(validate(validQuery({ returnDate: '25-06-2026' })).fields).toEqual(
+        ['returnDate'],
+      );
+    });
+
+    // Whether it is on or after the departure date, and inside the booking
+    // window, is BR-20 and therefore catalog's to answer.
+    it('does not judge the date against the departure date', () => {
+      expect(validate(validQuery({ returnDate: '2026-06-01' })).fields).toEqual(
+        [],
+      );
+    });
+  });
+
+  describe('the sort order', () => {
+    it('accepts each wire value', () => {
+      for (const sort of [
+        'SEARCH_SORT_DEPARTURE_ASC',
+        'SEARCH_SORT_DURATION_ASC',
+        'SEARCH_SORT_FARE_ASC',
+        'SEARCH_SORT_ARRIVAL_ASC',
+      ]) {
+        expect(validate(validQuery({ sort })).fields, sort).toEqual([]);
+      }
+    });
+
+    it('refuses an invented order rather than ignoring it', () => {
+      // Silently falling back to the default would show the traveller a list
+      // in an order they did not ask for.
+      expect(validate(validQuery({ sort: 'cheapest' })).fields).toEqual([
+        'sort',
+      ]);
+    });
+
+    // UNSPECIFIED is the wire's way of saying "absent"; a client should omit
+    // the parameter instead of naming the absence.
+    it('refuses UNSPECIFIED, which is what absence already means', () => {
+      expect(
+        validate(validQuery({ sort: 'SEARCH_SORT_UNSPECIFIED' })).fields,
+      ).toEqual(['sort']);
+    });
+  });
+
+  describe('the train-type filter', () => {
+    it('splits a CSV list into ids', () => {
+      const { fields, dto } = validate(
+        validQuery({ trainTypeIds: `${CAIRO},${ALEX}` }),
+      );
+
+      expect(fields).toEqual([]);
+      expect(dto.trainTypeIds).toEqual([CAIRO, ALEX]);
+    });
+
+    it('accepts a single id', () => {
+      const { dto } = validate(validQuery({ trainTypeIds: CAIRO }));
+
+      expect(dto.trainTypeIds).toEqual([CAIRO]);
+    });
+
+    it('tolerates spaces around the commas', () => {
+      const { dto } = validate(
+        validQuery({ trainTypeIds: ` ${CAIRO} , ${ALEX} ` }),
+      );
+
+      expect(dto.trainTypeIds).toEqual([CAIRO, ALEX]);
+    });
+
+    it('treats an empty value as no preference', () => {
+      const { fields, dto } = validate(validQuery({ trainTypeIds: '' }));
+
+      // Not "a filter matching nothing", which would return an empty list.
+      expect(fields).toEqual([]);
+      expect(dto.trainTypeIds).toBeUndefined();
+    });
+
+    it('refuses the whole list when one id is malformed', () => {
+      expect(
+        validate(validQuery({ trainTypeIds: `${CAIRO},express` })).fields,
+      ).toEqual(['trainTypeIds']);
+    });
+  });
+
+  describe('the departure window', () => {
+    it('converts a clock time to minutes since midnight', () => {
+      const { fields, dto } = validate(
+        validQuery({ departAfter: '06:00', departBefore: '12:30' }),
+      );
+
+      expect(fields).toEqual([]);
+      expect(dto.departAfter).toBe(360);
+      expect(dto.departBefore).toBe(750);
+    });
+
+    it('accepts midnight and the last minute of the day', () => {
+      const { fields, dto } = validate(
+        validQuery({ departAfter: '00:00', departBefore: '23:59' }),
+      );
+
+      expect(fields).toEqual([]);
+      expect(dto.departAfter).toBe(0);
+      expect(dto.departBefore).toBe(1439);
+    });
+
+    it('accepts Arabic-Indic digits in a time', () => {
+      const { fields, dto } = validate(validQuery({ departAfter: '٠٦:٣٠' }));
+
+      expect(fields).toEqual([]);
+      expect(dto.departAfter).toBe(390);
+    });
+
+    it('refuses a time that is not a time', () => {
+      for (const bad of ['6pm', '24:00', '12:60', '6:00', '0600', '']) {
+        expect(
+          validate(validQuery({ departAfter: bad })).fields,
+          `${bad} should be refused`,
+        ).toEqual(['departAfter']);
+      }
+    });
+
+    // The ordering of the two bounds is BR-18 and catalog refuses it, naming
+    // the field; the edge only checks that each one is a time.
+    it('does not judge the two bounds against each other', () => {
+      expect(
+        validate(validQuery({ departAfter: '22:00', departBefore: '02:00' }))
+          .fields,
+      ).toEqual([]);
+    });
+  });
+
+  describe('the maximum fare', () => {
+    it('accepts piastres, including Arabic-Indic digits', () => {
+      expect(validate(validQuery({ maxFare: '15500' })).dto.maxFare).toBe(
+        15500,
+      );
+      expect(validate(validQuery({ maxFare: '١٥٥٠٠' })).dto.maxFare).toBe(
+        15500,
+      );
+    });
+
+    it('accepts zero, which is a ceiling nothing meets', () => {
+      expect(validate(validQuery({ maxFare: '0' })).fields).toEqual([]);
+    });
+
+    it('refuses a negative, a decimal or a non-number', () => {
+      for (const bad of ['-1', '155.50', 'cheap', '']) {
+        expect(
+          validate(validQuery({ maxFare: bad })).fields,
+          `${bad} should be refused`,
+        ).toEqual(['maxFare']);
+      }
+    });
+  });
+
+  describe('hiding sold-out trips', () => {
+    it('accepts the two words', () => {
+      expect(
+        validate(validQuery({ excludeSoldOut: 'true' })).dto.excludeSoldOut,
+      ).toBe(true);
+      expect(
+        validate(validQuery({ excludeSoldOut: 'false' })).dto.excludeSoldOut,
+      ).toBe(false);
+    });
+
+    // 'no' is truthy as a string, so the usual coercion would hide exactly the
+    // trips the traveller asked to see.
+    it('refuses anything else rather than guessing', () => {
+      for (const bad of ['no', 'yes', '1', '0', '']) {
+        expect(
+          validate(validQuery({ excludeSoldOut: bad })).fields,
+          `${bad} should be refused`,
+        ).toEqual(['excludeSoldOut']);
+      }
     });
   });
 });

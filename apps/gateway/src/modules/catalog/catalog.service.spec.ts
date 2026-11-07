@@ -89,6 +89,88 @@ describe('the gateway search service', () => {
       expect(sent.trainNumber).toBe(903);
       expect(sent.language).toBe('en');
     });
+
+    describe('the filters and the order', () => {
+      it('sends no filters object when nothing was narrowed', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query(), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        // Absent rather than `{}`: "no filters" stays legible in a log.
+        expect('filters' in sent).toBe(false);
+        expect('sort' in sent).toBe(false);
+      });
+
+      it('maps each filter onto its wire name', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(
+          query({
+            trainTypeIds: [FIRST],
+            departAfter: 360,
+            departBefore: 750,
+            maxFare: 15_500,
+            excludeSoldOut: true,
+            sort: 'SEARCH_SORT_FARE_ASC',
+          }),
+          'en',
+        );
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.sort).toBe('SEARCH_SORT_FARE_ASC');
+        expect(sent.filters).toEqual({
+          trainTypeIds: [FIRST],
+          departAfterMinutes: 360,
+          departBeforeMinutes: 750,
+          maxFareMinor: 15_500,
+          excludeSoldOut: true,
+        });
+      });
+
+      it('sends only the filters the traveller set', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ maxFare: 9_000 }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.filters).toEqual({ maxFareMinor: 9_000 });
+      });
+
+      // `false` is a choice the traveller made, not an absent filter.
+      it('forwards excludeSoldOut=false rather than dropping it', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ excludeSoldOut: false }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.filters).toEqual({ excludeSoldOut: false });
+      });
+
+      it('forwards a return date when the traveller is planning a round trip', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ returnDate: '2026-06-25' }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.returnDate).toBe('2026-06-25');
+      });
+    });
   });
 
   describe('the response it returns', () => {
@@ -123,6 +205,42 @@ describe('the gateway search service', () => {
 
       expect(result.trips).toEqual([]);
       expect(result.dateStrip).toEqual([]);
+    });
+
+    /**
+     * The facets have the same problem twice over: `trainTypes` is a repeated
+     * field, so an empty one arrives as no key and a client reading `.length`
+     * would throw, and an int32 of 0 is omitted too -- which would otherwise
+     * be indistinguishable from a free trip.
+     */
+    it('always answers with a filterOptions object', async () => {
+      const { service } = serviceWith({
+        ...baseResponse,
+        filterOptions: undefined as never,
+      });
+
+      const result = await service.searchOneWay(query(), 'en');
+
+      expect(result.filterOptions).toEqual({
+        trainTypes: [],
+        minFareMinor: 0,
+        maxFareMinor: 0,
+      });
+    });
+
+    it('passes the day facets through when catalog sent them', async () => {
+      const filterOptions = {
+        trainTypes: [
+          { id: FIRST, name: { en: 'Express', ar: 'مميز' }, tripCount: 3 },
+        ],
+        minFareMinor: 9_000,
+        maxFareMinor: 20_000,
+      };
+      const { service } = serviceWith({ ...baseResponse, filterOptions });
+
+      const result = await service.searchOneWay(query(), 'en');
+
+      expect(result.filterOptions).toEqual(filterOptions);
     });
 
     it('carries no empty result when there are trips', async () => {
