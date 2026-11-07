@@ -189,6 +189,49 @@ describe('the search service', () => {
       );
       expect(repository.findCandidates).not.toHaveBeenCalled();
     });
+
+    // BR-20 on the outbound call: the traveller learns their return date is
+    // impossible now, not after choosing an outbound trip.
+    it('refuses an impossible return date before touching the database', async () => {
+      const { service, repository, references } = makeService();
+
+      const error = (await service
+        .search(
+          request({ departureDate: '2026-06-20', returnDate: '2026-06-19' }),
+          NOW,
+        )
+        .catch((caught: unknown) => caught)) as CatalogSearchError;
+
+      expect(error).toBeInstanceOf(CatalogSearchError);
+      expect(error.details.map((detail) => detail.field)).toEqual([
+        'returnDate',
+      ]);
+      expect(references.resolveReferences).not.toHaveBeenCalled();
+      expect(repository.findCandidates).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The return date is an intent and a validation input. The outbound leg is
+   * the same search either way, so nothing about this list may change -- not
+   * the results, and not the cache key the day is stored under.
+   */
+  describe('a round-trip outbound search', () => {
+    it('returns the same trips and uses the same cache key as a one-way', async () => {
+      const oneWay = makeService();
+      const roundTrip = makeService();
+
+      const withoutReturn = await oneWay.service.search(request(), NOW);
+      const withReturn = await roundTrip.service.search(
+        request({ returnDate: '2026-06-25' }),
+        NOW,
+      );
+
+      expect(withReturn.trips).toEqual(withoutReturn.trips);
+      expect(roundTrip.cache.get.mock.calls[0][0]).toBe(
+        oneWay.cache.get.mock.calls[0][0],
+      );
+    });
   });
 
   describe('the cache', () => {
