@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { RecentSearchesModule } from '../recent-searches/recent-searches.module.js';
+
 import { CatalogReferenceRepository } from './catalog-reference.repository.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
@@ -24,7 +26,12 @@ import { TripsGrpcController } from './trips.grpc.controller.js';
  * inventing one of its own.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([DatedTripEntity, TripStopEntity])],
+  imports: [
+    TypeOrmModule.forFeature([DatedTripEntity, TripStopEntity]),
+    // Search records the search it just answered; recent searches own that
+    // table, so this is a dependency rather than a second writer.
+    RecentSearchesModule,
+  ],
   controllers: [TripsGrpcController],
   providers: [
     TripSearchRepository,

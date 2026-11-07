@@ -124,14 +124,28 @@ function makeService(
   // it would stub out the thing being checked.
   const day = new TripDayService(repository as never, cache as never);
 
+  const recentSearches = {
+    record: vi.fn().mockResolvedValue(undefined),
+    list: vi.fn().mockResolvedValue({ recentSearches: [] }),
+  };
+
   const service = new TripSearchService(
     repository as never,
     references as never,
     availability,
     day,
+    recentSearches as never,
   );
 
-  return { service, repository, references, cache, availability, day };
+  return {
+    service,
+    repository,
+    references,
+    cache,
+    availability,
+    day,
+    recentSearches,
+  };
 }
 
 describe('the search service', () => {
@@ -214,6 +228,107 @@ describe('the search service', () => {
       ]);
       expect(references.resolveReferences).not.toHaveBeenCalled();
       expect(repository.findCandidates).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * BR-21, from the search side. The traveller's five slots are filled here,
+   * and the two promises that matter are that recording never changes the
+   * answer and never delays it.
+   */
+  describe('recording the search', () => {
+    const TRAVELLER = '66666666-6666-4666-8666-666666666666';
+
+    it('records a one-way search for the signed-in traveller', async () => {
+      const { service, recentSearches } = makeService();
+
+      await service.search(request({ trainNumber: 903 }), NOW, TRAVELLER);
+
+      expect(recentSearches.record).toHaveBeenCalledWith(
+        {
+          accountId: TRAVELLER,
+          originStationId: CAIRO,
+          destinationStationId: ALEX,
+          travelClassId: FIRST,
+          kind: 'one_way',
+          trainNumber: 903,
+          departureDate: '2026-06-20',
+          returnDate: null,
+        },
+        NOW,
+      );
+    });
+
+    it('records a round trip as one entry carrying both dates', async () => {
+      const { service, recentSearches } = makeService();
+
+      await service.search(
+        request({ returnDate: '2026-06-25' }),
+        NOW,
+        TRAVELLER,
+      );
+
+      expect(recentSearches.record.mock.calls[0][0]).toMatchObject({
+        kind: 'round_trip',
+        departureDate: '2026-06-20',
+        returnDate: '2026-06-25',
+      });
+    });
+
+    it('treats an empty return date as a one-way search', async () => {
+      const { service, recentSearches } = makeService();
+
+      await service.search(request({ returnDate: '' }), NOW, TRAVELLER);
+
+      expect(recentSearches.record.mock.calls[0][0]).toMatchObject({
+        kind: 'one_way',
+        returnDate: null,
+      });
+    });
+
+    // It is the search the traveller may want to repeat, found trains or not.
+    it('records a search that found nothing', async () => {
+      const { service, recentSearches } = makeService({ rows: [] });
+
+      const response = await service.search(request(), NOW, TRAVELLER);
+
+      expect(response.trips).toEqual([]);
+      expect(recentSearches.record).toHaveBeenCalledTimes(1);
+    });
+
+    it('records nothing for an unidentified caller', async () => {
+      const { service, recentSearches } = makeService();
+
+      await service.search(request(), NOW);
+
+      expect(recentSearches.record).not.toHaveBeenCalled();
+    });
+
+    // A refusal throws several steps earlier, which is what makes "an invalid
+    // request is not recorded" true by construction.
+    it('records nothing for a refused search', async () => {
+      const { service, recentSearches } = makeService();
+
+      await service
+        .search(request({ destinationStationId: CAIRO }), NOW, TRAVELLER)
+        .catch(() => undefined);
+
+      expect(recentSearches.record).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Recording never slows a search down and never makes it fail (BR-21).
+     * A rejecting recorder must leave the answer untouched -- and because the
+     * call is not awaited, this also pins that the response does not wait for
+     * the write.
+     */
+    it('answers normally when recording fails', async () => {
+      const { service, recentSearches } = makeService();
+      recentSearches.record.mockRejectedValue(new Error('deadlock detected'));
+
+      const response = await service.search(request(), NOW, TRAVELLER);
+
+      expect(response.trips).toHaveLength(1);
     });
   });
 
