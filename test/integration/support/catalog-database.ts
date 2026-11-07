@@ -6,6 +6,7 @@ import { CoachLayoutEntity } from '../../../apps/catalog/src/modules/trains/enti
 import { DatedTripEntity } from '../../../apps/catalog/src/modules/trips/entities/dated-trip.entity.js';
 import { FareEntity } from '../../../apps/catalog/src/modules/fares/entities/fare.entity.js';
 import { GovernorateEntity } from '../../../apps/catalog/src/modules/stations/entities/governorate.entity.js';
+import { RecentSearchEntity } from '../../../apps/catalog/src/modules/recent-searches/entities/recent-search.entity.js';
 import { StationEntity } from '../../../apps/catalog/src/modules/stations/entities/station.entity.js';
 import { TimetableEntity } from '../../../apps/catalog/src/modules/timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../../../apps/catalog/src/modules/timetables/entities/timetable-stop.entity.js';
@@ -31,6 +32,7 @@ export const CATALOG_DATABASE_URL =
 
 /** Every catalog table, children before parents, for truncation. */
 export const CATALOG_TABLES = [
+  'recent_search',
   'trip_stop',
   'dated_trip',
   'fare',
@@ -133,6 +135,7 @@ export async function catalogDataSource(): Promise<DataSource> {
       FareEntity,
       DatedTripEntity,
       TripStopEntity,
+      RecentSearchEntity,
     ],
     extra: { connectionTimeoutMillis: 5000 },
   });
