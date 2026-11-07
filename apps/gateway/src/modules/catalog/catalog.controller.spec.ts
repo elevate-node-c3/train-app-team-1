@@ -33,6 +33,18 @@ function controllerWith(searchOneWay: ReturnType<typeof vi.fn>) {
   return new CatalogController({ searchOneWay } as unknown as CatalogService);
 }
 
+/**
+ * The handler function, read through its descriptor, which is where Nest and
+ * the access decorators write their metadata. Taken this way rather than as
+ * `CatalogController.prototype.searchOneWay` so it is clear nothing here
+ * intends to call an unbound method -- the same approach
+ * `test/unit/route-access-levels.spec.ts` takes when it walks every route.
+ */
+const searchOneWayHandler = Object.getOwnPropertyDescriptor(
+  CatalogController.prototype,
+  'searchOneWay',
+)?.value as object;
+
 describe('the search route', () => {
   /**
    * Deny-by-default means a route with no access level is a 401 for everyone,
@@ -41,10 +53,7 @@ describe('the search route', () => {
    * module will see it.
    */
   it('requires a verified traveller', () => {
-    const level = Reflect.getMetadata(
-      ACCESS_LEVEL_KEY,
-      CatalogController.prototype.searchOneWay,
-    );
+    const level = Reflect.getMetadata(ACCESS_LEVEL_KEY, searchOneWayHandler);
 
     // Not 'bookable': that is the profile-complete tier needed to book, and
     // searching comes before it. Not public: this design has no guest mode.
@@ -52,10 +61,7 @@ describe('the search route', () => {
   });
 
   it('is rate limited per caller', () => {
-    const limit = Reflect.getMetadata(
-      RATE_LIMIT_KEY,
-      CatalogController.prototype.searchOneWay,
-    );
+    const limit = Reflect.getMetadata(RATE_LIMIT_KEY, searchOneWayHandler);
 
     expect(limit).toEqual({
       bucket: 'trip-search',
