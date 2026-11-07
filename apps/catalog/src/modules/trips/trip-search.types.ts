@@ -17,6 +17,7 @@
 export interface TripSearchRow {
   tripId: string;
   trainNumber: number;
+  trainTypeId: string;
   trainTypeEn: string;
   trainTypeAr: string;
   originStationId: string;
