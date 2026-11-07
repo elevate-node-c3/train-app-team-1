@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   catalogDataSource,
   closeCatalogDataSource,
+  countStatements,
 } from './support/catalog-database.js';
 
 /**
@@ -392,6 +393,100 @@ describe('the trip search query', () => {
       );
 
       expect(probe.trainServesRoute).toBe(true);
+    });
+  });
+
+  /**
+   * The chosen outbound trip's own segment (TA-18, BR-20).
+   *
+   * This read is the server's half of "after arrival, decided by the server":
+   * the return list's lower bound is the arrival instant found here, so a wrong
+   * row would silently offer a return train the traveller cannot physically
+   * catch. Nothing about it is checkable without a database.
+   */
+  describe('the chosen outbound segment', () => {
+    it('reads the departure and arrival of the passenger segment', async () => {
+      const segment = await repository.findPassengerSegment(
+        IDS.trips.mainLine,
+        IDS.stations.alexandria,
+        IDS.stations.ramsis,
+      );
+
+      // 06:00 and 08:40 Cairo in summer, which are 03:00Z and 05:40Z.
+      expect(segment?.originDepartureAt.toISOString()).toBe(
+        '2026-06-20T03:00:00.000Z',
+      );
+      expect(segment?.destinationArrivalAt.toISOString()).toBe(
+        '2026-06-20T05:40:00.000Z',
+      );
+      expect(segment?.originStationId).toBe(IDS.stations.alexandria);
+      expect(segment?.destinationStationId).toBe(IDS.stations.ramsis);
+    });
+
+    // The earliest return date is the date the traveller LEAVES, read in
+    // Cairo -- not the trip's service date, and not the arrival's date.
+    it('derives the Cairo departure date from the departure instant', async () => {
+      const segment = await repository.findPassengerSegment(
+        IDS.trips.overnight,
+        IDS.stations.ramsis,
+        IDS.stations.aswan,
+      );
+
+      // Leaves Ramsis 23:00 on the 19th and lands in Aswan 09:20 on the 20th.
+      expect(segment?.cairoDepartureDate).toBe('2026-06-19');
+      expect(segment?.destinationArrivalAt.toISOString()).toBe(
+        '2026-06-20T06:20:00.000Z',
+      );
+    });
+
+    it('takes the earliest pairing on a route that calls at a station twice', async () => {
+      const segment = await repository.findPassengerSegment(
+        IDS.trips.loop,
+        IDS.stations.ramsis,
+        IDS.stations.banha,
+      );
+
+      // 07:50 Cairo, the first call at Banha, not the 09:30 second one.
+      expect(segment?.destinationArrivalAt.toISOString()).toBe(
+        '2026-06-20T04:50:00.000Z',
+      );
+    });
+
+    it('returns nothing for the pair in reverse', async () => {
+      const segment = await repository.findPassengerSegment(
+        IDS.trips.mainLine,
+        IDS.stations.ramsis,
+        IDS.stations.alexandria,
+      );
+
+      expect(segment).toBeNull();
+    });
+
+    // The "sold out or withdrawn between the two lists" edge case: a return
+    // bound must not be invented from a trip that is no longer sellable.
+    it.each([
+      ['a draft trip', IDS.trips.draft],
+      ['a withdrawn trip', IDS.trips.withdrawn],
+    ])('returns nothing for %s', async (_label, tripId) => {
+      const segment = await repository.findPassengerSegment(
+        tripId,
+        IDS.stations.alexandria,
+        IDS.stations.ramsis,
+      );
+
+      expect(segment).toBeNull();
+    });
+
+    it('reads the segment in one statement', async () => {
+      const { queries } = await countStatements(source, () =>
+        repository.findPassengerSegment(
+          IDS.trips.mainLine,
+          IDS.stations.alexandria,
+          IDS.stations.ramsis,
+        ),
+      );
+
+      expect(queries).toHaveLength(1);
     });
   });
 });

@@ -6,6 +6,7 @@ import type { RedisClientService } from './redis-client.service.js';
 interface FakeClient {
   get: ReturnType<typeof vi.fn>;
   set: ReturnType<typeof vi.fn>;
+  del: ReturnType<typeof vi.fn>;
 }
 
 function withRedis(client: FakeClient | null): {
@@ -24,6 +25,7 @@ function fakeClient(stored: string | null = null): FakeClient {
   return {
     get: vi.fn().mockResolvedValue(stored),
     set: vi.fn().mockResolvedValue('OK'),
+    del: vi.fn().mockResolvedValue(1),
   };
 }
 
@@ -48,6 +50,14 @@ describe('cache-aside', () => {
     expect(client!.set).toHaveBeenCalledWith('k', '{"a":1}', 'EX', 300);
   });
 
+  it('deletes a key', async () => {
+    const { cache, client } = withRedis(fakeClient());
+
+    await cache.del('k');
+
+    expect(client!.del).toHaveBeenCalledWith('k');
+  });
+
   // Degrade, never fail: a cache outage must not turn search into an error.
   // The same contract RateLimitStore keeps.
   describe('when Redis is unavailable', () => {
@@ -61,6 +71,12 @@ describe('cache-aside', () => {
       const { cache } = withRedis(null);
 
       await expect(cache.set('k', { a: 1 }, 300)).resolves.toBeUndefined();
+    });
+
+    it('accepts a delete and drops it', async () => {
+      const { cache } = withRedis(null);
+
+      await expect(cache.del('k')).resolves.toBeUndefined();
     });
   });
 
@@ -79,6 +95,14 @@ describe('cache-aside', () => {
       const { cache } = withRedis(client);
 
       await expect(cache.set('k', { a: 1 }, 300)).resolves.toBeUndefined();
+    });
+
+    it('swallows a delete error', async () => {
+      const client = fakeClient();
+      client.del.mockRejectedValue(new Error('connection reset'));
+      const { cache } = withRedis(client);
+
+      await expect(cache.del('k')).resolves.toBeUndefined();
     });
 
     // A value written by an older deploy, or a key someone else set, parses as

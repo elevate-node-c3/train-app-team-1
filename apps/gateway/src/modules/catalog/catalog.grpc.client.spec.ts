@@ -45,7 +45,32 @@ function clientWith(
   searchOneWayTrips: CatalogGrpcClient['searchOneWayTrips'],
 ): CatalogGrpcClientService {
   const cls = { get: () => undefined, set: () => undefined } as unknown as ClsService;
-  return new CatalogGrpcClientService({ searchOneWayTrips }, cls);
+  // Only the one method: these specs call only `searchOneWayTrips`, and a stub
+  // for the other three would suggest they are exercised here.
+  return new CatalogGrpcClientService(
+    { searchOneWayTrips } as CatalogGrpcClient,
+    cls,
+  );
+}
+
+/** A client with every method stubbed by one factory, for the shared-path specs. */
+function clientForAll(
+  stub: (name: string) => (...args: unknown[]) => Observable<unknown>,
+): CatalogGrpcClientService {
+  const cls = {
+    get: () => undefined,
+    set: () => undefined,
+  } as unknown as ClsService;
+
+  return new CatalogGrpcClientService(
+    {
+      searchOneWayTrips: stub('searchOneWayTrips'),
+      searchReturnTrips: stub('searchReturnTrips'),
+      getTripStops: stub('getTripStops'),
+      listRecentSearches: stub('listRecentSearches'),
+    } as unknown as CatalogGrpcClient,
+    cls,
+  );
 }
 
 describe('calling catalog over gRPC', () => {
@@ -188,5 +213,104 @@ describe('calling catalog over gRPC', () => {
       const body = error.getResponse() as { code: string };
       expect(body.code).toBe(ErrorCode.SERVICE_UNAVAILABLE);
     });
+  });
+});
+
+/**
+ * Every method goes through one private `call`, so the deadline and the error
+ * mapping cannot be forgotten on a new one. These specs are about that shared
+ * path rather than about any single RPC.
+ */
+describe('every catalog call', () => {
+  const invoke = (
+    service: CatalogGrpcClientService,
+    name: string,
+  ): Promise<unknown> =>
+    ({
+      searchOneWayTrips: () => service.searchOneWayTrips(request),
+      searchReturnTrips: () =>
+        service.searchReturnTrips({
+          outboundTripId: '44444444-4444-4444-8444-444444444444',
+          outboundOriginStationId: request.originStationId,
+          outboundDestinationStationId: request.destinationStationId,
+          returnDate: '2026-06-25',
+          travelClassId: request.travelClassId,
+        }),
+      getTripStops: () =>
+        service.getTripStops({
+          tripId: '44444444-4444-4444-8444-444444444444',
+          originStationId: request.originStationId,
+          destinationStationId: request.destinationStationId,
+        }),
+      listRecentSearches: () => service.listRecentSearches({}),
+    })[name]!();
+
+  const METHODS = [
+    'searchOneWayTrips',
+    'searchReturnTrips',
+    'getTripStops',
+    'listRecentSearches',
+  ] as const;
+
+  it.each(METHODS)('carries a deadline on %s', async (name) => {
+    const seen: CallOptions[] = [];
+    const service = clientForAll(
+      () => (_data, _metadata, options) => {
+        seen.push(options as CallOptions);
+        return of({});
+      },
+    );
+    const before = Date.now();
+
+    await invoke(service, name);
+
+    const deadline = seen[0].deadline as number;
+    expect(deadline).toBeGreaterThanOrEqual(before);
+    expect(deadline).toBeLessThanOrEqual(
+      Date.now() + CATALOG_SEARCH_TIMEOUT_MS,
+    );
+  });
+
+  it.each(METHODS)('maps an unavailable catalog to 503 on %s', async (name) => {
+    const service = clientForAll(() => () => throwError(() => ({ code: 14 })));
+
+    const error = (await invoke(service, name).catch(
+      (caught: unknown) => caught,
+    )) as HttpException;
+
+    expect(error.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+  });
+
+  it.each(METHODS)('maps a deadline to 504 on %s', async (name) => {
+    const service = clientForAll(() => () => throwError(() => ({ code: 4 })));
+
+    const error = (await invoke(service, name).catch(
+      (caught: unknown) => caught,
+    )) as HttpException;
+
+    expect(error.getStatus()).toBe(HttpStatus.GATEWAY_TIMEOUT);
+  });
+
+  // A refusal from catalog keeps its business code whichever call produced it.
+  it.each(METHODS)('restores a business refusal on %s', async (name) => {
+    const service = clientForAll(
+      () => () =>
+        throwError(() => ({
+          code: 3,
+          details: JSON.stringify({
+            code: ErrorCode.RESOURCE_NOT_FOUND,
+            details: [{ field: 'tripId' }],
+          }),
+        })),
+    );
+
+    const error = (await invoke(service, name).catch(
+      (caught: unknown) => caught,
+    )) as HttpException;
+
+    expect(error.getStatus()).toBe(HttpStatus.NOT_FOUND);
+    expect((error.getResponse() as { code: string }).code).toBe(
+      ErrorCode.RESOURCE_NOT_FOUND,
+    );
   });
 });

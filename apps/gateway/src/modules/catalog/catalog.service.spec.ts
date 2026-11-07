@@ -1,9 +1,14 @@
-import type { SearchOneWayTripsResponse } from '@app/contracts';
+import type {
+  SearchOneWayTripsResponse,
+  SearchReturnTripsResponse,
+} from '@app/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import { CatalogService } from './catalog.service.js';
+import type { SearchReturnTripsDto } from './dto/search-return-trips.dto.js';
 import type { SearchTripsDto } from './dto/search-trips.dto.js';
+import type { TripStopsQueryDto } from './dto/trip-stops.dto.js';
 
 const CAIRO = '11111111-1111-4111-8111-111111111111';
 const ALEX = '22222222-2222-4222-8222-222222222222';
@@ -89,6 +94,88 @@ describe('the gateway search service', () => {
       expect(sent.trainNumber).toBe(903);
       expect(sent.language).toBe('en');
     });
+
+    describe('the filters and the order', () => {
+      it('sends no filters object when nothing was narrowed', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query(), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        // Absent rather than `{}`: "no filters" stays legible in a log.
+        expect('filters' in sent).toBe(false);
+        expect('sort' in sent).toBe(false);
+      });
+
+      it('maps each filter onto its wire name', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(
+          query({
+            trainTypeIds: [FIRST],
+            departAfter: 360,
+            departBefore: 750,
+            maxFare: 15_500,
+            excludeSoldOut: true,
+            sort: 'SEARCH_SORT_FARE_ASC',
+          }),
+          'en',
+        );
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.sort).toBe('SEARCH_SORT_FARE_ASC');
+        expect(sent.filters).toEqual({
+          trainTypeIds: [FIRST],
+          departAfterMinutes: 360,
+          departBeforeMinutes: 750,
+          maxFareMinor: 15_500,
+          excludeSoldOut: true,
+        });
+      });
+
+      it('sends only the filters the traveller set', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ maxFare: 9_000 }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.filters).toEqual({ maxFareMinor: 9_000 });
+      });
+
+      // `false` is a choice the traveller made, not an absent filter.
+      it('forwards excludeSoldOut=false rather than dropping it', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ excludeSoldOut: false }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.filters).toEqual({ excludeSoldOut: false });
+      });
+
+      it('forwards a return date when the traveller is planning a round trip', async () => {
+        const { service, searchOneWayTrips } = serviceWith(baseResponse);
+
+        await service.searchOneWay(query({ returnDate: '2026-06-25' }), 'en');
+
+        const sent = searchOneWayTrips.mock.calls[0][0] as Record<
+          string,
+          unknown
+        >;
+        expect(sent.returnDate).toBe('2026-06-25');
+      });
+    });
   });
 
   describe('the response it returns', () => {
@@ -123,6 +210,42 @@ describe('the gateway search service', () => {
 
       expect(result.trips).toEqual([]);
       expect(result.dateStrip).toEqual([]);
+    });
+
+    /**
+     * The facets have the same problem twice over: `trainTypes` is a repeated
+     * field, so an empty one arrives as no key and a client reading `.length`
+     * would throw, and an int32 of 0 is omitted too -- which would otherwise
+     * be indistinguishable from a free trip.
+     */
+    it('always answers with a filterOptions object', async () => {
+      const { service } = serviceWith({
+        ...baseResponse,
+        filterOptions: undefined as never,
+      });
+
+      const result = await service.searchOneWay(query(), 'en');
+
+      expect(result.filterOptions).toEqual({
+        trainTypes: [],
+        minFareMinor: 0,
+        maxFareMinor: 0,
+      });
+    });
+
+    it('passes the day facets through when catalog sent them', async () => {
+      const filterOptions = {
+        trainTypes: [
+          { id: FIRST, name: { en: 'Express', ar: 'مميز' }, tripCount: 3 },
+        ],
+        minFareMinor: 9_000,
+        maxFareMinor: 20_000,
+      };
+      const { service } = serviceWith({ ...baseResponse, filterOptions });
+
+      const result = await service.searchOneWay(query(), 'en');
+
+      expect(result.filterOptions).toEqual(filterOptions);
     });
 
     it('carries no empty result when there are trips', async () => {
@@ -212,6 +335,178 @@ describe('the gateway search service', () => {
       const result = await service.searchOneWay(query(), 'en');
 
       expect(result.emptyResult?.message).not.toBe('');
+    });
+  });
+});
+
+describe('the gateway return-search service', () => {
+  const returnQuery = (
+    overrides: Partial<SearchReturnTripsDto> = {},
+  ): SearchReturnTripsDto =>
+    ({
+      outboundTripId: '44444444-4444-4444-8444-444444444444',
+      outboundFrom: CAIRO,
+      outboundTo: ALEX,
+      returnDate: '2026-06-25',
+      travelClassId: FIRST,
+      ...overrides,
+    }) as SearchReturnTripsDto;
+
+  const returnResponse: SearchReturnTripsResponse = {
+    trips: [],
+    evaluatedAt: baseResponse.evaluatedAt,
+    filterOptions: { trainTypes: [], minFareMinor: 0, maxFareMinor: 0 },
+  };
+
+  function serviceWith(response: SearchReturnTripsResponse) {
+    const searchReturnTrips = vi.fn().mockResolvedValue(response);
+    const client = { searchReturnTrips } as unknown as CatalogGrpcClientService;
+
+    return { service: new CatalogService(client), searchReturnTrips };
+  }
+
+  it('maps the query onto the wire names', async () => {
+    const { service, searchReturnTrips } = serviceWith(returnResponse);
+
+    await service.searchReturn(returnQuery(), 'en');
+
+    expect(searchReturnTrips).toHaveBeenCalledWith({
+      outboundTripId: returnQuery().outboundTripId,
+      outboundOriginStationId: CAIRO,
+      outboundDestinationStationId: ALEX,
+      returnDate: '2026-06-25',
+      travelClassId: FIRST,
+    });
+  });
+
+  it('forwards the filters and the order, as the outbound leg does', async () => {
+    const { service, searchReturnTrips } = serviceWith(returnResponse);
+
+    await service.searchReturn(
+      returnQuery({ maxFare: 9_000, sort: 'SEARCH_SORT_FARE_ASC' }),
+      'en',
+    );
+
+    const sent = searchReturnTrips.mock.calls[0][0] as Record<string, unknown>;
+    expect(sent.sort).toBe('SEARCH_SORT_FARE_ASC');
+    expect(sent.filters).toEqual({ maxFareMinor: 9_000 });
+  });
+
+  // The outbound call already sent the strip and the window; two copies could
+  // disagree, so this response carries neither.
+  it('answers without a date strip or booking window', async () => {
+    const { service } = serviceWith(returnResponse);
+
+    const result = await service.searchReturn(returnQuery(), 'en');
+
+    expect(result).not.toHaveProperty('dateStrip');
+    expect(result).not.toHaveProperty('bookingWindow');
+  });
+
+  it('explains an empty list in the requested language', async () => {
+    const { service } = serviceWith({
+      ...returnResponse,
+      trips: undefined as never,
+      emptyResult: {
+        reason: 'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL' as never,
+        params: { outboundArrivalTime: '23:50' },
+      },
+    });
+
+    const english = await service.searchReturn(returnQuery(), 'en');
+
+    expect(english.trips).toEqual([]);
+    expect(english.emptyResult?.reason).toBe(
+      'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
+    );
+    // The arrival the server read is quoted back, so the traveller knows what
+    // they are working around.
+    expect(english.emptyResult?.message).toContain('23:50');
+    expect(english.emptyResult?.message).toContain('return date');
+  });
+
+  it('answers in Arabic by default', async () => {
+    const { service } = serviceWith({
+      ...returnResponse,
+      emptyResult: {
+        reason: 'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL' as never,
+        params: { outboundArrivalTime: '23:50' },
+      },
+    });
+
+    const arabic = await service.searchReturn(returnQuery(), 'ar');
+
+    expect(arabic.emptyResult?.message).toContain('العودة');
+  });
+});
+
+describe('the gateway stops service', () => {
+  const stopsQuery = { from: CAIRO, to: ALEX } as TripStopsQueryDto;
+  const tripId = '44444444-4444-4444-8444-444444444444';
+
+  it('maps the path id and the pair onto the wire names', async () => {
+    const getTripStops = vi.fn().mockResolvedValue({ stops: [] });
+    const service = new CatalogService({
+      getTripStops,
+    } as unknown as CatalogGrpcClientService);
+
+    await service.tripStops(tripId, stopsQuery);
+
+    expect(getTripStops).toHaveBeenCalledWith({
+      tripId,
+      originStationId: CAIRO,
+      destinationStationId: ALEX,
+    });
+  });
+
+  it('always answers with a stops array', async () => {
+    const getTripStops = vi.fn().mockResolvedValue({});
+    const service = new CatalogService({
+      getTripStops,
+    } as unknown as CatalogGrpcClientService);
+
+    await expect(service.tripStops(tripId, stopsQuery)).resolves.toEqual({
+      stops: [],
+    });
+  });
+});
+
+describe('the gateway recent-searches service', () => {
+  it('sends no account, because the traveller is the token', async () => {
+    const listRecentSearches = vi
+      .fn()
+      .mockResolvedValue({ recentSearches: [] });
+    const service = new CatalogService({
+      listRecentSearches,
+    } as unknown as CatalogGrpcClientService);
+
+    await service.recentSearches({});
+
+    // An empty request: catalog reads the caller from gRPC metadata.
+    expect(listRecentSearches).toHaveBeenCalledWith({});
+  });
+
+  it('forwards the declared language preference when given', async () => {
+    const listRecentSearches = vi
+      .fn()
+      .mockResolvedValue({ recentSearches: [] });
+    const service = new CatalogService({
+      listRecentSearches,
+    } as unknown as CatalogGrpcClientService);
+
+    await service.recentSearches({ language: 'en' });
+
+    expect(listRecentSearches).toHaveBeenCalledWith({ language: 'en' });
+  });
+
+  it('always answers with an array', async () => {
+    const listRecentSearches = vi.fn().mockResolvedValue({});
+    const service = new CatalogService({
+      listRecentSearches,
+    } as unknown as CatalogGrpcClientService);
+
+    await expect(service.recentSearches({})).resolves.toEqual({
+      recentSearches: [],
     });
   });
 });

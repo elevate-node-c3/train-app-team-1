@@ -27,6 +27,11 @@ const UUID_PATTERN =
 
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The identifier shape the catalogue mints; shared with the filter refusals. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
+
 /** What the catalogue knows about the ids a request referenced. */
 export interface SearchReferenceFacts {
   knownStationIds: Set<string>;
@@ -65,7 +70,7 @@ export function validateSearchShape(
     ['from', request.originStationId],
     ['to', request.destinationStationId],
   ] as const) {
-    if (!UUID_PATTERN.test(value ?? '')) {
+    if (!isUuid(value)) {
       details.push({
         field,
         rejectedValue: value,
@@ -89,7 +94,7 @@ export function validateSearchShape(
     });
   }
 
-  if (!UUID_PATTERN.test(request.travelClassId ?? '')) {
+  if (!isUuid(request.travelClassId)) {
     details.push({
       field: 'travelClassId',
       rejectedValue: request.travelClassId,
@@ -101,6 +106,16 @@ export function validateSearchShape(
   }
 
   details.push(...validateDepartureDate(request.departureDate, now));
+
+  // Only when the traveller is planning a round trip. Checked against the date
+  // they typed, which is the only departure date this call knows; the second
+  // leg re-checks it against the chosen trip's own departure date, which is the
+  // server's.
+  if (request.returnDate !== undefined && request.returnDate !== '') {
+    details.push(
+      ...validateReturnDate(request.returnDate, request.departureDate, now),
+    );
+  }
 
   if (request.trainNumber !== undefined) {
     const trainNumber = request.trainNumber;
@@ -150,6 +165,66 @@ function validateDepartureDate(
         : 'is beyond the dates currently open for booking',
       // The last bookable date belongs in the action: a traveller needs the
       // date to pick instead, not only the news that this one is wrong.
+      action: `Pick a date between ${firstBookableDate} and ${lastBookableDate}`,
+    },
+  ];
+}
+
+/**
+ * A round trip's return date (BR-20).
+ *
+ * Exported because both legs ask it and must agree: the outbound search checks
+ * it against the departure date the traveller typed, and the return search
+ * checks it again against the chosen trip's own Cairo departure date, which the
+ * server reads rather than trusts. One function means the two can never answer
+ * differently -- a return date accepted on the first screen and refused on the
+ * second would be the worst of both.
+ *
+ * `departureDate` is assumed already validated by the caller; when it is not a
+ * date at all the comparison is skipped, because a refusal naming the return
+ * date for a broken departure date would send the traveller to the wrong field.
+ */
+export function validateReturnDate(
+  returnDate: string,
+  departureDate: string,
+  now: Date,
+): ValidationErrorDetail[] {
+  if (!isRealCivilDate(returnDate ?? '')) {
+    return [
+      {
+        field: 'returnDate',
+        rejectedValue: returnDate,
+        issue: 'is not a calendar date in YYYY-MM-DD form',
+        action: 'Pick a return date from the calendar',
+      },
+    ];
+  }
+
+  // On or after, not strictly after: out and back on one day is a round trip a
+  // traveller can and does make.
+  if (isRealCivilDate(departureDate ?? '') && returnDate < departureDate) {
+    return [
+      {
+        field: 'returnDate',
+        rejectedValue: returnDate,
+        issue: 'is before the departure date',
+        action: `Pick a return date on or after ${departureDate}`,
+      },
+    ];
+  }
+
+  if (isWithinBookingWindow(returnDate, now)) return [];
+
+  const { firstBookableDate, lastBookableDate } = bookingWindowFor(now);
+
+  return [
+    {
+      field: 'returnDate',
+      rejectedValue: returnDate,
+      issue:
+        returnDate < cairoToday(now)
+          ? 'is in the past'
+          : 'is beyond the dates currently open for booking',
       action: `Pick a date between ${firstBookableDate} and ${lastBookableDate}`,
     },
   ];

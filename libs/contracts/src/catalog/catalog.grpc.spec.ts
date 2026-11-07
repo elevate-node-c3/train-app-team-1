@@ -9,9 +9,20 @@ import {
   getCatalogProtoPath,
 } from './catalog.grpc.js';
 import type {
+  FilterOptions,
+  GetTripStopsRequest,
+  ListRecentSearchesRequest,
+  ListRecentSearchesResponse,
+  RecentSearch,
+  RecentSearchStation,
   SearchOneWayTripsRequest,
   SearchOneWayTripsResponse,
+  SearchReturnTripsRequest,
+  SearchReturnTripsResponse,
+  TrainTypeOption,
   TripResult,
+  TripStop,
+  TripStopsResponse,
 } from './catalog.dto.js';
 
 /**
@@ -22,7 +33,7 @@ import type {
  * asserted on below have to be spelled out here.
  */
 interface MessageDescriptor {
-  field?: { name: string; type: string }[];
+  field?: { name: string; type: string; number: number }[];
 }
 
 interface EnumDescriptor {
@@ -90,6 +101,7 @@ const REQUEST_KEYS: Record<keyof SearchOneWayTripsRequest, true> = {
   travelClassId: true,
   language: true,
   trainNumber: true,
+  returnDate: true,
   sort: true,
   filters: true,
 };
@@ -100,6 +112,90 @@ const RESPONSE_KEYS: Record<keyof SearchOneWayTripsResponse, true> = {
   emptyResult: true,
   bookingWindow: true,
   evaluatedAt: true,
+  filterOptions: true,
+};
+
+const FILTER_OPTIONS_KEYS: Record<keyof FilterOptions, true> = {
+  trainTypes: true,
+  minFareMinor: true,
+  maxFareMinor: true,
+};
+
+const TRAIN_TYPE_OPTION_KEYS: Record<keyof TrainTypeOption, true> = {
+  id: true,
+  name: true,
+  tripCount: true,
+};
+
+const RETURN_REQUEST_KEYS: Record<keyof SearchReturnTripsRequest, true> = {
+  outboundTripId: true,
+  outboundOriginStationId: true,
+  outboundDestinationStationId: true,
+  returnDate: true,
+  travelClassId: true,
+  language: true,
+  sort: true,
+  filters: true,
+};
+
+const RETURN_RESPONSE_KEYS: Record<keyof SearchReturnTripsResponse, true> = {
+  trips: true,
+  emptyResult: true,
+  evaluatedAt: true,
+  filterOptions: true,
+};
+
+const STOPS_REQUEST_KEYS: Record<keyof GetTripStopsRequest, true> = {
+  tripId: true,
+  originStationId: true,
+  destinationStationId: true,
+  language: true,
+};
+
+const TRIP_STOP_KEYS: Record<keyof TripStop, true> = {
+  stationId: true,
+  name: true,
+  arrival: true,
+  departure: true,
+  boarding: true,
+  alighting: true,
+};
+
+const STOPS_RESPONSE_KEYS: Record<keyof TripStopsResponse, true> = {
+  stops: true,
+};
+
+const RECENT_SEARCH_REQUEST_KEYS: Record<
+  keyof ListRecentSearchesRequest,
+  true
+> = {
+  language: true,
+};
+
+const RECENT_SEARCH_STATION_KEYS: Record<
+  keyof RecentSearchStation,
+  true
+> = {
+  id: true,
+  name: true,
+};
+
+const RECENT_SEARCH_KEYS: Record<keyof RecentSearch, true> = {
+  origin: true,
+  destination: true,
+  travelClass: true,
+  kind: true,
+  trainNumber: true,
+  departureDate: true,
+  returnDate: true,
+  searchedAt: true,
+};
+
+const RECENT_SEARCH_RESPONSE_KEYS: Record<
+  keyof ListRecentSearchesResponse,
+  true
+> = {
+  recentSearches: true,
 };
 
 describe('the catalog contract surface', () => {
@@ -140,12 +236,90 @@ describe('the catalog search gRPC contract', () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it('declares SearchOneWayTrips on the catalog service', () => {
+  it('declares every catalog RPC on one service', () => {
     const definition = loadSync(getCatalogProtoPath());
     const service = definition[`${CATALOG_PACKAGE_NAME}.${CATALOG_SERVICE_NAME}`];
 
     expect(service).toBeDefined();
-    expect(Object.keys(service!)).toContain('SearchOneWayTrips');
+    expect(Object.keys(service!)).toEqual(
+      expect.arrayContaining([
+        'SearchOneWayTrips',
+        'SearchReturnTrips',
+        'GetTripStops',
+        'ListRecentSearches',
+      ]),
+    );
+  });
+
+  it('keeps FilterOptions and its train-type facet in step', () => {
+    expect(fieldNamesOf('FilterOptions').sort()).toEqual(
+      Object.keys(FILTER_OPTIONS_KEYS).sort(),
+    );
+    expect(fieldNamesOf('TrainTypeOption').sort()).toEqual(
+      Object.keys(TRAIN_TYPE_OPTION_KEYS).sort(),
+    );
+  });
+
+  it('puts FilterOptions on the one-way response at field 6', () => {
+    const field = (messageDescriptor('SearchOneWayTripsResponse').field ?? []).find(
+      (candidate) => candidate.name === 'filterOptions',
+    );
+
+    // 6 was reserved before anything was serialized there, so taking it is
+    // safe; 7 onwards stays reserved for a future page token.
+    expect(field?.number).toBe(6);
+  });
+
+  it('keeps the return request and response in step', () => {
+    expect(fieldNamesOf('SearchReturnTripsRequest').sort()).toEqual(
+      Object.keys(RETURN_REQUEST_KEYS).sort(),
+    );
+    expect(fieldNamesOf('SearchReturnTripsResponse').sort()).toEqual(
+      Object.keys(RETURN_RESPONSE_KEYS).sort(),
+    );
+  });
+
+  // BR-20: the server reads the outbound arrival. A client-supplied arrival
+  // would be a second authority and could widen the window.
+  it('carries no outbound arrival and no train number on the return request', () => {
+    const fields = fieldNamesOf('SearchReturnTripsRequest');
+
+    expect(fields).not.toContain('outboundArrivalAt');
+    expect(fields).not.toContain('arrivalAt');
+    expect(fields).not.toContain('trainNumber');
+  });
+
+  it('keeps the stops messages in step', () => {
+    expect(fieldNamesOf('GetTripStopsRequest').sort()).toEqual(
+      Object.keys(STOPS_REQUEST_KEYS).sort(),
+    );
+    expect(fieldNamesOf('TripStop').sort()).toEqual(
+      Object.keys(TRIP_STOP_KEYS).sort(),
+    );
+    expect(fieldNamesOf('TripStopsResponse').sort()).toEqual(
+      Object.keys(STOPS_RESPONSE_KEYS).sort(),
+    );
+  });
+
+  it('keeps the recent-search messages in step', () => {
+    expect(fieldNamesOf('ListRecentSearchesRequest').sort()).toEqual(
+      Object.keys(RECENT_SEARCH_REQUEST_KEYS).sort(),
+    );
+    expect(fieldNamesOf('RecentSearchStation').sort()).toEqual(
+      Object.keys(RECENT_SEARCH_STATION_KEYS).sort(),
+    );
+    expect(fieldNamesOf('RecentSearch').sort()).toEqual(
+      Object.keys(RECENT_SEARCH_KEYS).sort(),
+    );
+    expect(fieldNamesOf('ListRecentSearchesResponse').sort()).toEqual(
+      Object.keys(RECENT_SEARCH_RESPONSE_KEYS).sort(),
+    );
+  });
+
+  it('carries no traveller identity in the recent-search request', () => {
+    // The traveller comes from caller metadata, never from a body a client
+    // could forge.
+    expect(fieldNamesOf('ListRecentSearchesRequest')).toEqual(['language']);
   });
 
   it('keeps TripResult in step with its TypeScript interface', () => {
@@ -181,5 +355,24 @@ describe('the catalog search gRPC contract', () => {
       (value) => value.number === 0,
     );
     expect(zeroValue?.name).toBe('SEARCH_SORT_UNSPECIFIED');
+  });
+
+  it('keeps the appended search-empty reasons append-only', () => {
+    // Existing numbers already travel; the two new reasons must extend the
+    // enum rather than renumber it, or a client would read the wrong message.
+    const byNumber = new Map(
+      (enumDescriptor('SearchEmptyReason').value ?? []).map((value) => [
+        value.number,
+        value.name,
+      ]),
+    );
+
+    expect(byNumber.get(1)).toBe('SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED');
+    expect(byNumber.get(2)).toBe('SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE');
+    expect(byNumber.get(3)).toBe('SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE');
+    expect(byNumber.get(4)).toBe(
+      'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
+    );
+    expect(byNumber.get(5)).toBe('SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL');
   });
 });

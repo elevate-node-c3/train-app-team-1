@@ -1,10 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { firstValueFrom, timeout } from 'rxjs';
+import { firstValueFrom, timeout, type Observable } from 'rxjs';
+import type { Metadata } from '@grpc/grpc-js';
 import { createGrpcMetadataWithCaller, grpcStatusException } from '@app/common';
 import type {
+  GetTripStopsRequest,
+  ListRecentSearchesRequest,
+  ListRecentSearchesResponse,
   SearchOneWayTripsRequest,
   SearchOneWayTripsResponse,
+  SearchReturnTripsRequest,
+  SearchReturnTripsResponse,
+  TripStopsResponse,
 } from '@app/contracts';
 
 import {
@@ -36,19 +43,62 @@ export class CatalogGrpcClientService {
   async searchOneWayTrips(
     request: SearchOneWayTripsRequest,
   ): Promise<SearchOneWayTripsResponse> {
-    const metadata = createGrpcMetadataWithCaller(this.cls);
+    return this.call((client, metadata, options) =>
+      client.searchOneWayTrips(request, metadata, options),
+    );
+  }
 
-    // Belt and braces, and the rxjs timeout is not redundant: the deadline is
-    // enforced by the gRPC channel, and the operator covers the case where the
-    // channel never produces a deadline event at all. Either way the request
-    // ends.
+  async searchReturnTrips(
+    request: SearchReturnTripsRequest,
+  ): Promise<SearchReturnTripsResponse> {
+    return this.call((client, metadata, options) =>
+      client.searchReturnTrips(request, metadata, options),
+    );
+  }
+
+  async getTripStops(
+    request: GetTripStopsRequest,
+  ): Promise<TripStopsResponse> {
+    return this.call((client, metadata, options) =>
+      client.getTripStops(request, metadata, options),
+    );
+  }
+
+  async listRecentSearches(
+    request: ListRecentSearchesRequest,
+  ): Promise<ListRecentSearchesResponse> {
+    return this.call((client, metadata, options) =>
+      client.listRecentSearches(request, metadata, options),
+    );
+  }
+
+  /**
+   * One call to catalog: caller metadata in, a deadline on it, errors mapped.
+   *
+   * Every method goes through here rather than repeating the four lines. The
+   * deadline is the point -- a slow or stopped catalog has to produce a
+   * retryable error rather than a request that never returns -- and a method
+   * that forgot it would be invisible until production.
+   *
+   * The rxjs timeout is not redundant with the channel deadline: the deadline
+   * is enforced by gRPC, and the operator covers the case where the channel
+   * never produces a deadline event at all. Either way the request ends.
+   */
+  private async call<T>(
+    invoke: (
+      client: CatalogGrpcClient,
+      metadata: Metadata,
+      options: { deadline: number },
+    ) => Observable<T>,
+  ): Promise<T> {
+    const metadata = createGrpcMetadataWithCaller(this.cls);
     const deadline = Date.now() + CATALOG_SEARCH_TIMEOUT_MS;
 
     try {
       return await firstValueFrom(
-        this.client
-          .searchOneWayTrips(request, metadata, { deadline })
-          .pipe(timeout(CATALOG_SEARCH_TIMEOUT_MS + 500)),
+        invoke(this.client, metadata, { deadline }).pipe(
+          timeout(CATALOG_SEARCH_TIMEOUT_MS + 500),
+        ),
       );
     } catch (error: unknown) {
       throw this.toHttpError(error);
