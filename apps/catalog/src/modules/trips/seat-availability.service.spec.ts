@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CacheAsideService } from '@app/common';
 
 import {
   SeatAvailabilityService,
+  segmentAvailabilityCacheKey,
   type SegmentAvailabilityQuery,
 } from './seat-availability.service.js';
 
@@ -36,20 +38,12 @@ describe('seat availability', () => {
     await expect(service.availabilityFor([])).resolves.toEqual(new Map());
   });
 
-  // Provisional until Sprint 3: the count is the trip's capacity in the class,
-  // which is what the search query already reports.
   it('uses the class capacity as the provisional count', async () => {
     const result = await service.availabilityFor([segment('a', 40)]);
 
     expect(result.get('a')).toBe(40);
   });
 
-  /**
-   * The shape is the point. Array in, map out means a Sprint-3 implementation
-   * backed by a real inventory table answers N segments in one round trip, and
-   * cannot reintroduce an N+1 even if written carelessly. A per-segment
-   * signature would have invited exactly that.
-   */
   it('is batched by construction, so N segments cost one call', async () => {
     const spy = vi.spyOn(service, 'availabilityFor');
 
@@ -63,8 +57,6 @@ describe('seat availability', () => {
   });
 
   it('keeps the last answer when a trip appears twice', async () => {
-    // Shouldn't happen -- the query returns one row per trip -- but a Map
-    // cannot hold both, and silently keeping one is better than a crash.
     const result = await service.availabilityFor([
       segment('a', 40),
       segment('a', 10),
@@ -74,13 +66,6 @@ describe('seat availability', () => {
     expect(result.get('a')).toBe(10);
   });
 
-  /**
-   * Sold out is unreachable in Sprint 2: availability is the capacity, and a
-   * trip with zero capacity in the class is filtered out of the query as "no
-   * such coach" before it ever gets here. So the rule that a sold-out trip is
-   * returned and marked -- rather than hidden -- is proven against a stubbed
-   * seam, which is the test that keeps working when real inventory lands.
-   */
   it('can report zero, which the caller must surface as sold out', async () => {
     const soldOut = new SeatAvailabilityService();
     vi.spyOn(soldOut, 'availabilityFor').mockResolvedValue(
@@ -90,5 +75,34 @@ describe('seat availability', () => {
     const result = await soldOut.availabilityFor([segment('a', 40)]);
 
     expect(result.get('a')).toBe(0);
+  });
+
+  describe('availability under its own keys (§2.3, SEAT-4)', () => {
+    it('reads cached availability from Redis and populates missing keys', async () => {
+      const segA = segment('trip-a', 40);
+      const segB = segment('trip-b', 50);
+
+      const keyA = segmentAvailabilityCacheKey(segA);
+      const keyB = segmentAvailabilityCacheKey(segB);
+
+      const store = new Map<string, number>([[keyA, 15]]); // Trip A has 15 seats left in cache
+
+      const mockCache = {
+        get: vi.fn(async (key: string) => store.get(key) ?? null),
+        set: vi.fn(async (key: string, val: number) => {
+          store.set(key, val);
+        }),
+        getMetrics: () => ({ recordHit: vi.fn(), recordMiss: vi.fn() }),
+      } as unknown as CacheAsideService;
+
+      const cachedService = new SeatAvailabilityService(mockCache);
+      const result = await cachedService.availabilityFor([segA, segB]);
+
+      // Trip A got 15 from Redis (warm)
+      expect(result.get('trip-a')).toBe(15);
+      // Trip B was cold, computed capacity 50 and wrote back to Redis
+      expect(result.get('trip-b')).toBe(50);
+      expect(mockCache.set).toHaveBeenCalledWith(keyB, 50, expect.any(Number));
+    });
   });
 });
