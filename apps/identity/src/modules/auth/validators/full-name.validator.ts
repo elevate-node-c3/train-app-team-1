@@ -8,8 +8,13 @@ export interface FullNameValidationResult {
 
 export const MAX_FULL_NAME_LENGTH = 50;
 
-// Arabic letters or Latin letters
-const ARABIC_OR_LATIN_WORD_REGEX = /^[\u0600-\u06FFA-Za-z]+$/;
+/**
+ * Arabic letters (U+0621–U+063A, U+0641–U+064A core alphabet excluding punctuation,
+ * tatweel and digits; U+0671–U+06D3 extended Arabic letters such as چ, ڤ, پ, گ)
+ * or Latin letters (a-z, A-Z).
+ */
+const ARABIC_OR_LATIN_WORD_REGEX =
+  /^[\u0621-\u063A\u0641-\u064A\u0671-\u06D3a-zA-Z]+$/;
 
 /**
  * Validates full name (BR-10).
@@ -62,4 +67,3 @@ export function validateFullName(raw: string): FullNameValidationResult {
     normalized,
   };
 }
-

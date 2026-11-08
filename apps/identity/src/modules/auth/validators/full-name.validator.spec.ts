@@ -19,6 +19,16 @@ describe('validateFullName', () => {
     expect(res.normalized).toBe('Ahmed Hussein');
   });
 
+  it('accepts Arabic names with extended letters (e.g. چ, ڤ)', () => {
+    const res = validateFullName('چورچ جورج');
+    expect(res.valid).toBe(true);
+    expect(res.normalized).toBe('چورچ جورج');
+
+    const res2 = validateFullName('ڤيرونيكا أحمد');
+    expect(res2.valid).toBe(true);
+    expect(res2.normalized).toBe('ڤيرونيكا أحمد');
+  });
+
   it('collapses multiple inner spaces and trims edges', () => {
     const res = validateFullName('   Ahmed     Hussein   ');
     expect(res.valid).toBe(true);
@@ -37,6 +47,20 @@ describe('validateFullName', () => {
     expect(validateFullName('Ahmed-Hussein').valid).toBe(false);
   });
 
+  it('rejects names with Arabic digits or punctuation', () => {
+    expect(validateFullName('٠٠ ١١').valid).toBe(false);
+    expect(validateFullName('٠٠ ١١').error).toBe(ErrorCode.INVALID_FULL_NAME);
+
+    expect(validateFullName('؟؟ ،،').valid).toBe(false);
+    expect(validateFullName('؟؟ ،،').error).toBe(ErrorCode.INVALID_FULL_NAME);
+
+    expect(validateFullName('احمد ٢٩٩٠١').valid).toBe(false);
+    expect(validateFullName('احمد ٢٩٩٠١').error).toBe(ErrorCode.INVALID_FULL_NAME);
+
+    expect(validateFullName('أحمد، حسين').valid).toBe(false);
+    expect(validateFullName('أحمد، حسين').error).toBe(ErrorCode.INVALID_FULL_NAME);
+  });
+
   it('rejects names exceeding 50 characters', () => {
     const longName = 'Ahmed '.repeat(10); // 60 chars
     const res = validateFullName(longName);
@@ -44,4 +68,3 @@ describe('validateFullName', () => {
     expect(res.error).toBe(ErrorCode.INVALID_FULL_NAME);
   });
 });
-
