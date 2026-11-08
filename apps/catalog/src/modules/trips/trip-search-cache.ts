@@ -1,6 +1,5 @@
 import { cairoToday } from '@app/contracts';
 import {
-  jitteredTtlSeconds,
   SEARCH_CACHE_TTL_EMPTY_SECONDS,
   SEARCH_CACHE_TTL_JITTER_FRACTION,
   SEARCH_CACHE_TTL_SECONDS,

@@ -20,3 +20,4 @@ export interface GovernorateDto {
 export interface StationCatalogDto {
   governorates: GovernorateDto[];
 }
+

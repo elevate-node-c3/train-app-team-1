@@ -42,3 +42,4 @@ export interface SeatAvailabilityChangedPayloadV1 {
   travelClassId: string;
   availableSeats: number;
 }
+

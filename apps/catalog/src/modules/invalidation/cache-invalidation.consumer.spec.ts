@@ -98,3 +98,4 @@ describe('CacheInvalidationConsumer', () => {
     expect(mockStations.invalidate).toHaveBeenCalled();
   });
 });
+
