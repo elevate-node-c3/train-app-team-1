@@ -16,3 +16,4 @@ export * from './events/event-envelope.js';
 export * from './events/event-types.js';
 export * from './events/verification-code-issued.js';
 export * from './events/identity-events.js';
+export * from './events/catalog-events.js';
