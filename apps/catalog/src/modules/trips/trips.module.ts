@@ -36,6 +36,6 @@ import { TripsGrpcController } from './trips.grpc.controller.js';
     TripReturnSearchService,
     TripStopsService,
   ],
-  exports: [TripSearchService],
+  exports: [TripSearchService, TripStopsService],
 })
 export class TripsModule {}

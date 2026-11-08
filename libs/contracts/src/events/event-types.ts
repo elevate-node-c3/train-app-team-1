@@ -13,6 +13,10 @@ export const EVENT_TYPES = {
   emailVerified: 'identity.email.verified',
   sessionRevoked: 'identity.session.revoked',
   passwordReset: 'identity.password.reset',
+  timetablePublished: 'catalog.timetable.published',
+  fareChanged: 'catalog.fare.changed',
+  stationChanged: 'catalog.station.changed',
+  seatAvailabilityChanged: 'inventory.seat.availability-changed',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
