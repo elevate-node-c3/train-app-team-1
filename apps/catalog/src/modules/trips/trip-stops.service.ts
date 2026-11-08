@@ -26,11 +26,6 @@ import { TripStopsRepository } from './trip-stops.repository.js';
  * cached: it is a refusal, not a fact about the timetable, and caching it
  * would keep telling a traveller their valid pair does not exist after the
  * data was fixed.
- *
- * The endpoints come from the repository in the same pairing search uses, so
- * the first row is the boarding stop and the last is the alighting stop. That
- * is why this service marks them by position rather than by comparing station
- * ids -- a route may call at the same station twice.
  */
 @Injectable()
 export class TripStopsService {
@@ -48,8 +43,11 @@ export class TripStopsService {
       cached.length > 0 &&
       cached.every(isCachedTripStop)
     ) {
+      this.cache.getMetrics?.()?.recordHit('trip-stops');
       return { stops: this.toWire(cached) };
     }
+
+    this.cache.getMetrics?.()?.recordMiss('trip-stops');
 
     const rows = await this.repository.findStops(request);
     if (rows.length === 0) {
@@ -86,10 +84,6 @@ export class TripStopsService {
 
   /**
    * Drops this segment's entry.
-   *
-   * No caller yet: nothing republishes a timetable in this repo. It exists so
-   * TA-16's republish path has the hook, and so the bounded TTL is a fallback
-   * rather than the only way a changed itinerary is picked up.
    */
   async invalidate(
     tripId: string,
