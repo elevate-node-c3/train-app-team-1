@@ -30,6 +30,61 @@ export class RedisClientService
   private client: Redis | null = null;
   private connected = false;
   private configured = false;
+  private outageLogged = false;
+  private readonly listeners = new Set<(available: boolean) => void>();
+
+  /** Register a callback for Redis connection state changes. Returns an unsubscribe function. */
+  onAvailabilityChange(listener: (available: boolean) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyListeners(): void {
+    const available = this.isAvailable();
+    for (const listener of this.listeners) {
+      try {
+        listener(available);
+      } catch (err: unknown) {
+        this.logger.debug(
+          `Availability listener threw: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  handleConnectionReady(): void {
+    const wasConnected = this.connected;
+    this.connected = true;
+    if (this.outageLogged) {
+      this.logger.log(
+        'Redis connection restored; operating in normal cache mode.',
+      );
+      this.outageLogged = false;
+    }
+    if (!wasConnected) {
+      this.notifyListeners();
+    }
+  }
+
+  handleConnectionError(error?: Error): void {
+    const wasConnected = this.connected;
+    this.connected = false;
+
+    // Log the outage ONCE rather than once per request or duplicate error (§2.3 rule 7)
+    if (!this.outageLogged) {
+      const reason = error?.message ? `: ${error.message}` : '';
+      this.logger.warn(
+        `Redis connection error${reason}. Operating in degraded cache mode (§2.3 rule 7).`,
+      );
+      this.outageLogged = true;
+    }
+
+    if (wasConnected) {
+      this.notifyListeners();
+    }
+  }
 
   async onModuleInit(): Promise<void> {
     const url = process.env.REDIS_URL;
@@ -51,22 +106,19 @@ export class RedisClientService
         this.connected = true;
       });
       this.client.on('ready', () => {
-        this.connected = true;
+        this.handleConnectionReady();
       });
       this.client.on('error', (error) => {
-        this.connected = false;
-        this.logger.warn(
-          `Redis connection error: ${error.message}. Operating in degraded cache mode.`,
-        );
+        this.handleConnectionError(error);
       });
       this.client.on('close', () => {
-        this.connected = false;
+        this.handleConnectionError();
       });
 
       // Boot must not block on Redis: the platform degrades around it.
       await this.client.connect().catch(() => {
-        this.logger.warn(
-          'Redis is unavailable at boot; service continues in degraded mode (§2.3 rule 7).',
+        this.handleConnectionError(
+          new Error('Redis is unavailable at boot; service continues in degraded mode (§2.3 rule 7).'),
         );
       });
     } catch (error: unknown) {

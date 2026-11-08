@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { CacheAsideService } from './cache-aside.service.js';
+import { CacheMetrics } from './cache-metrics.js';
 import { REDIS_CLIENT, RedisClientService } from './redis-client.service.js';
 
 /**
@@ -15,8 +16,9 @@ import { REDIS_CLIENT, RedisClientService } from './redis-client.service.js';
   providers: [
     RedisClientService,
     { provide: REDIS_CLIENT, useExisting: RedisClientService },
+    CacheMetrics,
     CacheAsideService,
   ],
-  exports: [RedisClientService, REDIS_CLIENT, CacheAsideService],
+  exports: [RedisClientService, REDIS_CLIENT, CacheMetrics, CacheAsideService],
 })
 export class RedisModule {}
