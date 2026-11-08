@@ -1,7 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { CacheAsideService } from '@app/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { CacheAsideService, RedisClientService } from '@app/common';
 import { durationMinutesBetween } from '@app/contracts';
 
+import {
+  jitteredTtlSeconds,
+  SEARCH_CACHE_TTL_EMPTY_SECONDS,
+  SEARCH_CACHE_TTL_JITTER_FRACTION,
+} from '../cache/catalog-cache.keys.js';
+import { RouteVersionService } from '../cache/route-version.service.js';
 import { TripSearchRepository } from './trip-search.repository.js';
 import {
   cacheTtlSecondsFor,
@@ -25,23 +31,19 @@ export interface TripDayQuery {
 /**
  * A day's static trips, from the cache when they are there and from Postgres
  * when they are not.
- *
- * Extracted so the outbound and return legs cannot drift apart. A round trip's
- * return list is "the reverse route on the return date" -- which is a plain
- * day query, and must land on the *same* cache key any other search for that
- * day uses. Keeping the key, the TTL and the projection in one place is what
- * makes that structural rather than a thing two services both remember.
- *
- * Nothing here depends on `now` except the TTL: eligibility, availability and
- * the after-arrival bound are all applied by the caller on every read, hit or
- * miss, so the cached payload can never go stale in a way that matters.
  */
 @Injectable()
 export class TripDayService {
+  private readonly routeVersion: RouteVersionService;
+
   constructor(
     private readonly trips: TripSearchRepository,
     private readonly cache: CacheAsideService,
-  ) {}
+    @Optional() routeVersion?: RouteVersionService,
+  ) {
+    this.routeVersion =
+      routeVersion ?? new RouteVersionService(new RedisClientService());
+  }
 
   /**
    * A cached entry that does not match the current shape is treated as a miss:
@@ -52,32 +54,48 @@ export class TripDayService {
     query: TripDayQuery,
     now: Date,
   ): Promise<CachedStaticTrip[]> {
-    const key = searchCacheKey(query);
-
-    const cached = await this.cache.get<unknown[]>(key);
-    if (Array.isArray(cached) && cached.every(isCachedStaticTrip)) {
-      return cached;
-    }
-
-    const rows = await this.trips.findCandidates({ ...query, now });
-    const statics = rows.map((row) => toStatic(row));
-
-    await this.cache.set(
-      key,
-      statics,
-      cacheTtlSecondsFor(query.serviceDate, now),
+    // 1. Capture route version before database read (§6.3, interleaving protection)
+    const capturedVersion = await this.routeVersion.getRouteVersion(
+      query.originStationId,
+      query.destinationStationId,
     );
 
-    return statics;
+    const key = searchCacheKey({ ...query, routeVersion: capturedVersion });
+    const baseTtl = cacheTtlSecondsFor(query.serviceDate, now);
+    const ttl = jitteredTtlSeconds(baseTtl, SEARCH_CACHE_TTL_JITTER_FRACTION);
+
+    // 2. Coalesce concurrent requests on a cold key through stampede guard (§2.3 rule 3)
+    const result = await this.cache.getOrRebuild<CachedStaticTrip[]>(
+      key,
+      'search',
+      async () => {
+        const rows = await this.trips.findCandidates({ ...query, now });
+        return rows.map((row) => toStatic(row));
+      },
+      ttl,
+    );
+
+    if (Array.isArray(result) && result.every(isCachedStaticTrip)) {
+      return result;
+    }
+
+    // Corrupted payload recovery fallback
+    const freshRows = await this.trips.findCandidates({ ...query, now });
+    const freshStatics = freshRows.map((row) => toStatic(row));
+    const recoveryTtl =
+      freshStatics.length === 0
+        ? jitteredTtlSeconds(
+            SEARCH_CACHE_TTL_EMPTY_SECONDS,
+            SEARCH_CACHE_TTL_JITTER_FRACTION,
+          )
+        : ttl;
+    await this.cache.set(key, freshStatics, recoveryTtl);
+    return freshStatics;
   }
 }
 
 /**
  * A row becomes its cacheable projection.
- *
- * The duration is computed here, from the two instants, so it is right across
- * midnight and across a daylight-saving change -- and so it is computed once
- * rather than on every cache read.
  */
 function toStatic(row: TripSearchRow): CachedStaticTrip {
   return {
