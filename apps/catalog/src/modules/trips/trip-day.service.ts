@@ -1,20 +1,18 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { CacheAsideService, RedisClientService } from '@app/common';
+import { CacheAsideService } from '@app/common';
 import { durationMinutesBetween } from '@app/contracts';
 
-import {
-  jitteredTtlSeconds,
-  SEARCH_CACHE_TTL_EMPTY_SECONDS,
-  SEARCH_CACHE_TTL_JITTER_FRACTION,
-} from '../cache/catalog-cache.keys.js';
+import { jitteredTtlSeconds } from '../cache/catalog-cache.keys.js';
 import { RouteVersionService } from '../cache/route-version.service.js';
-import { TripSearchRepository } from './trip-search.repository.js';
 import {
   cacheTtlSecondsFor,
   isCachedStaticTrip,
+  SEARCH_CACHE_TTL_EMPTY_SECONDS,
+  SEARCH_CACHE_TTL_JITTER_FRACTION,
   searchCacheKey,
   type CachedStaticTrip,
 } from './trip-search-cache.js';
+import { TripSearchRepository } from './trip-search.repository.js';
 import type { TripSearchRow } from './trip-search.types.js';
 
 /** One day of one route in one class, as both legs ask for it. */
@@ -34,16 +32,11 @@ export interface TripDayQuery {
  */
 @Injectable()
 export class TripDayService {
-  private readonly routeVersion: RouteVersionService;
-
   constructor(
     private readonly trips: TripSearchRepository,
     private readonly cache: CacheAsideService,
-    @Optional() routeVersion?: RouteVersionService,
-  ) {
-    this.routeVersion =
-      routeVersion ?? new RouteVersionService(new RedisClientService());
-  }
+    @Optional() private readonly routeVersion?: RouteVersionService,
+  ) {}
 
   /**
    * A cached entry that does not match the current shape is treated as a miss:
@@ -55,25 +48,40 @@ export class TripDayService {
     now: Date,
   ): Promise<CachedStaticTrip[]> {
     // 1. Capture route version before database read (§6.3, interleaving protection)
-    const capturedVersion = await this.routeVersion.getRouteVersion(
-      query.originStationId,
-      query.destinationStationId,
-    );
+    const capturedVersion = this.routeVersion
+      ? await this.routeVersion.getRouteVersion(
+          query.originStationId,
+          query.destinationStationId,
+        )
+      : undefined;
 
     const key = searchCacheKey({ ...query, routeVersion: capturedVersion });
     const baseTtl = cacheTtlSecondsFor(query.serviceDate, now);
     const ttl = jitteredTtlSeconds(baseTtl, SEARCH_CACHE_TTL_JITTER_FRACTION);
 
     // 2. Coalesce concurrent requests on a cold key through stampede guard (§2.3 rule 3)
-    const result = await this.cache.getOrRebuild<CachedStaticTrip[]>(
-      key,
-      'search',
-      async () => {
-        const rows = await this.trips.findCandidates({ ...query, now });
-        return rows.map((row) => toStatic(row));
-      },
-      ttl,
-    );
+    const rebuild = async () => {
+      const rows = await this.trips.findCandidates({ ...query, now });
+      return rows.map((row) => toStatic(row));
+    };
+
+    let result: CachedStaticTrip[];
+    if (typeof this.cache.getOrRebuild === 'function') {
+      result = await this.cache.getOrRebuild<CachedStaticTrip[]>(
+        key,
+        'search',
+        rebuild,
+        ttl,
+      );
+    } else {
+      const cached = await this.cache.get<unknown>(key);
+      if (Array.isArray(cached) && cached.every(isCachedStaticTrip)) {
+        result = cached;
+      } else {
+        result = await rebuild();
+        await this.cache.set(key, result, ttl);
+      }
+    }
 
     if (Array.isArray(result) && result.every(isCachedStaticTrip)) {
       return result;

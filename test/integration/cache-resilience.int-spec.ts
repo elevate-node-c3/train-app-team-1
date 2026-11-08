@@ -1,4 +1,3 @@
-import { Redis } from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CacheMetrics } from '../../libs/common/src/cache/cache-metrics.js';

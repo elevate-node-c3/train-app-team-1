@@ -39,3 +39,4 @@ export function jitteredTtlSeconds(
   const offset = (random() * 2 - 1) * fraction;
   return Math.max(1, Math.round(base * (1 + offset)));
 }
+

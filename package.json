@@ -24,6 +24,7 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --passWithNoTests --config ./vitest.config.e2e.ts",
     "test:int": "vitest run --passWithNoTests --config ./vitest.config.integration.ts",
+    "demo:cache": "tsx scripts/demo-cache-story.ts",
     "keys:generate": "node scripts/generate-dev-keys.mjs",
     "seed:staff": "tsx apps/identity/src/database/seeds/staff-accounts.seed.ts",
     "catalog:seed:search": "tsx apps/catalog/src/database/seeds/search-fixture.seed.ts",
