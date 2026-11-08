@@ -5,7 +5,6 @@ import {
   type EventEnvelope,
   type FareChangedPayloadV1,
   type SeatAvailabilityChangedPayloadV1,
-  type StationChangedPayloadV1,
   type TimetablePublishedPayloadV1,
 } from '@app/contracts';
 import type {

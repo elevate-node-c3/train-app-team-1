@@ -141,7 +141,7 @@ export class RedisClientService
   }
 
   async check(): Promise<{ ready: boolean; message?: string }> {
-    if (!this.client) {
+    if (!this.client || !this.connected) {
       return {
         ready: false,
         message: this.configured

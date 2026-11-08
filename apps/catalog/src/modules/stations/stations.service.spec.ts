@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CacheAsideService, RedisClientService } from '@app/common';
+import { CacheAsideService } from '@app/common';
 
 import { StationsRepository } from './stations.repository.js';
 import { StationsService, STATIONS_CACHE_KEY } from './stations.service.js';
