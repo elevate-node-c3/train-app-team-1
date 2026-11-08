@@ -21,9 +21,7 @@ import { NationalityRepository } from '../repositories/nationality.repository.js
 import { PassengerRepository } from '../repositories/passenger.repository.js';
 import { ProfileTypeRepository } from '../repositories/profile-type.repository.js';
 import { SessionIssuer } from '../session.issuer.js';
-import { validateFullName } from '../validators/full-name.validator.js';
-import { validateNationalId } from '../validators/national-id.validator.js';
-import { normalizePhone } from '../validators/phone.validator.js';
+import { validateProfile } from '../validators/profile-validation.js';
 
 export interface CompleteProfileCommand extends CompleteProfileRequestDto {
   accountId: string;
@@ -67,32 +65,24 @@ export class ProfileService {
 
     const now = new Date();
 
-    // 1. Validate fields
-    const nameResult = validateFullName(command.fullName);
-    const phoneResult = normalizePhone(command.phoneNumber);
-    const nidResult = validateNationalId(command.nationalId, now);
-
+    // 1. Validate references and fields in one pass (BR-10, BR-57)
     const [typeRecord, nationalityRecord] = await Promise.all([
       this.profileTypes.findByCode(command.profileType),
       this.nationalities.findByCode(command.nationality),
     ]);
 
-    // Check errors in order
-    if (!nameResult.valid) {
-      throw new AuthError(ErrorCode.INVALID_FULL_NAME);
-    }
-    if (!phoneResult.valid) {
-      throw new AuthError(ErrorCode.INVALID_PHONE_FORMAT);
-    }
-    if (!nidResult.valid) {
-      // Pick the first NID error code
-      throw new AuthError(nidResult.errors[0]);
-    }
-    if (!typeRecord) {
-      throw new AuthError(ErrorCode.INVALID_PROFILE_TYPE);
-    }
-    if (!nationalityRecord) {
-      throw new AuthError(ErrorCode.INVALID_NATIONALITY);
+    const validation = validateProfile(command, now, {
+      profileTypeExists: typeRecord !== null,
+      nationalityExists: nationalityRecord !== null,
+    });
+
+    if (validation.details.length > 0) {
+      throw new AuthError(
+        ErrorCode.VALIDATION_ERROR,
+        undefined,
+        undefined,
+        validation.details,
+      );
     }
 
     try {
@@ -119,13 +109,13 @@ export class ProfileService {
           await this.passengers.findByAccountAndNationalId(
             ctx,
             account.id,
-            nidResult.normalized,
+            validation.normalizedNationalId,
           );
 
         if (existingPassenger) {
           // Adopt existing passenger as self
           existingPassenger.isSelf = true;
-          existingPassenger.fullName = nameResult.normalized;
+          existingPassenger.fullName = validation.normalizedFullName;
           existingPassenger.profileType = command.profileType;
           existingPassenger.nationality = command.nationality;
           existingPassenger.updatedAt = now;
@@ -135,8 +125,8 @@ export class ProfileService {
           const passenger = new PassengerEntity();
           passenger.id = randomUUID();
           passenger.accountId = account.id;
-          passenger.fullName = nameResult.normalized;
-          passenger.nationalId = nidResult.normalized;
+          passenger.fullName = validation.normalizedFullName;
+          passenger.nationalId = validation.normalizedNationalId;
           passenger.profileType = command.profileType;
           passenger.nationality = command.nationality;
           passenger.isSelf = true;
@@ -146,9 +136,9 @@ export class ProfileService {
         }
 
         // Update account to bookable
-        account.fullName = nameResult.normalized;
-        account.phoneNumber = phoneResult.normalized;
-        account.nationalId = nidResult.normalized;
+        account.fullName = validation.normalizedFullName;
+        account.phoneNumber = validation.canonicalPhone;
+        account.nationalId = validation.normalizedNationalId;
         account.profileType = command.profileType;
         account.nationality = command.nationality;
         account.bookable = true;
@@ -163,7 +153,7 @@ export class ProfileService {
             correlationId: command.correlationId,
             occurredAt: now,
             accountId: account.id,
-            fullName: nameResult.normalized,
+            fullName: validation.normalizedFullName,
           }),
         );
 

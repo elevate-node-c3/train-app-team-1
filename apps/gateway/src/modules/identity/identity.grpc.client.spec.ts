@@ -452,6 +452,51 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     });
   });
 
+  it('restores field-level validation details from the transport (BR-57)', async () => {
+    const details = [
+      {
+        field: 'fullName',
+        rejectedValue: 'Single',
+        issue: 'is not a valid full name',
+        action: 'Enter a valid full name',
+      },
+      {
+        field: 'phoneNumber',
+        rejectedValue: '123',
+        issue: 'is not a valid Egyptian mobile number',
+        action: 'Enter an 11-digit Egyptian mobile number',
+      },
+    ];
+
+    const { adapter } = adapterWith(() => ({
+      error: serviceError(
+        grpc.status.INVALID_ARGUMENT,
+        JSON.stringify({
+          code: ErrorCode.VALIDATION_ERROR,
+          details,
+        }),
+      ),
+    }));
+
+    const error = await httpErrorOf(
+      adapter.completeProfile({
+        accountId: 'acc-1',
+        fullName: 'Single',
+        phoneNumber: '123',
+        nationalId: '123',
+        profileType: 'Regular',
+        nationality: 'Egyptian',
+      }),
+    );
+
+    expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    expect(error.getResponse()).toEqual({
+      code: ErrorCode.VALIDATION_ERROR,
+      details,
+      message: details,
+    });
+  });
+
   it.each([
     [ErrorCode.INVALID_CREDENTIALS, HttpStatus.UNAUTHORIZED],
     [ErrorCode.EMAIL_ALREADY_REGISTERED, HttpStatus.CONFLICT],

@@ -107,34 +107,68 @@ describe('ProfileService', () => {
       ).rejects.toMatchObject({ code: ErrorCode.UNAUTHORIZED });
     });
 
-    it('rejects invalid full name with INVALID_FULL_NAME', async () => {
-      await expect(
-        service.completeProfile({ ...validCommand, fullName: 'SingleName' }),
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_FULL_NAME });
+    it('rejects invalid full name naming the field', async () => {
+      const error = await service
+        .completeProfile({ ...validCommand, fullName: 'SingleName' })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(error.details.some((d: any) => d.field === 'fullName')).toBe(true);
     });
 
-    it('rejects invalid phone format with INVALID_PHONE_FORMAT', async () => {
-      await expect(
-        service.completeProfile({ ...validCommand, phoneNumber: '12345' }),
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_PHONE_FORMAT });
+    it('rejects invalid phone format naming the field', async () => {
+      const error = await service
+        .completeProfile({ ...validCommand, phoneNumber: '12345' })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(error.details.some((d: any) => d.field === 'phoneNumber')).toBe(true);
     });
 
-    it('rejects invalid NID with length error', async () => {
-      await expect(
-        service.completeProfile({ ...validCommand, nationalId: '26582264865' }),
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_NATIONAL_ID_LENGTH });
+    it('rejects invalid NID naming the field and length issue', async () => {
+      const error = await service
+        .completeProfile({ ...validCommand, nationalId: '26582264865' })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(
+        error.details.some(
+          (d: any) => d.field === 'nationalId' && d.issue.includes('14 digits'),
+        ),
+      ).toBe(true);
     });
 
-    it('rejects invalid profile type with INVALID_PROFILE_TYPE', async () => {
-      await expect(
-        service.completeProfile({ ...validCommand, profileType: 'VIP' }),
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_PROFILE_TYPE });
+    it('rejects invalid profile type naming the field', async () => {
+      const error = await service
+        .completeProfile({ ...validCommand, profileType: 'VIP' })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(error.details.some((d: any) => d.field === 'profileType')).toBe(true);
     });
 
-    it('rejects invalid nationality with INVALID_NATIONALITY', async () => {
-      await expect(
-        service.completeProfile({ ...validCommand, nationality: 'French' }),
-      ).rejects.toMatchObject({ code: ErrorCode.INVALID_NATIONALITY });
+    it('rejects invalid nationality naming the field', async () => {
+      const error = await service
+        .completeProfile({ ...validCommand, nationality: 'French' })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(error.details.some((d: any) => d.field === 'nationality')).toBe(true);
+    });
+
+    it('collects all failures across name, phone, NID and lookups in a single refusal (BR-57)', async () => {
+      const error = await service
+        .completeProfile({
+          ...validCommand,
+          fullName: 'Single',
+          phoneNumber: 'not-a-phone',
+          nationalId: '26582264865',
+          profileType: 'VIP',
+          nationality: 'French',
+        })
+        .catch((err) => err);
+      expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
+      const fields = error.details.map((d: any) => d.field);
+      expect(fields).toContain('fullName');
+      expect(fields).toContain('phoneNumber');
+      expect(fields).toContain('nationalId');
+      expect(fields).toContain('profileType');
+      expect(fields).toContain('nationality');
     });
 
     it('rejects unverified account with EMAIL_NOT_VERIFIED', async () => {

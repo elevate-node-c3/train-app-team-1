@@ -13,6 +13,8 @@ import * as grpc from '@grpc/grpc-js';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
+  isValidationErrorDetail,
+  type ValidationErrorDetail,
   type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
@@ -220,6 +222,9 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       return new HttpException(
         {
           code: explicit.code,
+          ...(explicit.details && explicit.details.length > 0
+            ? { details: explicit.details, message: explicit.details }
+            : {}),
           ...(explicit.retryAfterSeconds
             ? { retryAfterSeconds: explicit.retryAfterSeconds }
             : {}),
@@ -242,7 +247,11 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
 
   private parseBusinessError(
     details: unknown,
-  ): { code: ErrorCode; retryAfterSeconds?: number } | null {
+  ): {
+    code: ErrorCode;
+    retryAfterSeconds?: number;
+    details?: ValidationErrorDetail[];
+  } | null {
     if (typeof details !== 'string' || details.length === 0) return null;
     try {
       const parsed: unknown = JSON.parse(details);
@@ -255,10 +264,16 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
         return null;
       }
       const retry = record.retryAfterSeconds;
+      const validationDetails = Array.isArray(record.details)
+        ? (record.details.filter(isValidationErrorDetail) as ValidationErrorDetail[])
+        : undefined;
       return {
         code: record.code as ErrorCode,
         ...(typeof retry === 'number' && Number.isFinite(retry) && retry > 0
           ? { retryAfterSeconds: Math.ceil(retry) }
+          : {}),
+        ...(validationDetails && validationDetails.length > 0
+          ? { details: validationDetails }
           : {}),
       };
     } catch {

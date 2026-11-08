@@ -94,6 +94,9 @@ function toRpcException(error: unknown): unknown {
       ...(error.retryAfterSeconds
         ? { retryAfterSeconds: error.retryAfterSeconds }
         : {}),
+      ...(error.details && error.details.length > 0
+        ? { details: error.details }
+        : {}),
     }),
     message: error.message,
   });

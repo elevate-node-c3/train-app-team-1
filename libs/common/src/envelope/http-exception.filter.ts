@@ -166,7 +166,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const resObj = response as Record<string, unknown>;
-    const messages = resObj.message;
+    const messages = resObj.message ?? resObj.details;
 
     if (!messages) {
       return undefined;
