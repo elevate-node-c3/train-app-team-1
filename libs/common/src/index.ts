@@ -19,6 +19,7 @@ export * from './auth/current-caller.decorator.js';
 export * from './caller/caller-metadata.constants.js';
 export * from './caller/caller-metadata.middleware.js';
 export * from './cache/cache-metrics.js';
+export * from './cache/stampede-guard.js';
 export * from './cache/cache-aside.service.js';
 export * from './cache/redis-client.service.js';
 export * from './cache/redis.module.js';
