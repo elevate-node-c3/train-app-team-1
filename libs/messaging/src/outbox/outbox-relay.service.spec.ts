@@ -8,6 +8,7 @@ import {
   relayBackoffMs,
   rowFrom,
 } from '@app/messaging';
+import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
 const EVENT: EventEnvelope = {
@@ -38,6 +39,23 @@ function fakeCls(): any {
     set: vi.fn(),
   };
 }
+
+// Must wrap the whole body: the interval is read from the env on every tick.
+async function withPollInterval(
+  ms: number,
+  work: () => Promise<void>,
+): Promise<void> {
+  const previous = process.env.OUTBOX_POLL_INTERVAL_MS;
+  process.env.OUTBOX_POLL_INTERVAL_MS = String(ms);
+  try {
+    await work();
+  } finally {
+    if (previous === undefined) delete process.env.OUTBOX_POLL_INTERVAL_MS;
+    else process.env.OUTBOX_POLL_INTERVAL_MS = previous;
+  }
+}
+
+const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('Outbox relay (ADR-0001, ADR-0002)', () => {
   it('claims rows with FOR UPDATE SKIP LOCKED', () => {
@@ -80,6 +98,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       outbox as any,
       publisher as any,
       fakeCls(),
+      new SchemaReadinessGate(),
     );
 
     await expect(relay.runOnce()).resolves.toBe(1);
@@ -116,6 +135,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       outbox as any,
       publisher as any,
       fakeCls(),
+      new SchemaReadinessGate(),
     );
 
     await expect(relay.runOnce()).resolves.toBe(0);
@@ -152,6 +172,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
         },
       } as any,
       fakeCls(),
+      new SchemaReadinessGate(),
     );
 
     await relay.runOnce();
@@ -162,6 +183,75 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       (EVENT.payload as { code: string }).code,
     );
     expect(stored).not.toContain('user@example.com');
+  });
+
+  // Guards the bug where the relay's hook ran before the migration's and the
+  // first CLAIM hit a table that did not exist yet.
+  it('does not claim rows until the schema is settled', async () => {
+    const gate = new SchemaReadinessGate();
+    gate.expectMigrations();
+
+    const claimBatch = vi.fn(async () => []);
+
+    await withPollInterval(5, async () => {
+      const relay = new OutboxRelayService(
+        {
+          withTransaction: async <T>(
+            work: (c: TransactionContext) => Promise<T>,
+          ) => work(ctx()),
+        },
+        { claimBatch, markPublished: vi.fn(), recordFailure: vi.fn() } as any,
+        { publishConfirmed: vi.fn() } as any,
+        fakeCls(),
+        gate,
+      );
+
+      try {
+        relay.onApplicationBootstrap();
+        await tick(40); // Several poll intervals.
+        expect(claimBatch).not.toHaveBeenCalled();
+
+        gate.markSettled();
+        await tick(40);
+        expect(claimBatch).toHaveBeenCalled();
+      } finally {
+        await relay.beforeApplicationShutdown();
+      }
+    });
+  });
+
+  // A failed migration opens the gate too, so the loop must survive a throw
+  // rather than die on it.
+  it('keeps ticking after a tick throws', async () => {
+    const gate = new SchemaReadinessGate();
+    gate.expectMigrations();
+    gate.markSettled();
+
+    const claimBatch = vi.fn(async () => {
+      throw new Error('relation "outbox_event" does not exist');
+    });
+
+    await withPollInterval(5, async () => {
+      const relay = new OutboxRelayService(
+        {
+          withTransaction: async <T>(
+            work: (c: TransactionContext) => Promise<T>,
+          ) => work(ctx()),
+        },
+        { claimBatch, markPublished: vi.fn(), recordFailure: vi.fn() } as any,
+        { publishConfirmed: vi.fn() } as any,
+        fakeCls(),
+        gate,
+      );
+
+      try {
+        relay.onApplicationBootstrap();
+        await tick(40);
+        expect(claimBatch.mock.calls.length).toBeGreaterThan(1);
+      } finally {
+        await relay.beforeApplicationShutdown();
+      }
+    });
   });
 
   it('round-trips an envelope through the row mapping', () => {
@@ -194,6 +284,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       outbox as any,
       publisher as any,
       fakeCls(),
+      new SchemaReadinessGate(),
     );
     expect(outbox.claimBatch).not.toHaveBeenCalled();
     expect(publisher.publishConfirmed).not.toHaveBeenCalled();

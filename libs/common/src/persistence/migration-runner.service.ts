@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DataSourceInitializer } from './data-source-initializer.js';
+import { SchemaReadinessGate } from './schema-readiness.gate.js';
 
 /**
  * Lock key derived from the database name, so the seven services never block
@@ -12,7 +13,14 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MigrationRunnerService.name);
   private completed = false;
 
-  constructor(private readonly initializer: DataSourceInitializer) {}
+  // Closing the gate in the constructor, not at bootstrap: every provider is
+  // built before the first hook, so a relay whose hook runs earlier still waits.
+  constructor(
+    private readonly initializer: DataSourceInitializer,
+    private readonly schema: SchemaReadinessGate,
+  ) {
+    this.schema.expectMigrations();
+  }
 
   /** True once migrations have been applied in this process. */
   get hasCompleted(): boolean {
@@ -32,6 +40,7 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
    */
   async onApplicationBootstrap(): Promise<void> {
     if (!this.initializer.isConfigured) {
+      this.schema.markSettled();
       return;
     }
     try {
@@ -41,6 +50,9 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
         { err: error },
         'Migrations did not run; the service is up but its schema may be stale',
       );
+    } finally {
+      // Open the gate even on failure, or waiters stall forever.
+      this.schema.markSettled();
     }
   }
 

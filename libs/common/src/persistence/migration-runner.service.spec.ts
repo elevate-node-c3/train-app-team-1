@@ -3,6 +3,7 @@ import {
   createTypeOrmAsyncOptions,
   DataSourceInitializer,
   MigrationRunnerService,
+  SchemaReadinessGate,
 } from '@app/common';
 import type { DataSource } from 'typeorm';
 
@@ -173,6 +174,7 @@ describe('Migration infrastructure (§2.1)', () => {
       const { dataSource, runner } = fakeDataSource({});
       const service = new MigrationRunnerService(
         new DataSourceInitializer(dataSource),
+        new SchemaReadinessGate(),
       );
 
       await service.run();
@@ -197,6 +199,7 @@ describe('Migration infrastructure (§2.1)', () => {
       });
       const service = new MigrationRunnerService(
         new DataSourceInitializer(dataSource),
+        new SchemaReadinessGate(),
       );
 
       await expect(service.run()).rejects.toThrow('relation already exists');
@@ -216,6 +219,7 @@ describe('Migration infrastructure (§2.1)', () => {
       });
       const service = new MigrationRunnerService(
         new DataSourceInitializer(dataSource),
+        new SchemaReadinessGate(),
       );
 
       await expect(service.run()).rejects.toThrow('the real problem');
@@ -225,6 +229,7 @@ describe('Migration infrastructure (§2.1)', () => {
       const { dataSource, runner } = fakeDataSource({ migrations: [] });
       const service = new MigrationRunnerService(
         new DataSourceInitializer(dataSource),
+        new SchemaReadinessGate(),
       );
 
       await service.run();
@@ -244,6 +249,7 @@ describe('Migration infrastructure (§2.1)', () => {
       } as unknown as DataSource;
       const service = new MigrationRunnerService(
         new DataSourceInitializer(dataSource),
+        new SchemaReadinessGate(),
       );
 
       await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
@@ -251,8 +257,83 @@ describe('Migration infrastructure (§2.1)', () => {
     });
 
     it('does nothing at bootstrap in a service with no database', async () => {
-      const service = new MigrationRunnerService(new DataSourceInitializer());
+      const service = new MigrationRunnerService(
+        new DataSourceInitializer(),
+        new SchemaReadinessGate(),
+      );
       await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('SchemaReadinessGate', () => {
+    // Has it opened *by now*? Awaiting it directly would hang when closed.
+    async function isOpen(gate: SchemaReadinessGate): Promise<boolean> {
+      let open = false;
+      void gate.whenReady.then(() => {
+        open = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      return open;
+    }
+
+    // Default-open, or services with no migrations would wait forever.
+    it('is ready until a migration runner closes it', async () => {
+      await expect(isOpen(new SchemaReadinessGate())).resolves.toBe(true);
+    });
+
+    // Construction, not bootstrap: it must precede every hook.
+    it('is closed by constructing the runner, before any hook runs', async () => {
+      const gate = new SchemaReadinessGate();
+      const { dataSource } = fakeDataSource({});
+
+      new MigrationRunnerService(new DataSourceInitializer(dataSource), gate);
+
+      await expect(isOpen(gate)).resolves.toBe(false);
+    });
+
+    it('opens once migrations have been applied', async () => {
+      const gate = new SchemaReadinessGate();
+      const { dataSource } = fakeDataSource({});
+      const service = new MigrationRunnerService(
+        new DataSourceInitializer(dataSource),
+        gate,
+      );
+
+      await service.onApplicationBootstrap();
+
+      await expect(isOpen(gate)).resolves.toBe(true);
+      expect(service.hasCompleted).toBe(true);
+    });
+
+    // A stale schema is a better signal than a waiter stalled for good.
+    it('opens even when migrating fails', async () => {
+      const gate = new SchemaReadinessGate();
+      const { dataSource } = fakeDataSource({
+        runMigrations: async () => {
+          throw new Error('relation already exists');
+        },
+      });
+      const service = new MigrationRunnerService(
+        new DataSourceInitializer(dataSource),
+        gate,
+      );
+
+      await service.onApplicationBootstrap();
+
+      await expect(isOpen(gate)).resolves.toBe(true);
+      expect(service.hasCompleted).toBe(false);
+    });
+
+    it('opens in a service that has a runner but no database', async () => {
+      const gate = new SchemaReadinessGate();
+      const service = new MigrationRunnerService(
+        new DataSourceInitializer(),
+        gate,
+      );
+
+      await service.onApplicationBootstrap();
+
+      await expect(isOpen(gate)).resolves.toBe(true);
     });
   });
 
