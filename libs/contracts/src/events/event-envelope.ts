@@ -1,10 +1,7 @@
 /**
- * The shape every domain event travels in (§10.C).
- *
- * `EventLanguage` is duplicated from `@app/common`'s `SupportedLanguage`
- * rather than imported: `@app/common` imports `@app/contracts`, so the reverse
- * edge would be a dependency cycle. `test/unit/event-envelope.spec.ts` asserts
- * the two stay mutually assignable, so they cannot drift in silence.
+ * The shape every domain event travels in (§10.C). `EventLanguage` duplicates
+ * `@app/common`'s `SupportedLanguage` to avoid a dependency cycle; a spec
+ * asserts the two stay mutually assignable.
  */
 export type EventLanguage = 'ar' | 'en';
 
@@ -12,32 +9,21 @@ export interface EventEnvelope<
   TType extends string = string,
   TPayload = unknown,
 > {
-  /** Globally unique. Minted in the producer's transaction and used by every
-   *  consumer as its idempotency key, so it must never be derived from the
-   *  payload — two genuinely distinct events would collide and one would be
-   *  silently deduplicated away. */
+  /** Every consumer's idempotency key, so never derive it from the payload. */
   id: string;
   type: TType;
-  /** Integer, bumped only for a breaking payload change. An additive field
-   *  does not bump it: consumers check the fields they need rather than
-   *  rejecting unknown ones. */
+  /** Bumped only for a breaking payload change, never for an additive field. */
   version: number;
-  /** ISO-8601 UTC, stamped inside the producer's transaction rather than at
-   *  publish time, so a latency measurement starts when the thing happened. */
+  /** ISO-8601 UTC, stamped in the producer's transaction, not at publish time. */
   occurredAt: string;
-  /** Carried as a first-class field, not only as a message header: an async
-   *  hop is exactly where CLS does not reach and exactly where a request most
-   *  needs tracing. */
+  /** A field, not just a header: CLS does not survive an async hop. */
   correlationId: string;
   /** Producing service name, e.g. 'identity'. */
   producer: string;
   payload: TPayload;
 }
 
-/**
- * Drives the contract test's one-field-at-a-time deletion sweep. Shrinking
- * this list is a contract change and shows up in review.
- */
+/** Drives the contract test's deletion sweep. Shrinking it is a contract change. */
 export const ENVELOPE_REQUIRED_KEYS = [
   'id',
   'type',
@@ -49,10 +35,9 @@ export const ENVELOPE_REQUIRED_KEYS = [
 ] as const satisfies readonly (keyof EventEnvelope)[];
 
 /**
- * A structural check on the envelope only — it says nothing about the payload,
- * which is each consumer's own parser's job. Deliberately not `class-validator`:
- * a consumer needs to tell an unreadable envelope apart from an unknown
- * version, and those are two different dead-letter reasons.
+ * The envelope only; the payload is each consumer's parser's job. Not
+ * `class-validator`, because an unreadable envelope and an unknown version are
+ * two different dead-letter reasons.
  */
 export function isEventEnvelope(value: unknown): value is EventEnvelope {
   if (typeof value !== 'object' || value === null) {

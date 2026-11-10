@@ -1,11 +1,8 @@
 /**
- * arithmetic, as executable constants.
- *
- * `pollIntervalMs + attempts × handlerTimeoutMs + sum(retryDelays)` is the
- * worst case from issuance to an accepted email. Publish/confirm/transit is an
- * estimate, not a bound, so it is deliberately outside the inequality and
- * absorbed by the headroom. A broker outage moves the clock start to recovery
- * and is a separate availability statement.
+ * The delivery budget, as executable constants. The worst case from issuance to
+ * an accepted email is `pollIntervalMs + attempts × handlerTimeoutMs +
+ * sum(retryDelays)`. Publish, confirm and transit are estimates, not bounds, so
+ * they sit outside the inequality and are absorbed by the headroom.
  */
 export const BUDGET_MS = 30_000;
 
@@ -37,13 +34,9 @@ export function worstCaseDeliveryMs(config: DeliveryBudgetConfig): number {
 }
 
 /**
- * The most the relay may wait between polls, given the documented consumer
- * policy, less one millisecond for the strict `<` below.
- *
- * Identity owns the poll interval, and this is the only part of the budget it
- * can check locally: the attempts and the delays are notification's variables
- * and never reach identity's process. Derived rather than written down, so
- * retuning the consumer moves this bound with it.
+ * The most the relay may wait between polls, less 1ms for the strict `<`. It is
+ * the only part of the budget identity can check locally. Derived, not written
+ * down, so retuning the consumer moves this bound with it.
  */
 export const MAX_RELAY_POLL_INTERVAL_MS =
   BUDGET_MS -
@@ -54,11 +47,7 @@ export const MAX_RELAY_POLL_INTERVAL_MS =
   }) -
   1;
 
-/**
- * Throws when the configured worst case no longer fits. The `<` is
- * deliberate: equality would leave zero headroom for publish, confirm and
- * transit, which the arithmetic does not bound.
- */
+/** Strict `<`: equality leaves no headroom for publish, confirm and transit. */
 export function assertDeliveryBudget(config: DeliveryBudgetConfig): void {
   const worst = worstCaseDeliveryMs(config);
   if (worst >= BUDGET_MS) {
