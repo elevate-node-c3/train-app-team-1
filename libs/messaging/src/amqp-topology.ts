@@ -1,21 +1,11 @@
 import type { Channel } from 'amqplib';
 
 /**
- * The AMQP topology as data, so it can be asserted and reviewed rather than
- * discovered in a management console.
- *
- * Ownership is the load-bearing rule:
- * - the producer declares `train.events` and nothing else;
- * - a consumer declares its retry/requeue/DLX exchanges and its own queues.
- *
- * Declaring a consumer's queue on the producer's side would mean the producer
- * knows its consumers, which is exactly the coupling the backbone removes.
- *
- * A consumer also re-asserts `train.events` with the producer's exact
- * parameters. The exchange's definition is still the producer's; the duplicate
- * assertion is what makes startup order irrelevant, because binding to an
- * exchange that does not exist yet fails with 404 and leaves the consumer
- * subscribed to nothing.
+ * The AMQP topology as data, so it can be reviewed rather than discovered in a
+ * console. Ownership is load-bearing: the producer declares `train.events` and
+ * nothing else, a consumer declares its own exchanges and queues. Consumers
+ * re-assert `train.events` identically, so startup order does not matter --
+ * binding to a missing exchange 404s and subscribes them to nothing.
  */
 export const EVENTS_EXCHANGE = 'train.events';
 export const RETRY_EXCHANGE = 'train.events.retry';
@@ -85,17 +75,13 @@ export interface ConsumerTopologyConfig {
   queue: string;
   /** The event's topic routing key (also the envelope `type`). */
   eventType: string;
-  /** One retry queue per delay; the TTL is fixed per queue by design. */
+  /** One retry queue per delay: a queue's TTL is fixed. */
   retryDelaysMs: readonly number[];
 }
 
 /**
- * The consumer-owned half of the topology.
- *
- * The requeue exchange is `direct` and keyed on the main queue's name. A topic
- * redelivery on the original routing key would fan this consumer's retry out to
- * every other consumer later bound to that key, so each consumer would see a
- * retry it did not ask for.
+ * The consumer-owned half. The requeue exchange is `direct`, keyed on the queue
+ * name: a topic redelivery would fan this consumer's retry out to every other.
  */
 export function consumerTopology(
   config: ConsumerTopologyConfig,
@@ -118,9 +104,8 @@ export function consumerTopology(
 
   return {
     exchanges: [
-      // Idempotent and identical to the producer's declaration. Without it, a
-      // consumer that starts first (e.g. `docker compose up`) cannot bind and
-      // never retries, so it would miss every event until manually restarted.
+      // Identical to the producer's. Without it a consumer that starts first
+      // cannot bind, and misses every event until restarted.
       DURABLE_EXCHANGE(EVENTS_EXCHANGE, 'topic'),
       DURABLE_EXCHANGE(RETRY_EXCHANGE, 'direct'),
       DURABLE_EXCHANGE(REQUEUE_EXCHANGE, 'direct'),
@@ -147,11 +132,7 @@ export function deadLetterQueueName(queue: string): string {
   return `${queue}.dlq`;
 }
 
-/**
- * Asserts every declaration idempotently. AMQP asserts are declarative, so
- * running this on every boot is safe and makes a rebuilt broker identical to
- * the one a reviewer saw.
- */
+/** Idempotent: AMQP asserts are declarative, so every boot can run this. */
 export async function declareTopology(
   channel: Pick<Channel, 'assertExchange' | 'assertQueue' | 'bindQueue'>,
   topology: TopologyDeclaration,
