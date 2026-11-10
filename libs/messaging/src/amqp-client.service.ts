@@ -17,14 +17,9 @@ export type AmqpHealth = { status: 'ready' | 'not_ready'; message?: string };
 type Closeable = amqp.ChannelModel | amqp.Channel | amqp.ConfirmChannel;
 
 /**
- * Owns the connection and both channels.
- *
- * Two channels on purpose: a rejected publish cancels every consumer on its
- * channel, so publishers get the confirm channel and consumers the plain one.
- *
- * Closing in `onApplicationShutdown` (Nest's last hook) rather than
- * `onModuleDestroy` (its first) is what lets drains in
- * `beforeApplicationShutdown` land their acks.
+ * Owns the connection and both channels. Two channels because a rejected publish
+ * cancels every consumer on its channel. Closes in `onApplicationShutdown`,
+ * Nest's last hook, so drains can still land their acks.
  */
 @Injectable()
 export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
@@ -38,12 +33,8 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
   private readonly reconnectListeners = new Set<AmqpReconnectListener>();
   private readonly livenessProbes = new Set<() => AmqpLiveness>();
 
-  /**
-   * Whether a successful open must be announced. False until the first connect
-   * resolves, because consumers subscribe in `onApplicationBootstrap` and would
-   * otherwise subscribe twice. Explicit rather than inferred from Nest's hook
-   * order, which this library has already been wrong about once.
-   */
+  // False until the first connect resolves, or consumers that subscribe at
+  // bootstrap would subscribe twice.
   private announceOpens = false;
 
   /** Capped and repeated, so an hour-long outage still recovers unattended. */
@@ -56,8 +47,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     }
     await this.connect(url).catch((error: unknown) => {
       this.logger.warn(`AMQP connection failed at startup: ${messageOf(error)}`);
-      // A consumer's bootstrap subscription fails too, so the eventual dial has
-      // to be announced. Compose gates on a healthy broker; this is depth.
+      // The bootstrap subscription failed too, so the eventual dial must announce.
       this.announceOpens = true;
       this.scheduleReconnect();
     });
@@ -76,9 +66,8 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private async open(url: string): Promise<void> {
-    // A channel can die while its connection lives, which routes here. Dialing
-    // on top of the remains leaks it, and its listeners stay armed to null out
-    // the state its replacement uses.
+    // A channel can die while its connection lives. Dialing on top of the
+    // remains leaks it and leaves its listeners armed.
     await this.teardown();
 
     const connection = await amqp.connect(url);
@@ -86,8 +75,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     this.connection = connection;
     this.channel = channel;
 
-    // Identity-guarded: a close from an already-replaced connection must not
-    // clear its successor's channel.
+    // Identity-guarded: a replaced connection must not clear its successor's.
     const forgetConnection = (): void => {
       if (this.connection !== connection) {
         return;
@@ -95,8 +83,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       this.connection = null;
       this.channel = null;
       this.confirmChannel = null;
-      // Self-heal: a consuming-only service makes no outbound calls after
-      // bootstrap and has no healthcheck polling it, so nothing else would.
+      // Self-heal: a consuming-only service has nothing else to trigger a dial.
       this.scheduleReconnect();
     };
     connection.on('error', forgetConnection);
@@ -172,10 +159,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     this.reconnectTimer.unref?.();
   }
 
-  /**
-   * Subscribes to connection replacement. The returned unsubscribe must be
-   * called while draining, or a shutdown close reads as an outage.
-   */
+  /** Unsubscribe while draining, or a shutdown close reads as an outage. */
   onReconnect(listener: AmqpReconnectListener): () => void {
     this.reconnectListeners.add(listener);
     return () => this.reconnectListeners.delete(listener);
@@ -188,8 +172,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
   }
 
   private notifyReconnect(): void {
-    // Deferred: a listener re-attaching calls back into `ensureChannel()` while
-    // `connect()` still holds `this.connecting`.
+    // Deferred: a listener re-attaching re-enters `ensureChannel()` mid-connect.
     for (const listener of this.reconnectListeners) {
       void Promise.resolve()
         .then(listener)
@@ -199,10 +182,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  /**
-   * The plain channel, connecting lazily. Throws rather than returning null, so
-   * a misconfiguration is a readable error instead of a silent no-op.
-   */
+  /** Lazy. Throws rather than returning null, so a misconfiguration is loud. */
   async ensureChannel(): Promise<amqp.Channel> {
     if (!this.channel) {
       await this.connect(this.requireUrl());
@@ -266,8 +246,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       });
       await this.channel.deleteQueue(queue).catch(() => {});
 
-      // Reconnecting above may have replaced the channel a consumer was
-      // subscribed on, and it re-attaches on a later microtask.
+      // A reconnect above may have replaced the channel a consumer was on.
       for (const probe of this.livenessProbes) {
         const liveness = probe();
         if (!liveness.healthy) {

@@ -34,17 +34,11 @@ import {
 } from './processed-event.port.js';
 
 /**
- * The consumer runtime: claim, handle, then ack.
- *
- * A message is acked only once the side effect and its bookkeeping are done;
- * acking on receipt would lose it when the channel closes mid-handling.
- *
- * Draining happens in `beforeApplicationShutdown`, while the channel is still
- * open. `onApplicationShutdown` runs after dispose, when every ack would fail
- * silently and a clean deploy would become duplicate emails.
- *
- * `channel.consume` does not survive its channel, so subscribing only at
- * bootstrap left this service connected and deaf after a broker restart.
+ * The consumer runtime: claim, handle, then ack -- never ack on receipt, or a
+ * channel closing mid-handling loses the message. Drains in
+ * `beforeApplicationShutdown` while the channel is still open, or a clean deploy
+ * becomes duplicate emails. Re-subscribes on reconnect, because
+ * `channel.consume` does not survive its channel.
  */
 @Injectable()
 export class EventConsumerService
@@ -81,9 +75,8 @@ export class EventConsumerService
   }
 
   async beforeApplicationShutdown(): Promise<void> {
-    // Before cancelling: a channel closing on the way out looks exactly like an
-    // outage, and re-attaching would consume messages this process can no
-    // longer ack.
+    // Before cancelling: a shutdown close looks like an outage, and re-attaching
+    // would consume messages this process can no longer ack.
     this.draining = true;
     this.unsubscribeReconnect?.();
     this.unsubscribeReconnect = null;
@@ -106,8 +99,7 @@ export class EventConsumerService
       try {
         await this.startSubscription(subscription);
       } catch (error: unknown) {
-        // Degrade, don't crash: the liveness probe reports the missing queue
-        // and the next connection replacement retries this.
+        // Degrade, don't crash: the liveness probe reports it and a reconnect retries.
         this.logger.error(
           `Consumer for ${subscription.eventType} did not start: ${messageOf(
             error,
@@ -136,9 +128,8 @@ export class EventConsumerService
       subscription.queueName,
       (message) => {
         if (!message) return;
-        // The delivering channel is passed down rather than re-resolved: a
-        // delivery tag is scoped to its channel, so after a reconnect an ack
-        // on the replacement addresses nothing and the broker redelivers.
+        // Pass the delivering channel down: a delivery tag is scoped to its
+        // channel, so an ack on a replacement addresses nothing.
         this.track(this.handleMessage(subscription, message, channel));
       },
       { noAck: false },
@@ -150,13 +141,10 @@ export class EventConsumerService
     );
   }
 
-  /**
-   * Chained rather than guarded by a flag: a skipped attempt would leave the
-   * service deaf until the next outage, which may never come.
-   */
+  /** Chained, not flag-guarded: a skipped attempt leaves the service deaf. */
   private reattach(): Promise<void> {
     const restart = (): Promise<void> => this.restart();
-    // Both arms, so one failed attempt does not poison the chain.
+    // Both arms, so one failure does not poison the chain.
     this.restarting = this.restarting.then(restart, restart);
     return this.restarting;
   }
@@ -165,7 +153,7 @@ export class EventConsumerService
     if (this.draining) {
       return;
     }
-    // The old tags died with the old channel; cancelling them would throw.
+    // The old tags died with the old channel; cancelling would throw.
     this.consumers.clear();
     this.logger.warn('AMQP connection was replaced; re-attaching consumers');
     await this.startAll();
@@ -195,10 +183,8 @@ export class EventConsumerService
   }
 
   /**
-   * Public so a unit test can drive one delivery without a channel callback.
-   *
-   * `channel` must be the one the message arrived on — resolving it here is how
-   * an ack ends up on a channel that never saw the delivery tag.
+   * Public so a test can drive one delivery. `channel` must be the one the
+   * message arrived on, or the ack addresses a tag that channel never saw.
    */
   async handleMessage(
     subscription: EventSubscription,
@@ -245,7 +231,7 @@ export class EventConsumerService
 
     try {
       const result = await this.cls.run(() => {
-        // An async hop is exactly where CLS does not reach on its own.
+        // CLS does not survive an async hop on its own.
         this.cls.set(CORRELATION_ID_KEY, envelope.correlationId);
         return withTimeout(
           subscription.handler.handle(envelope, attempt as number),
