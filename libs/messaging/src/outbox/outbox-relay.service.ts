@@ -12,6 +12,7 @@ import {
   UNIT_OF_WORK,
   type UnitOfWorkPort,
 } from '@app/common/persistence/unit-of-work.port.js';
+import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 import type { EventEnvelope } from '@app/contracts';
 import { envelopeOf, type OutboxRow } from './outbox-row.js';
 import { relayBackoffMs } from './backoff.js';
@@ -48,6 +49,7 @@ export class OutboxRelayService
     private readonly outbox: TypeOrmOutboxRepository,
     private readonly publisher: EventPublisherService,
     private readonly cls: ClsService,
+    private readonly schema: SchemaReadinessGate,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -127,6 +129,10 @@ export class OutboxRelayService
   }
 
   private async loop(): Promise<void> {
+    // Don't CLAIM before migrations have created the table. Always settles, so
+    // this cannot wedge shutdown.
+    await this.schema.whenReady;
+
     while (!this.stopping) {
       try {
         await this.runOnce();
