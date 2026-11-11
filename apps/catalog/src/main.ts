@@ -1,6 +1,6 @@
-import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { Logger } from 'nestjs-pino';
 import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
 import {
   CATALOG_PACKAGE_NAME,
@@ -16,8 +16,6 @@ validateEnv(commonEnvSchema, process.env, 'catalog');
 
 async function bootstrap() {
   const app = await NestFactory.create(CatalogModule, { bufferLogs: true });
-
-  warnIfStripeFloorUnconfigured(app.get(Logger));
 
   const grpcPort = process.env.GRPC_PORT || 50051;
   // Both proto packages share one server. Arrays are the supported Nest shape;
@@ -37,6 +35,7 @@ async function bootstrap() {
 
   await app.startAllMicroservices();
   setupApp(app);
+  warnIfStripeFloorUnconfigured(app.get(Logger));
   await app.listen(process.env.PORT ?? 3000);
 }
 
