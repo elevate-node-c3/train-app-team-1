@@ -25,6 +25,32 @@ COPY . .
 # change produces an image that builds and then exits instantly at runtime.
 RUN npx nest build "$APP" && mkdir -p dist/libs/contracts/src/proto && cp libs/contracts/src/proto/*.proto dist/libs/contracts/src/proto/ && test -f "dist/apps/$APP/src/main.js"
 
+# ---- seeder: a one-off that seeds every service's database --------------
+# Not one of the seven services, and never started by `compose up`: the compose
+# service carries `profiles: ["seed"]`, so it runs only when asked for.
+#
+# It needs two apps' output. Both are built with `nest build`, never plain
+# `tsc`: only nest-cli rewrites the `@app/*` path aliases into the relative
+# paths Node can resolve, and `tsc` leaves them as bare specifiers that fail at
+# runtime. nest-cli also sets `deleteOutDir`, so the second app cannot be built
+# over the first -- hence one stage each, merged below.
+FROM deps AS build-identity
+WORKDIR /usr/src/app
+COPY . .
+RUN npx nest build identity
+
+FROM build AS seeder
+WORKDIR /usr/src/app
+# Merges identity's output into catalog's: both emit the shared libs each one
+# imports, and the union is what the seeds need.
+COPY --from=build-identity /usr/src/app/dist ./dist
+RUN test -f dist/apps/catalog/src/database/seeds/catalog.seed.js \
+ && test -f dist/apps/identity/src/database/seeds/staff-accounts.seed.js \
+ && test -f dist/libs/contracts/src/index.js \
+ && ! grep -rq "from '@app/" dist/apps dist/libs
+USER node
+CMD ["node", "scripts/seed-all.mjs"]
+
 # ---- runtime: production dependencies plus the compiled app -------------
 FROM node:24-alpine AS runtime
 WORKDIR /usr/src/app

@@ -339,14 +339,17 @@ function mainLineTimetableStops(): FixtureTimetableStop[] {
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
 export const SEARCH_FIXTURE = {
+  // `governorate.sort_order` is UNIQUE, so these start at 101 to leave room for
+  // the domain seed's own governorates. Both networks can then share one
+  // database, which is what the seeder loads.
   governorates: [
-    { id: IDS.governorates.alexandria, nameAr: 'الإسكندرية', nameEn: 'Alexandria', sortOrder: 1 },
-    { id: IDS.governorates.gharbia, nameAr: 'الغربية', nameEn: 'Gharbia', sortOrder: 2 },
-    { id: IDS.governorates.qalyubia, nameAr: 'القليوبية', nameEn: 'Qalyubia', sortOrder: 3 },
-    { id: IDS.governorates.cairo, nameAr: 'القاهرة', nameEn: 'Cairo', sortOrder: 4 },
-    { id: IDS.governorates.giza, nameAr: 'الجيزة', nameEn: 'Giza', sortOrder: 5 },
-    { id: IDS.governorates.assiut, nameAr: 'أسيوط', nameEn: 'Assiut', sortOrder: 6 },
-    { id: IDS.governorates.aswan, nameAr: 'أسوان', nameEn: 'Aswan', sortOrder: 7 },
+    { id: IDS.governorates.alexandria, nameAr: 'الإسكندرية', nameEn: 'Alexandria', sortOrder: 101 },
+    { id: IDS.governorates.gharbia, nameAr: 'الغربية', nameEn: 'Gharbia', sortOrder: 102 },
+    { id: IDS.governorates.qalyubia, nameAr: 'القليوبية', nameEn: 'Qalyubia', sortOrder: 103 },
+    { id: IDS.governorates.cairo, nameAr: 'القاهرة', nameEn: 'Cairo', sortOrder: 104 },
+    { id: IDS.governorates.giza, nameAr: 'الجيزة', nameEn: 'Giza', sortOrder: 105 },
+    { id: IDS.governorates.assiut, nameAr: 'أسيوط', nameEn: 'Assiut', sortOrder: 106 },
+    { id: IDS.governorates.aswan, nameAr: 'أسوان', nameEn: 'Aswan', sortOrder: 107 },
   ] satisfies FixtureGovernorate[],
 
   cities: [
