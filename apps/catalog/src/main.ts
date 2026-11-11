@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
@@ -8,12 +9,15 @@ import {
   HEALTH_PACKAGE_NAME,
 } from '@app/contracts';
 import { CatalogModule } from './catalog.module.js';
+import { warnIfStripeFloorUnconfigured } from './config/operations-settings.js';
 
 // 1. Fail-fast configuration validation at boot (§2.1)
 validateEnv(commonEnvSchema, process.env, 'catalog');
 
 async function bootstrap() {
   const app = await NestFactory.create(CatalogModule, { bufferLogs: true });
+
+  warnIfStripeFloorUnconfigured(app.get(Logger));
 
   const grpcPort = process.env.GRPC_PORT || 50051;
   // Both proto packages share one server. Arrays are the supported Nest shape;
