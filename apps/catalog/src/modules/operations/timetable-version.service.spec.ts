@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
-import { TimetableVersionService } from './timetable-version.service.js';
+import {
+  isEffectiveVersionOn,
+  pickEffectiveTimetable,
+  TimetableVersionService,
+} from './timetable-version.service.js';
 
 // `entityManagerOf` refuses anything that is not the real adapter's context
 // object, which a unit test has no way to build. Unwrapping is the only thing
@@ -149,5 +153,78 @@ describe('TimetableVersionService', () => {
     const { service } = makeService([]);
 
     expect(await service.latestVersionNumber(TRAIN)).toBe(0);
+  });
+});
+
+describe('isEffectiveVersionOn', () => {
+  /**
+   * The guard must identify one row, not one `(effective_from, version)` pair.
+   * Those two rows cannot both exist under `uq_timetable_train_version`, but a
+   * guard that leans on a constraint to stay single-valued is restating the
+   * database rather than backing it up -- and the cost of being wrong is two
+   * dated trips for one service date.
+   */
+  it('treats exactly one of two rows sharing a version as effective', () => {
+    const first = timetable({
+      id: 'tt-a',
+      version: 1,
+      effectiveFrom: '2026-06-10',
+    });
+    const second = timetable({
+      id: 'tt-b',
+      version: 1,
+      effectiveFrom: '2026-06-10',
+    });
+    const rows = [first, second];
+
+    const answers = rows.map((row) =>
+      isEffectiveVersionOn(row, rows, '2026-06-20'),
+    );
+
+    expect(answers.filter(Boolean)).toHaveLength(1);
+    expect(answers).toEqual([true, false]);
+  });
+
+  it('refuses a candidate another version owns the date', () => {
+    const live = timetable({
+      id: 'tt-v2',
+      version: 2,
+      effectiveFrom: '2026-06-22',
+    });
+    const superseded = timetable({
+      id: 'tt-v1',
+      version: 1,
+      effectiveFrom: '2026-06-10',
+    });
+    const rows = [superseded, live];
+
+    expect(isEffectiveVersionOn(live, rows, '2026-06-22')).toBe(true);
+    expect(isEffectiveVersionOn(superseded, rows, '2026-06-22')).toBe(false);
+    expect(isEffectiveVersionOn(superseded, rows, '2026-06-21')).toBe(true);
+  });
+
+  // Draft and withdrawn ranges are allowed to overlap a live version -- the
+  // exclusion constraint is partial on published -- so neither may ever come
+  // back as the effective row.
+  it('never resolves to a row that is not published', () => {
+    const draft = timetable({
+      id: 'tt-draft',
+      version: 5,
+      effectiveFrom: '2026-06-22',
+      status: 'draft',
+    });
+    const withdrawn = timetable({
+      id: 'tt-withdrawn',
+      version: 4,
+      effectiveFrom: '2026-06-21',
+      status: 'withdrawn',
+    });
+    const live = timetable({ id: 'tt-live', version: 1 });
+    const rows = [draft, withdrawn, live];
+
+    expect(pickEffectiveTimetable(rows, '2026-06-23')).toBe(live);
+    expect(isEffectiveVersionOn(draft, rows, '2026-06-23')).toBe(false);
+    expect(isEffectiveVersionOn(withdrawn, rows, '2026-06-23')).toBe(false);
+    expect(pickEffectiveTimetable([draft, withdrawn], '2026-06-23')).toBeNull();
   });
 });

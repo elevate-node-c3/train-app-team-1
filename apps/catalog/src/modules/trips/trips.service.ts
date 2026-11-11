@@ -26,7 +26,10 @@ import {
   validateStopsStructure,
   type TimetableStopDraftInput,
 } from '../operations/timetable-publish.validator.js';
-import { isEffectiveVersionOn } from '../operations/timetable-version.service.js';
+import {
+  isEffectiveVersionOn,
+  isWithinEffectiveRange,
+} from '../operations/timetable-version.service.js';
 
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
@@ -198,6 +201,12 @@ export class TripsService
     });
   }
 
+  /**
+   * The effective range is not read here: `isWithinEffectiveRange` owns that
+   * one reading, so this and version resolution cannot drift apart over what
+   * `effective_until` means. What is left is this method's own question --
+   * whether the timetable runs on that weekday.
+   */
   isTimetableRunningOnDate(
     timetable: TimetableEntity,
     serviceDate: string,
@@ -208,11 +217,7 @@ export class TripsService
       return false;
     }
 
-    if (serviceDate < timetable.effectiveFrom) {
-      return false;
-    }
-
-    if (timetable.effectiveUntil && serviceDate > timetable.effectiveUntil) {
+    if (!isWithinEffectiveRange(timetable, serviceDate)) {
       return false;
     }
 
@@ -703,7 +708,10 @@ function isUniqueViolation(error: unknown): boolean {
     return false;
   }
 
-  const candidate = error as { code?: unknown; driverError?: { code?: unknown } };
+  const candidate = error as {
+    code?: unknown;
+    driverError?: { code?: unknown };
+  };
 
   return (
     candidate.code === UNIQUE_VIOLATION ||

@@ -125,10 +125,17 @@ describe('Generation window', () => {
   });
 
   // One broken timetable must not cost every other timetable its window.
+  //
+  // Two trains, not two timetables of one train: since TA-20 a service date
+  // belongs to exactly one of a train's published versions, so two rows of
+  // one train would be two versions of the same timetable and only the
+  // effective one would generate -- which is a different test. The failure
+  // isolation this test is about is between timetables, and that is what
+  // separate trains express.
   it('keeps generating other timetables when one fails', async () => {
     const { service, dates } = makeService([
-      timetable({ id: 'broken' }),
-      timetable({ id: 'healthy' }),
+      timetable({ id: 'broken', train: { id: 'train-broken' } as never }),
+      timetable({ id: 'healthy', train: { id: 'train-healthy' } as never }),
     ]);
 
     service.createDatedTrip = async (candidate, serviceDate) => {
