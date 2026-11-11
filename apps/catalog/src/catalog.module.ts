@@ -20,6 +20,7 @@ import { TrainsModule } from './modules/trains/trains.module.js';
 import { TimetablesModule } from './modules/timetables/timetables.module.js';
 import { FaresModule } from './modules/fares/fares.module.js';
 import { TripsModule } from './modules/trips/trips.module.js';
+import { OperationsModule } from './modules/operations/operations.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TripsModule } from './modules/trips/trips.module.js';
     TripsModule,
     RecentSearchesModule,
     InvalidationModule,
+    OperationsModule,
     OutboxModule,
   ],
   controllers: [ServiceInfoController],
