@@ -48,3 +48,23 @@ export function warnIfStripeFloorUnconfigured(logger: LoggerService): void {
     `${STRIPE_MINIMUM_ENV_VAR} is unconfigured; fares below Stripe's minimum will be refused at checkout instead of at publish time.`,
   );
 }
+
+const INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
+
+// Generous for an interactive publish click, short enough that an operator
+// is not left staring at a spinner when inventory is actually down.
+const DEFAULT_INVENTORY_SEAT_USAGE_TIMEOUT_MS = 2000;
+
+/** How long catalog waits for inventory's seat-usage answer before refusing the publish. */
+export function seatUsageTimeoutMs(): number {
+  const raw = process.env[INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR];
+  if (raw === undefined) return DEFAULT_INVENTORY_SEAT_USAGE_TIMEOUT_MS;
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `${INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR} must be a positive integer, got '${raw}'`,
+    );
+  }
+  return parsed;
+}
