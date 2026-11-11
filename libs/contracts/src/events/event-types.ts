@@ -16,6 +16,8 @@ export const EVENT_TYPES = {
   timetablePublished: 'catalog.timetable.published',
   fareChanged: 'catalog.fare.changed',
   stationChanged: 'catalog.station.changed',
+  tripPublished: 'catalog.trip.published',
+  tripWithdrawn: 'catalog.trip.withdrawn',
   seatAvailabilityChanged: 'inventory.seat.availability-changed',
 } as const;
 
