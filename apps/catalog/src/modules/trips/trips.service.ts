@@ -26,6 +26,7 @@ import {
   validateStopsStructure,
   type TimetableStopDraftInput,
 } from '../operations/timetable-publish.validator.js';
+import { isEffectiveVersionOn } from '../operations/timetable-version.service.js';
 
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
@@ -156,6 +157,12 @@ export class TripsService
     return ambient || randomUUID();
   }
 
+  /**
+   * Every published row, which since TA-20 is not the same as every *live*
+   * version: a republish adds version N+1 and leaves its predecessor in place,
+   * bounded. Callers must resolve which of a train's rows owns a given service
+   * date -- `generateTripsForDateRange` does, via `isEffectiveVersionOn`.
+   */
   async getPublishedTimetables(timetableId?: string): Promise<TimetableEntity[]> {
     return this.timetableRepository.find({
       where: {
@@ -555,12 +562,25 @@ export class TripsService
       throw new Error('Start date cannot be after end date');
     }
 
-    const timetables = await this.getPublishedTimetables(timetableId);
+    // Always every published row, never only the one asked for: a single
+    // timetable still has to be told apart from its own train's other
+    // versions, and that cannot be done from a row in isolation.
+    const published = await this.getPublishedTimetables();
+    const versionsByTrain = groupByTrain(published);
+
+    const timetables = timetableId
+      ? published.filter((timetable) => timetable.id === timetableId)
+      : published;
 
     // One timetable's bad fare must not cost every other timetable its window.
     for (const timetable of timetables) {
       try {
-        await this.generateTimetableTrips(timetable, startDate, endDate);
+        await this.generateTimetableTrips(
+          timetable,
+          startDate,
+          endDate,
+          versionsByTrain.get(timetable.train.id) ?? [timetable],
+        );
       } catch (error: unknown) {
         this.logger.error(
           `Trip generation failed for timetable ${timetable.id}: ${
@@ -575,6 +595,7 @@ export class TripsService
     timetable: TimetableEntity,
     startDate: string,
     endDate: string,
+    trainVersions: TimetableEntity[],
   ): Promise<void> {
     // ISO dates compare lexicographically, so a civil date needs no date type.
     for (
@@ -583,6 +604,14 @@ export class TripsService
       serviceDate = addCivilDays(serviceDate, 1)
     ) {
       if (!this.isTimetableRunningOnDate(timetable, serviceDate)) {
+        continue;
+      }
+
+      // The date belongs to exactly one of the train's published versions.
+      // Without this, two versions whose ranges overlap would each produce the
+      // same dated trip, and the (train, service_date) unique constraint would
+      // report the second as "already exists" rather than as the error it is.
+      if (!isEffectiveVersionOn(timetable, trainVersions, serviceDate)) {
         continue;
       }
 
@@ -648,6 +677,25 @@ export class TripsService
       return savedTrip;
     });
   }
+}
+
+/** Published rows per train, so a date can be resolved without a query each. */
+function groupByTrain(
+  timetables: TimetableEntity[],
+): Map<string, TimetableEntity[]> {
+  const byTrain = new Map<string, TimetableEntity[]>();
+
+  for (const timetable of timetables) {
+    const existing = byTrain.get(timetable.train.id);
+
+    if (existing) {
+      existing.push(timetable);
+    } else {
+      byTrain.set(timetable.train.id, [timetable]);
+    }
+  }
+
+  return byTrain;
 }
 
 function isUniqueViolation(error: unknown): boolean {

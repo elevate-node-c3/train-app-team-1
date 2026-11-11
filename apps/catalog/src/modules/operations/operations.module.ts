@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { getInventoryProtoPath, INVENTORY_PACKAGE_NAME } from '@app/contracts';
 
 import { inventoryGrpcUrl } from '../../config/operations-settings.js';
+import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import {
   INVENTORY_GRPC_CLIENT,
   InventorySeatUsageClient,
 } from './inventory-seat-usage.grpc.client.js';
+import { TimetableVersionService } from './timetable-version.service.js';
 
 /**
  * Must match inventory's own server loader options, or a `repeated` field
@@ -35,6 +38,7 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
  */
 @Module({
   imports: [
+    TypeOrmModule.forFeature([TimetableEntity]),
     ClientsModule.registerAsync([
       {
         name: INVENTORY_GRPC_CLIENT,
@@ -50,7 +54,7 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
       },
     ]),
   ],
-  providers: [InventorySeatUsageClient],
-  exports: [InventorySeatUsageClient],
+  providers: [InventorySeatUsageClient, TimetableVersionService],
+  exports: [InventorySeatUsageClient, TimetableVersionService],
 })
 export class OperationsModule {}
