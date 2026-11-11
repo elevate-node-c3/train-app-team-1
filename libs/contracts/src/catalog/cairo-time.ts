@@ -137,8 +137,22 @@ export function cairoDayBounds(civilDate: string): {
 }
 
 function cairoDayStart(civilDate: string): Date {
+  return cairoInstantOf(civilDate, '00:00');
+}
+
+/**
+ * Turns '07:30' on a service date into the instant it happened. The inverse of
+ * `cairoLocalTimeOf`. No primitive exists, so it corrects twice: guess, read
+ * the offset there, correct, read again, correct.
+ *
+ * Two DST decisions, both tested. A time that does not exist moves forward:
+ * 00:30 becomes 01:30, so the train still runs. A time that happens twice
+ * means the later one, on standard time: Cairo 23:30 on 29 Oct 2026 is 21:30Z.
+ */
+export function cairoInstantOf(civilDate: string, localTime: string): Date {
   const [year, month, day] = civilDate.split('-').map(Number);
-  const asIfUtc = Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+  const [hour, minute] = localTime.split(':').map(Number);
+  const asIfUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
 
   const firstGuess = asIfUtc - offsetToMs(partsOf(new Date(asIfUtc)).offset);
   const corrected =

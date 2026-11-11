@@ -4,6 +4,7 @@ import {
   CAIRO_TIME_ZONE,
   cairoCivilDateOf,
   cairoDayBounds,
+  cairoInstantOf,
   cairoLocalTimeOf,
   cairoToday,
   civilDateTimeOf,
@@ -122,6 +123,55 @@ describe('Cairo local time', () => {
 
       expect(durationMinutesBetween(instant, instant)).toBe(0);
       expect(durationMinutesBetween(later, instant)).toBe(-60);
+    });
+  });
+
+  describe('cairoInstantOf on the DST nights', () => {
+    // The two decisions BR-14 asks to be made and written down. Both are
+    // stated in cairoInstantOf's doc comment; these pin them.
+
+    it('moves a time that does not exist forward to the one the clock reached', () => {
+      // Egypt springs forward on the last Friday of April. On 24 Apr 2026 the
+      // clock jumps 00:00 -> 01:00, so 00:30 is never shown by any clock.
+      const instant = cairoInstantOf('2026-04-24', '00:30');
+
+      expect(instant.toISOString()).toBe('2026-04-23T22:30:00.000Z');
+      // Which a Cairo clock reads back as 01:30, not 00:30.
+      expect(cairoLocalTimeOf(instant).localTime).toBe('01:30');
+      expect(cairoCivilDateOf(instant)).toBe('2026-04-24');
+    });
+
+    it('means the second of two identical times on the fall-back night', () => {
+      // Egypt falls back after the last Thursday of October. Cairo 23:30 on
+      // 29 Oct 2026 happens twice: 20:30Z on +03:00, then 21:30Z on +02:00.
+      const instant = cairoInstantOf('2026-10-29', '23:30');
+
+      expect(instant.toISOString()).toBe('2026-10-29T21:30:00.000Z');
+      expect(instant.toISOString()).not.toBe('2026-10-29T20:30:00.000Z');
+      // Standard time, the offset in force once the clocks have gone back.
+      expect(cairoLocalTimeOf(instant)).toEqual({
+        localTime: '23:30',
+        utcOffset: '+02:00',
+      });
+    });
+
+    it('round-trips both ambiguous candidates back to the same wall clock', () => {
+      // Proof the night really is ambiguous, so the choice above is a choice:
+      // one wall clock reading, two instants, told apart only by the offset.
+      expect(cairoLocalTimeOf(new Date('2026-10-29T20:30:00.000Z'))).toEqual({
+        localTime: '23:30',
+        utcOffset: '+03:00',
+      });
+      expect(cairoLocalTimeOf(new Date('2026-10-29T21:30:00.000Z'))).toEqual({
+        localTime: '23:30',
+        utcOffset: '+02:00',
+      });
+    });
+
+    it('keeps a plain summer time on the daylight-saving offset', () => {
+      expect(cairoInstantOf('2026-06-01', '12:00').toISOString()).toBe(
+        '2026-06-01T09:00:00.000Z',
+      );
     });
   });
 
