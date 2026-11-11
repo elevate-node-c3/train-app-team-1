@@ -13,6 +13,8 @@ service InventoryService {
 
 message SeatUsageForTripsRequest {
   repeated string tripIds = 1;  // uuid, dated-trip ids
+
+  reserved 2 to 9;  // travel-class or as-of-time narrowing, if the query ever needs it
 }
 
 // Counts and the stations in use travel together because catalog needs
@@ -24,8 +26,16 @@ message TripSeatUsage {
   int32 soldCount = 2;
   int32 heldCount = 3;
   repeated string stationIdsInUse = 4;
+
+  // This is the message that grows once Sprint 3's seat tables land: a
+  // per-travel-class breakdown of sold/held, a hold-expiry timestamp so a
+  // soon-to-expire hold can be treated differently from a settled sale, and
+  // a per-segment split for a trip whose seats are not uniform end to end.
+  reserved 5 to 19;
 }
 
 message SeatUsageForTripsResponse {
   repeated TripSeatUsage usages = 1;
+
+  reserved 2 to 9;  // evaluatedAt or a page token, if the list ever needs either
 }
