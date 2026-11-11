@@ -1,3 +1,4 @@
+import type { EventEnvelope } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
 
 export const TIMETABLE_PUBLISHED_EVENT_TYPE = EVENT_TYPES.timetablePublished;
@@ -22,13 +23,21 @@ export interface FareChangedPayloadV1 {
   effectiveFrom?: string;
 }
 
+/** Stations are required: CAT-5 invalidates by them and cannot look them up. */
 export interface TimetablePublishedPayloadV1 {
   timetableId: string;
   tripId?: string;
   originStationId: string;
   destinationStationId: string;
   intermediateStationIds?: string[];
+  trainId: string;
+  timetableVersion: number;
 }
+
+export type TimetablePublishedEvent = EventEnvelope<
+  typeof TIMETABLE_PUBLISHED_EVENT_TYPE,
+  TimetablePublishedPayloadV1
+>;
 
 export interface StationChangedPayloadV1 {
   stationId: string;
