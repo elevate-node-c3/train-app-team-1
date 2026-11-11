@@ -108,6 +108,7 @@ services:
       <<: *service-env
       DATABASE_URL: postgres://catalog:${CATALOG_DB_PASSWORD:-catalog_dev}@postgres:5432/catalog
       OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-true}
+      INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
 
   # The only service reachable from outside the Compose network.
   gateway:

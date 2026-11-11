@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { LoggerService } from '@nestjs/common';
 import {
+  inventoryGrpcUrl,
   isChargeableFare,
   seatUsageTimeoutMs,
   stripeMinimumChargePiastres,
@@ -9,6 +10,7 @@ import {
 
 const ENV_VAR = 'STRIPE_MINIMUM_CHARGE_PIASTRES';
 const TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
+const URL_ENV_VAR = 'INVENTORY_GRPC_URL';
 
 describe('operations-settings', () => {
   let originalValue: string | undefined;
@@ -122,6 +124,36 @@ describe('operations-settings', () => {
         process.env[TIMEOUT_ENV_VAR] = invalid;
         expect(() => seatUsageTimeoutMs()).toThrow(TIMEOUT_ENV_VAR);
       }
+    });
+  });
+
+  describe('inventoryGrpcUrl', () => {
+    let originalUrl: string | undefined;
+
+    beforeEach(() => {
+      originalUrl = process.env[URL_ENV_VAR];
+    });
+
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env[URL_ENV_VAR];
+      else process.env[URL_ENV_VAR] = originalUrl;
+    });
+
+    it('returns the configured url', () => {
+      process.env[URL_ENV_VAR] = 'inventory-staging:9000';
+      expect(inventoryGrpcUrl()).toBe('inventory-staging:9000');
+    });
+
+    it('falls back to inventory:50051 when unset', () => {
+      delete process.env[URL_ENV_VAR];
+      expect(inventoryGrpcUrl()).toBe('inventory:50051');
+    });
+
+    // A blank key in .env is the common shape a misconfigured compose file
+    // produces -- it must not become an empty host.
+    it('falls back when the value is blank', () => {
+      process.env[URL_ENV_VAR] = '   ';
+      expect(inventoryGrpcUrl()).toBe('inventory:50051');
     });
   });
 });

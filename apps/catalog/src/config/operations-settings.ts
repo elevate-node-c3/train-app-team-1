@@ -68,3 +68,17 @@ export function seatUsageTimeoutMs(): number {
   }
   return parsed;
 }
+
+const INVENTORY_GRPC_URL_ENV_VAR = 'INVENTORY_GRPC_URL';
+const DEFAULT_INVENTORY_GRPC_URL = 'inventory:50051';
+
+/** Where catalog reaches inventory's gRPC server. Same `nonEmpty` treatment as the gateway's `grpc-settings.ts`, so a blank value falls back rather than becoming an empty host. */
+export function inventoryGrpcUrl(): string {
+  return nonEmpty(process.env[INVENTORY_GRPC_URL_ENV_VAR]) ?? DEFAULT_INVENTORY_GRPC_URL;
+}
+
+function nonEmpty(value: string | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
