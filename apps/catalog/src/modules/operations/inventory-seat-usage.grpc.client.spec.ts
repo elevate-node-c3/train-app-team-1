@@ -1,13 +1,22 @@
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import type { CallOptions, Metadata } from '@grpc/grpc-js';
 import type { ClientGrpc } from '@nestjs/microservices';
 import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { SeatUsageForTripsResponse, TripSeatUsage } from '@app/contracts';
+import {
+  getInventoryProtoPath,
+  INVENTORY_PACKAGE_NAME,
+  type SeatUsageForTripsResponse,
+  type TripSeatUsage,
+} from '@app/contracts';
 
 import {
   InventorySeatUsageClient,
   SeatUsageUnavailableError,
 } from './inventory-seat-usage.grpc.client.js';
+import { INVENTORY_GRPC_LOADER_OPTIONS } from './operations.module.js';
 
 const TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
 
@@ -19,6 +28,8 @@ function usageFor(tripId: string): TripSeatUsage {
 function clientWith(
   seatUsageForTrips: (
     data: unknown,
+    metadata?: Metadata,
+    options?: CallOptions,
   ) => Observable<SeatUsageForTripsResponse>,
 ): InventorySeatUsageClient {
   const grpc = {
@@ -43,9 +54,7 @@ describe('InventorySeatUsageClient', () => {
   });
 
   it('returns the usage for each trip, keyed by trip id', async () => {
-    const client = clientWith(() =>
-      of({ usages: [usageFor('trip-a')] }),
-    );
+    const client = clientWith(() => of({ usages: [usageFor('trip-a')] }));
 
     const usage = await client.seatUsageForTrips(['trip-a']);
 
@@ -86,5 +95,91 @@ describe('InventorySeatUsageClient', () => {
     await expect(
       client.seatUsageForTrips(['trip-a', 'trip-b']),
     ).rejects.toBeInstanceOf(SeatUsageUnavailableError);
+  });
+
+  // A malformed answer must refuse like every other unanswerable case, not
+  // escape as an uncaught TypeError that a consumer's instanceof check
+  // would miss.
+  it('throws SeatUsageUnavailableError on a malformed response', async () => {
+    const client = clientWith(
+      () => of({}) as unknown as Observable<SeatUsageForTripsResponse>,
+    );
+
+    await expect(client.seatUsageForTrips(['trip-a'])).rejects.toBeInstanceOf(
+      SeatUsageUnavailableError,
+    );
+  });
+
+  it('throws SeatUsageUnavailableError when an entry has a non-integer count', async () => {
+    const client = clientWith(() =>
+      of({
+        usages: [
+          {
+            tripId: 'trip-a',
+            soldCount: Number.NaN,
+            heldCount: 0,
+            stationIdsInUse: [],
+          },
+        ],
+      }),
+    );
+
+    await expect(client.seatUsageForTrips(['trip-a'])).rejects.toBeInstanceOf(
+      SeatUsageUnavailableError,
+    );
+  });
+
+  it('sends a channel deadline so a timed-out call does not keep running', async () => {
+    const seen: CallOptions[] = [];
+    const before = Date.now();
+    const client = clientWith((_data, _metadata, options) => {
+      seen.push(options as CallOptions);
+      return of({ usages: [usageFor('trip-a')] });
+    });
+
+    await client.seatUsageForTrips(['trip-a']);
+
+    expect(seen[0].deadline).toBeGreaterThanOrEqual(before);
+  });
+});
+
+/**
+ * Hand-built stubs cannot catch this class of bug: proto3 does not
+ * serialize a zero-valued scalar, so whether `soldCount`/`heldCount` decode
+ * as `0` or go missing entirely depends on the real loader's `defaults`
+ * option, not on anything a test can assert against a plain object literal.
+ */
+describe('the real inventory proto loader', () => {
+  function tripSeatUsageType(): {
+    serialize(message: unknown): Buffer;
+    deserialize(buffer: Buffer): Record<string, unknown>;
+  } {
+    const packageDefinition = protoLoader.loadSync(
+      getInventoryProtoPath(),
+      INVENTORY_GRPC_LOADER_OPTIONS,
+    );
+    const loaded = grpc.loadPackageDefinition(packageDefinition);
+    const namespace = INVENTORY_PACKAGE_NAME.split('.').reduce<
+      Record<string, unknown>
+    >(
+      (current, part) => current[part] as Record<string, unknown>,
+      loaded as unknown as Record<string, unknown>,
+    );
+    return namespace.TripSeatUsage as ReturnType<typeof tripSeatUsageType>;
+  }
+
+  it('decodes an all-zero TripSeatUsage with explicit soldCount and heldCount', () => {
+    const TripSeatUsage = tripSeatUsageType();
+    const encoded = TripSeatUsage.serialize({
+      tripId: 'trip-a',
+      soldCount: 0,
+      heldCount: 0,
+      stationIdsInUse: [],
+    });
+
+    const decoded = TripSeatUsage.deserialize(encoded);
+
+    expect(decoded.soldCount).toBe(0);
+    expect(decoded.heldCount).toBe(0);
   });
 });
