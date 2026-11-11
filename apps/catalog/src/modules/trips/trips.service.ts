@@ -19,6 +19,14 @@ import {
   tripGenerationEnabled,
   tripGenerationIntervalMs,
 } from '../../config/trip-generation-settings.js';
+import {
+  computeCapacity,
+  validateCapacityIssues,
+  validateFareRules,
+  validateStopsChronology,
+  validateStopsStructure,
+  type TimetableStopDraftInput,
+} from '../operations/timetable-publish.validator.js';
 
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
@@ -26,6 +34,11 @@ import { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 import { FareEntity } from '../fares/entities/fare.entity.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
+import {
+  fareKey,
+  type FareIndex,
+  type TripStopDraft,
+} from './trip-generation.types.js';
 import { UNIT_OF_WORK } from '@app/common/persistence/unit-of-work.port.js';
 import type { UnitOfWorkPort } from '@app/common/persistence/unit-of-work.port.js';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
@@ -42,34 +55,6 @@ const GENERATION_MARGIN_DAYS = 1;
 
 /** A unique violation on `uq_dated_trip_train_date`. */
 const UNIQUE_VIOLATION = '23505';
-
-interface TripStopDraft {
-  station: TimetableStopEntity['station'];
-  stationId: string;
-  position: number;
-  arrivalAt: Date | null;
-  departureAt: Date | null;
-}
-
-/** One fare's amount and the instant it took effect. */
-interface FarePrice {
-  effectiveFrom: Date;
-  amountPiastres: number;
-}
-
-/**
- * Every fare a train carries, keyed by class and station pair. Built from one
- * query so validating a trip costs no round trip per pair.
- */
-type FareIndex = Map<string, FarePrice[]>;
-
-function fareKey(
-  travelClassId: string,
-  originStationId: string,
-  destinationStationId: string,
-): string {
-  return `${travelClassId}|${originStationId}|${destinationStationId}`;
-}
 
 @Injectable()
 export class TripsService
@@ -331,225 +316,72 @@ export class TripsService
     return index;
   }
 
-  private resolveFare(
-    index: FareIndex,
-    travelClassId: string,
-    originStationId: string,
-    destinationStationId: string,
-    asOf: Date,
-  ): number | null {
-    const prices = index.get(
-      fareKey(travelClassId, originStationId, destinationStationId),
-    );
-
-    const price = prices?.find(
-      (candidate) => candidate.effectiveFrom.getTime() <= asOf.getTime(),
-    );
-
-    if (!price) {
-      return null;
-    }
-
-    if (
-      !Number.isSafeInteger(price.amountPiastres) ||
-      price.amountPiastres <= 0
-    ) {
-      return null;
-    }
-
-    return price.amountPiastres;
-  }
-
   /**
    * Every in-order pair, for every class, must have one positive fare, and a
    * longer segment must never cost less than one it contains. Both are
-   * publishing errors, not search-time surprises.
-   *
-   * Comparing each pair with the pair one stop shorter at either end is enough;
-   * containment follows by shrinking one end at a time.
+   * publishing errors, not search-time surprises. The rules themselves live
+   * in the publish validator, so generation and publish can never disagree
+   * on what counts as a valid fare table.
    */
   validateTripFares(
     coaches: TrainCoachEntity[],
     tripStops: TripStopDraft[],
     fares: FareIndex,
   ): void {
-    const travelClassIds = [
-      ...new Set(coaches.map((coach) => coach.travelClass.id)),
-    ];
+    const issues = validateFareRules(coaches, tripStops, fares);
 
-    if (travelClassIds.length === 0) {
-      throw new Error('Train has no travel classes');
-    }
-
-    if (tripStops.length < 2) {
-      throw new Error('Trip must have at least two stops');
-    }
-
-    const problems: string[] = [];
-
-    for (const travelClassId of travelClassIds) {
-      const amounts = new Map<string, number>();
-
-      for (let i = 0; i < tripStops.length - 1; i++) {
-        const originStop = tripStops[i];
-
-        if (!originStop.departureAt) {
-          throw new Error('Origin stop has no departure time');
-        }
-
-        for (let j = i + 1; j < tripStops.length; j++) {
-          const destinationStop = tripStops[j];
-
-          const amount = this.resolveFare(
-            fares,
-            travelClassId,
-            originStop.stationId,
-            destinationStop.stationId,
-            originStop.departureAt,
-          );
-
-          if (amount === null) {
-            problems.push(
-              `missing or invalid fare for class ${travelClassId} from ${originStop.stationId} to ${destinationStop.stationId}`,
-            );
-            continue;
-          }
-
-          amounts.set(`${i}|${j}`, amount);
-        }
-      }
-
-      for (let i = 0; i < tripStops.length - 1; i++) {
-        for (let j = i + 1; j < tripStops.length; j++) {
-          const amount = amounts.get(`${i}|${j}`);
-
-          if (amount === undefined) {
-            continue;
-          }
-
-          for (const contained of [`${i}|${j - 1}`, `${i + 1}|${j}`]) {
-            const inner = amounts.get(contained);
-
-            if (inner !== undefined && amount < inner) {
-              problems.push(
-                `fare for class ${travelClassId} from stop ${i} to ${j} (${amount}) is less than the segment it contains (${inner})`,
-              );
-            }
-          }
-        }
-      }
-    }
-
-    if (problems.length > 0) {
-      throw new Error(`Invalid fares: ${problems.join('; ')}`);
+    if (issues.length > 0) {
+      throw new Error(
+        `Invalid fares: ${issues.map((issue) => issue.issue).join('; ')}`,
+      );
     }
   }
 
   /**
    * Sums the same keys the search's capacity SQL does, so the two agree. A
    * repeated seat number would inflate it, so it is refused in the same pass.
+   * No catalog of coach layouts is available here, so every layout this train
+   * actually carries counts as known.
    */
   calculateCapacity(coaches: TrainCoachEntity[]): number {
-    let capacity = 0;
+    const knownCoachLayoutIds = new Set(
+      coaches.map((coach) => coach.coachLayout.id),
+    );
+    const issues = validateCapacityIssues(coaches, knownCoachLayoutIds);
 
-    for (const coach of coaches) {
-      const seen = new Set<string>();
-      const duplicates = new Set<string>();
-
-      for (const row of coach.coachLayout.rows) {
-        for (const seat of [...row.leftSeats, ...row.rightSeats]) {
-          if (seen.has(seat)) duplicates.add(seat);
-          seen.add(seat);
-          capacity += 1;
-        }
-      }
-
-      if (duplicates.size > 0) {
-        throw new Error(
-          `Coach ${coach.coachNumber} repeats seat ${[...duplicates]
-            .sort()
-            .join(', ')}`,
-        );
-      }
+    if (issues.length > 0) {
+      throw new Error(issues.map((issue) => issue.issue).join('; '));
     }
 
-    if (capacity === 0) {
-      throw new Error('Train has no seats');
-    }
-
-    return capacity;
+    return computeCapacity(coaches);
   }
 
+  /**
+   * No station catalog is available here either, so every station named by
+   * the timetable itself counts as known -- this call only checks the
+   * route's shape, not whether the stations are real.
+   */
   validateTimetableStops(stops: TimetableStopEntity[]): void {
-    if (stops.length < 2) {
-      throw new Error('Timetable must have at least two stops');
-    }
+    const draftStops: TimetableStopDraftInput[] = stops.map((stop) => ({
+      stationId: stop.stationId,
+      position: stop.position,
+      dayOffset: stop.dayOffset,
+      arrivalTime: stop.arrivalTime,
+      departureTime: stop.departureTime,
+    }));
+    const knownStationIds = new Set(draftStops.map((stop) => stop.stationId));
+    const issues = validateStopsStructure(draftStops, knownStationIds);
 
-    const firstStop = stops[0];
-    const lastStop = stops[stops.length - 1];
-
-    if (firstStop.arrivalTime !== null) {
-      throw new Error('First stop must not have arrival time');
-    }
-
-    if (!firstStop.departureTime) {
-      throw new Error('First stop must have departure time');
-    }
-
-    if (!lastStop.arrivalTime) {
-      throw new Error('Last stop must have arrival time');
-    }
-
-    if (lastStop.departureTime !== null) {
-      throw new Error('Last stop must not have departure time');
-    }
-
-    for (let i = 1; i < stops.length - 1; i++) {
-      if (!stops[i].arrivalTime || !stops[i].departureTime) {
-        throw new Error(
-          'Intermediate stop must have arrival and departure times',
-        );
-      }
-    }
-
-    for (let i = 1; i < stops.length; i++) {
-      if (stops[i].position <= stops[i - 1].position) {
-        throw new Error('Timetable stops are not correctly ordered');
-      }
-
-      if (stops[i].dayOffset < stops[i - 1].dayOffset) {
-        throw new Error('Timetable day offset cannot go backwards');
-      }
+    if (issues.length > 0) {
+      throw new Error(issues.map((issue) => issue.issue).join('; '));
     }
   }
 
   validateTripStopTimes(tripStops: TripStopDraft[]): void {
-    for (let i = 0; i < tripStops.length; i++) {
-      const currentStop = tripStops[i];
+    const issues = validateStopsChronology(tripStops);
 
-      if (
-        currentStop.arrivalAt &&
-        currentStop.departureAt &&
-        currentStop.departureAt.getTime() < currentStop.arrivalAt.getTime()
-      ) {
-        throw new Error('Departure cannot be before arrival');
-      }
-
-      if (i === 0) {
-        continue;
-      }
-
-      const previousStop = tripStops[i - 1];
-
-      if (!previousStop.departureAt || !currentStop.arrivalAt) {
-        throw new Error('Invalid trip stop times');
-      }
-
-      if (
-        currentStop.arrivalAt.getTime() < previousStop.departureAt.getTime()
-      ) {
-        throw new Error('Trip stops are not in chronological order');
-      }
+    if (issues.length > 0) {
+      throw new Error(issues.map((issue) => issue.issue).join('; '));
     }
   }
 
