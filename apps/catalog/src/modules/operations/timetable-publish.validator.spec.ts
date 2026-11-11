@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
-import type { FareIndex } from '../trips/trip-generation.types.js';
+import { resolveStopTimes, type FareIndex } from '../trips/trip-generation.types.js';
 import {
+  validateFareFloor,
+  validateFareRules,
+  validateNoDuplicateStations,
+  validateStopsStructure,
   validateTimetableCandidate,
   type TimetableCandidate,
   type TimetableStopDraftInput,
@@ -362,5 +366,106 @@ describe('validateTimetableCandidate', () => {
       expect(detail.issue).not.toHaveLength(0);
       expect(detail.action).not.toHaveLength(0);
     }
+  });
+});
+
+/**
+ * C1 and I2: the duplicate-station and Stripe-floor rules are real TA-20
+ * publish rules, but neither may reach the generator. `trips.service.ts`'s
+ * `validateTimetableStops` calls only `validateStopsStructure`, and its
+ * `validateTripFares` calls only `validateFareRules` -- never
+ * `validateNoDuplicateStations` or `validateFareFloor`. These tests pin that
+ * contract directly on the exported functions, so a future change that wires
+ * either rule back into the shared groups (or into the generator's own
+ * delegation) fails here before it ever reaches a nightly job.
+ */
+describe('generation safety: duplicate-station and the Stripe floor stay publish-only', () => {
+  let originalFloor: string | undefined;
+
+  beforeEach(() => {
+    originalFloor = process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
+  });
+
+  afterEach(() => {
+    if (originalFloor === undefined) {
+      delete process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
+    } else {
+      process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = originalFloor;
+    }
+  });
+
+  it('validateStopsStructure accepts a repeated-station stop list (an already-published loop route)', () => {
+    const stops = makeStops(3);
+    stops[2] = { ...stops[2], stationId: stops[0].stationId };
+
+    const details = validateStopsStructure(stops, new Set(stops.map((s) => s.stationId)));
+
+    expect(details).toEqual([]);
+  });
+
+  it('validateNoDuplicateStations refuses the same repeated-station stop list', () => {
+    const stops = makeStops(3);
+    stops[2] = { ...stops[2], stationId: stops[0].stationId };
+
+    const details = validateNoDuplicateStations(stops);
+
+    expect(details.some((d) => d.field === 'stops[2].stationId')).toBe(true);
+  });
+
+  it('validateFareRules is unaffected by STRIPE_MINIMUM_CHARGE_PIASTRES being set', () => {
+    const stops = makeStops(3);
+    const resolved = stops.map((stop) => ({
+      stationId: stop.stationId,
+      ...resolveStopTimes('2026-06-20', stop.dayOffset, stop.arrivalTime, stop.departureTime),
+    }));
+    const [a, b, c] = stops.map((s) => s.stationId);
+
+    // Every segment is priced well above any realistic floor; only the
+    // floor-check rule (not validateFareRules) would ever reject it.
+    const fares: FareIndex = new Map([
+      [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 2 }]],
+      [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 3 }]],
+      [`${FIRST_CLASS}|${a}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 5 }]],
+    ]);
+
+    process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000000';
+
+    const details = validateFareRules([coach(FIRST_CLASS)], resolved, fares);
+
+    expect(details).toEqual([]);
+  });
+
+  it('validateFareFloor still refuses the same below-floor fare validateFareRules let through', () => {
+    const stops = makeStops(3);
+    const resolved = stops.map((stop) => ({
+      stationId: stop.stationId,
+      ...resolveStopTimes('2026-06-20', stop.dayOffset, stop.arrivalTime, stop.departureTime),
+    }));
+    const [a, b, c] = stops.map((s) => s.stationId);
+
+    const fares: FareIndex = new Map([
+      [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 2 }]],
+      [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 3 }]],
+      [`${FIRST_CLASS}|${a}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 5 }]],
+    ]);
+
+    process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000000';
+
+    expect(validateFareRules([coach(FIRST_CLASS)], resolved, fares)).toEqual([]);
+    const floorDetails = validateFareFloor([coach(FIRST_CLASS)], resolved, fares);
+    expect(floorDetails.some((d) => d.issue.includes('below the minimum chargeable amount'))).toBe(true);
+  });
+
+  it('validateTimetableCandidate still refuses both a repeated station and a below-floor fare', () => {
+    process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000000';
+
+    const candidate = validCandidate(3);
+    const stops = candidate.stops.map((stop) => ({ ...stop }));
+    stops[2] = { ...stops[2], stationId: stops[0].stationId };
+
+    const details = validateTimetableCandidate({ ...candidate, stops });
+
+    expect(details.some((d) => d.issue.includes('same station'))).toBe(true);
+    expect(details.some((d) => d.issue.includes('below the minimum chargeable amount'))).toBe(true);
   });
 });

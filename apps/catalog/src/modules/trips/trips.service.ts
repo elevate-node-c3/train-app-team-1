@@ -12,7 +12,6 @@ import { ClsService } from 'nestjs-cls';
 import {
   addCivilDays,
   BOOKING_WINDOW_DAYS,
-  cairoInstantOf,
   cairoToday,
 } from '@app/contracts';
 import {
@@ -36,6 +35,7 @@ import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
 import {
   fareKey,
+  resolveStopTimes,
   type FareIndex,
   type TripStopDraft,
 } from './trip-generation.types.js';
@@ -254,21 +254,17 @@ export class TripsService
     timetableStops: TimetableStopEntity[],
     serviceDate: string,
   ): TripStopDraft[] {
-    return timetableStops.map((stop) => {
-      const stopDate = addCivilDays(serviceDate, stop.dayOffset);
-
-      return {
-        station: stop.station,
-        stationId: stop.stationId,
-        position: stop.position,
-        arrivalAt: stop.arrivalTime
-          ? cairoInstantOf(stopDate, stop.arrivalTime)
-          : null,
-        departureAt: stop.departureTime
-          ? cairoInstantOf(stopDate, stop.departureTime)
-          : null,
-      };
-    });
+    return timetableStops.map((stop) => ({
+      station: stop.station,
+      stationId: stop.stationId,
+      position: stop.position,
+      ...resolveStopTimes(
+        serviceDate,
+        stop.dayOffset,
+        stop.arrivalTime,
+        stop.departureTime,
+      ),
+    }));
   }
 
   /** Every fare of one train, in one query. */
