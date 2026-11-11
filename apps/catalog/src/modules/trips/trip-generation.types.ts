@@ -1,3 +1,5 @@
+import { addCivilDays, cairoInstantOf } from '@app/contracts';
+
 import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
 
 /**
@@ -11,6 +13,27 @@ export interface TripStopDraft {
   position: number;
   arrivalAt: Date | null;
   departureAt: Date | null;
+}
+
+/**
+ * The one place `'HH:mm'` + `dayOffset` + an anchor date turns into real
+ * instants. `buildTripStops` (generation, already has a service date) and the
+ * publish validator (resolving a candidate's own `effectiveFrom`) both call
+ * this, so they can never silently disagree about what a timetable's times
+ * mean -- the exact bug class Cairo DST exists to catch.
+ */
+export function resolveStopTimes(
+  anchorDate: string,
+  dayOffset: number,
+  arrivalTime: string | null,
+  departureTime: string | null,
+): { arrivalAt: Date | null; departureAt: Date | null } {
+  const stopDate = addCivilDays(anchorDate, dayOffset);
+
+  return {
+    arrivalAt: arrivalTime ? cairoInstantOf(stopDate, arrivalTime) : null,
+    departureAt: departureTime ? cairoInstantOf(stopDate, departureTime) : null,
+  };
 }
 
 /** One fare's amount and the instant it took effect. */

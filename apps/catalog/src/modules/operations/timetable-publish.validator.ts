@@ -1,9 +1,8 @@
 import type { ValidationErrorDetail } from '@app/contracts';
-import { addCivilDays, cairoInstantOf } from '@app/contracts';
 
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
-import type { FareIndex, TripStopDraft } from '../trips/trip-generation.types.js';
-import { fareKey } from '../trips/trip-generation.types.js';
+import type { FareIndex } from '../trips/trip-generation.types.js';
+import { fareKey, resolveStopTimes } from '../trips/trip-generation.types.js';
 import { isChargeableFare } from '../../config/operations-settings.js';
 
 /**
@@ -43,6 +42,13 @@ interface ResolvedStop {
  * The one entry point generation and publish both end at. Collects, never
  * throws -- an operator refused on the 14th of 15 stops still needs to hear
  * about the other four in the same answer.
+ *
+ * Two rules live only here, not in the groups generation's own methods call:
+ * no-duplicate-station and the Stripe floor. Both are real TA-20 publish
+ * rules, but neither is safe to run against an already-published timetable --
+ * a loop route that generation has been running for months has no unique
+ * constraint stopping a repeated station, and the floor is a live config
+ * value that must not retroactively break trips a publish already accepted.
  */
 export function validateTimetableCandidate(
   candidate: TimetableCandidate,
@@ -54,8 +60,10 @@ export function validateTimetableCandidate(
 
   return [
     ...validateStopsStructure(candidate.stops, candidate.knownStationIds),
+    ...validateNoDuplicateStations(candidate.stops),
     ...validateStopsChronology(resolvedStops),
     ...validateFareRules(candidate.coaches, resolvedStops, candidate.fares),
+    ...validateFareFloor(candidate.coaches, resolvedStops, candidate.fares),
     ...validateCapacityIssues(candidate.coaches, candidate.knownCoachLayoutIds),
   ];
 }
@@ -65,19 +73,48 @@ function resolveStopInstants(
   stops: TimetableStopDraftInput[],
   effectiveFrom: string,
 ): ResolvedStop[] {
-  return stops.map((stop) => {
-    const stopDate = addCivilDays(effectiveFrom, stop.dayOffset);
+  return stops.map((stop) => ({
+    stationId: stop.stationId,
+    ...resolveStopTimes(
+      effectiveFrom,
+      stop.dayOffset,
+      stop.arrivalTime,
+      stop.departureTime,
+    ),
+  }));
+}
 
-    return {
-      stationId: stop.stationId,
-      arrivalAt: stop.arrivalTime
-        ? cairoInstantOf(stopDate, stop.arrivalTime)
-        : null,
-      departureAt: stop.departureTime
-        ? cairoInstantOf(stopDate, stop.departureTime)
-        : null,
-    };
-  });
+/**
+ * No station may appear twice in a published route. Publish-only: there is
+ * no DB constraint stopping an already-published loop route (same station
+ * twice, e.g. a round trip back to its origin) from existing today, and
+ * generation must keep producing trips for it. Composed only in
+ * `validateTimetableCandidate`, never in `validateStopsStructure`, so the
+ * generator can never pick this rule up by accident.
+ */
+export function validateNoDuplicateStations(
+  stops: TimetableStopDraftInput[],
+): ValidationErrorDetail[] {
+  const details: ValidationErrorDetail[] = [];
+  const seenAt = new Map<string, number>();
+
+  for (let i = 0; i < stops.length; i++) {
+    const stationId = stops[i].stationId;
+    const firstSeenAt = seenAt.get(stationId);
+
+    if (firstSeenAt !== undefined) {
+      details.push({
+        field: `stops[${i}].stationId`,
+        rejectedValue: stationId,
+        issue: `is the same station as stop ${firstSeenAt}`,
+        action: 'Remove the duplicate stop, or choose a different station',
+      });
+    } else {
+      seenAt.set(stationId, i);
+    }
+  }
+
+  return details;
 }
 
 /**
@@ -184,9 +221,9 @@ export function validateStopsStructure(
   }
 
   // Station identity, last: an id that is not even real is a worse problem
-  // than its position, but reporting both costs nothing.
-  const seenAt = new Map<string, number>();
-
+  // than its position, but reporting both costs nothing. Whether a station
+  // repeats is a separate, publish-only question -- see
+  // `validateNoDuplicateStations`.
   for (let i = 0; i < stops.length; i++) {
     const stationId = stops[i].stationId;
 
@@ -197,20 +234,6 @@ export function validateStopsStructure(
         issue: 'is not a known station',
         action: 'Choose a station from the station list',
       });
-      continue;
-    }
-
-    const firstSeenAt = seenAt.get(stationId);
-
-    if (firstSeenAt !== undefined) {
-      details.push({
-        field: `stops[${i}].stationId`,
-        rejectedValue: stationId,
-        issue: `is the same station as stop ${firstSeenAt}`,
-        action: 'Remove the duplicate stop, or choose a different station',
-      });
-    } else {
-      seenAt.set(stationId, i);
     }
   }
 
@@ -296,9 +319,9 @@ function resolveFareAmount(
 }
 
 /**
- * Every in-order pair, for every class, must have one positive fare; a
- * longer segment must never cost less than one it contains (CAT-2); and the
- * cheapest purchasable thing in each class must clear Stripe's floor (§6.3).
+ * Every in-order pair, for every class, must have one positive fare, and a
+ * longer segment must never cost less than one it contains (CAT-2). The
+ * Stripe floor is a separate check -- see `validateFareFloor`.
  *
  * Comparing each pair with the pair one stop shorter at either end is
  * enough for containment -- it follows by shrinking one end at a time.
@@ -336,7 +359,6 @@ export function validateFareRules(
 
   for (const travelClassId of travelClassIds) {
     const amounts = new Map<string, number>();
-    let cheapest: { field: string; amount: number } | null = null;
 
     for (let i = 0; i < stops.length - 1; i++) {
       const origin = stops[i];
@@ -353,7 +375,6 @@ export function validateFareRules(
 
       for (let j = i + 1; j < stops.length; j++) {
         const destination = stops[j];
-        const field = `fares[${travelClassId}:${origin.stationId}->${destination.stationId}]`;
 
         const amount = resolveFareAmount(
           fares,
@@ -365,7 +386,7 @@ export function validateFareRules(
 
         if (amount === null) {
           details.push({
-            field,
+            field: `fares[${travelClassId}:${origin.stationId}->${destination.stationId}]`,
             rejectedValue: null,
             issue: `missing or invalid fare for class ${travelClassId} from ${origin.stationId} to ${destination.stationId}`,
             action: 'Add a positive fare for this class and station pair',
@@ -374,10 +395,6 @@ export function validateFareRules(
         }
 
         amounts.set(`${i}|${j}`, amount);
-
-        if (!cheapest || amount < cheapest.amount) {
-          cheapest = { field, amount };
-        }
       }
     }
 
@@ -400,9 +417,69 @@ export function validateFareRules(
         }
       }
     }
+  }
 
-    // The fee is strictly positive, so `fare >= floor` already implies
-    // `fare + fee >= floor` -- no fee term belongs in this comparison.
+  return details;
+}
+
+/**
+ * The cheapest purchasable thing in each class must clear Stripe's floor
+ * (§6.3) -- cheapest, not shortest: the question is whether the smallest
+ * amount a traveller could actually be charged clears the floor, which is
+ * the minimum fare in the class, not the fare spanning the fewest stops.
+ * CAT-2 containment guarantees the minimum fare is also the one every other
+ * fare in the class is at least as large as.
+ *
+ * Publish-only: the floor is a live config value (`STRIPE_MINIMUM_CHARGE_PIASTRES`),
+ * and generation must not stop producing trips for an already-published
+ * timetable purely because that value changed. The fee is strictly positive,
+ * so `fare >= floor` already implies `fare + fee >= floor` -- no fee term
+ * belongs in this comparison.
+ */
+export function validateFareFloor(
+  coaches: TrainCoachEntity[],
+  stops: ResolvedStop[],
+  fares: FareIndex,
+): ValidationErrorDetail[] {
+  const details: ValidationErrorDetail[] = [];
+
+  const travelClassIds = [
+    ...new Set(coaches.map((coach) => coach.travelClass.id)),
+  ];
+
+  if (travelClassIds.length === 0 || stops.length < 2) {
+    return details;
+  }
+
+  for (const travelClassId of travelClassIds) {
+    let cheapest: { field: string; amount: number } | null = null;
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      const origin = stops[i];
+      if (!origin.departureAt) continue;
+
+      for (let j = i + 1; j < stops.length; j++) {
+        const destination = stops[j];
+
+        const amount = resolveFareAmount(
+          fares,
+          travelClassId,
+          origin.stationId,
+          destination.stationId,
+          origin.departureAt,
+        );
+
+        if (amount === null) continue;
+
+        if (!cheapest || amount < cheapest.amount) {
+          cheapest = {
+            field: `fares[${travelClassId}:${origin.stationId}->${destination.stationId}]`,
+            amount,
+          };
+        }
+      }
+    }
+
     if (cheapest && !isChargeableFare(cheapest.amount)) {
       details.push({
         field: cheapest.field,
