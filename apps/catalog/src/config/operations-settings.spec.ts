@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { LoggerService } from '@nestjs/common';
 import {
   isChargeableFare,
+  seatUsageTimeoutMs,
   stripeMinimumChargePiastres,
   warnIfStripeFloorUnconfigured,
 } from './operations-settings.js';
 
 const ENV_VAR = 'STRIPE_MINIMUM_CHARGE_PIASTRES';
+const TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
 
 describe('operations-settings', () => {
   let originalValue: string | undefined;
@@ -90,6 +92,36 @@ describe('operations-settings', () => {
       const logger = stubLogger();
       warnIfStripeFloorUnconfigured(logger);
       expect(logger.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('seatUsageTimeoutMs', () => {
+    let originalTimeout: string | undefined;
+
+    beforeEach(() => {
+      originalTimeout = process.env[TIMEOUT_ENV_VAR];
+      delete process.env[TIMEOUT_ENV_VAR];
+    });
+
+    afterEach(() => {
+      if (originalTimeout === undefined) delete process.env[TIMEOUT_ENV_VAR];
+      else process.env[TIMEOUT_ENV_VAR] = originalTimeout;
+    });
+
+    it('returns the configured timeout', () => {
+      process.env[TIMEOUT_ENV_VAR] = '5000';
+      expect(seatUsageTimeoutMs()).toBe(5000);
+    });
+
+    it('falls back to 2000ms when unconfigured', () => {
+      expect(seatUsageTimeoutMs()).toBe(2000);
+    });
+
+    it('throws naming the variable when the value is not a positive integer', () => {
+      for (const invalid of ['0', '-5', 'abc', '12.5']) {
+        process.env[TIMEOUT_ENV_VAR] = invalid;
+        expect(() => seatUsageTimeoutMs()).toThrow(TIMEOUT_ENV_VAR);
+      }
     });
   });
 });
