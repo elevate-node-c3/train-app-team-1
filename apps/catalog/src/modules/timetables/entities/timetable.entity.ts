@@ -7,6 +7,17 @@ import {
 } from 'typeorm';
 import { TrainEntity } from '../../trains/entities/train.entity.js';
 
+/** 0 = Sunday, matching `Date.getUTCDay()`, which the running-day check uses. */
+export enum Weekday {
+  Sunday = 0,
+  Monday = 1,
+  Tuesday = 2,
+  Wednesday = 3,
+  Thursday = 4,
+  Friday = 5,
+  Saturday = 6,
+}
+
 @Entity('timetable')
 export class TimetableEntity {
   @PrimaryColumn('uuid')
@@ -20,7 +31,7 @@ export class TimetableEntity {
   train!: TrainEntity;
 
   @Column({ name: 'running_days', type: 'smallint', array: true })
-  runningDays!: number[];
+  runningDays!: Weekday[];
 
   @Column({ name: 'effective_from', type: 'date' })
   effectiveFrom!: string;

@@ -22,7 +22,7 @@ import {
   clearRecentSearches,
   seedSearchE2e,
   type E2eSearchFixture,
-} from './support/seed-search-e2e.js';
+} from '../../apps/catalog/src/database/seeds/today-trips.js';
 
 /**
  * One-way search, through the whole stack.

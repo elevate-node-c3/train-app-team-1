@@ -21,7 +21,7 @@
 import {
   clearRecentSearches,
   seedSearchE2e,
-} from '../test/e2e/support/seed-search-e2e.js';
+} from './today-trips.js';
 
 async function main(): Promise<void> {
   const fixture = await seedSearchE2e();

@@ -276,9 +276,18 @@ describe('Migration infrastructure (§2.1)', () => {
         );
       }
 
+      // Seeds run compiled, from `dist/`: the runtime image installs no
+      // devDependencies and copies no sources, so `tsx` is not there.
       expect(pkg.scripts['seed:staff']).toBe(
-        'tsx apps/identity/src/database/seeds/staff-accounts.seed.ts',
+        'node dist/apps/identity/src/database/seeds/staff-accounts.seed.js',
       );
+      for (const command of [
+        'catalog:seed',
+        'catalog:seed:search',
+        'catalog:seed:today',
+      ]) {
+        expect(pkg.scripts[command]).toMatch(/^node dist\//);
+      }
 
       // migration:generate takes the same shape, and the same convention puts
       // its required positional path second:
