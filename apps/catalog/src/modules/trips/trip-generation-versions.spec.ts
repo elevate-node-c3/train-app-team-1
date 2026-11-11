@@ -33,7 +33,9 @@ function timetable(overrides: Partial<TimetableEntity>): TimetableEntity {
  * (train, service_date) unique constraint ready to swallow the second write as
  * "already exists" instead of surfacing it.
  */
-function twoVersions(overrides: Partial<TimetableEntity> = {}): TimetableEntity[] {
+function twoVersions(
+  overrides: Partial<TimetableEntity> = {},
+): TimetableEntity[] {
   return [
     timetable({ version: 1, effectiveFrom: '2026-06-10' }),
     timetable({ version: 2, effectiveFrom: '2026-06-22', ...overrides }),
@@ -91,9 +93,36 @@ describe('trip generation across versions', () => {
     await service.generateTripsForDateRange(WINDOW_START, WINDOW_END);
 
     expect(tripsOn(trips, '2026-06-23')).toHaveLength(1);
+    // And from the right version. A count alone would pass a generator that
+    // returned v1 for every date past the cutover.
+    expect(tripOn(trips, '2026-06-23').version).toBe(2);
     // Six civil days, six trips: no date is produced twice, and none is lost.
     expect(trips).toHaveLength(6);
     expect(new Set(trips.map((trip) => trip.serviceDate)).size).toBe(6);
+  });
+
+  /**
+   * Two rows a `(effective_from, version)` comparison cannot tell apart.
+   *
+   * This is impossible data -- `uq_timetable_train_version` forbids it -- but
+   * the guard must not depend on that to produce one trip per date, or
+   * "exactly once" is a property of the constraints rather than of the
+   * generator, and `createDatedTrip`'s unique-violation recovery would hide
+   * the second write as "already exists".
+   */
+  it('generates once from two published rows it cannot tell apart by version', async () => {
+    const { service, trips } = makeService([
+      timetable({ id: 'tt-a', version: 1, effectiveFrom: '2026-06-10' }),
+      timetable({ id: 'tt-b', version: 1, effectiveFrom: '2026-06-10' }),
+    ]);
+
+    await service.generateTripsForDateRange(WINDOW_START, WINDOW_END);
+
+    expect(trips).toHaveLength(6);
+    // One of them, consistently -- never both.
+    expect(new Set(trips.map((trip) => trip.timetableId))).toEqual(
+      new Set(['tt-a']),
+    );
   });
 
   it('generates a date before the new effective date from the old version', async () => {

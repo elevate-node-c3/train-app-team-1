@@ -13,12 +13,18 @@ import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
  * Both ends are inclusive: `effective_until` is the *last* day the version
  * applies, and null means it is still live. The exclusion constraint added in
  * 1793300000006 reads the row the same way -- `daterange(effective_from,
- * effective_until, '[]')` -- and {@link TimetableVersionService.supersede}
- * bounds a predecessor at the day *before* its successor takes effect, which
- * leaves no gap only because the end is included.
+ * effective_until, '[]')` -- and `TimetableVersionService.supersede` bounds a
+ * predecessor at the day *before* its successor takes effect, which leaves no
+ * gap only because the end is included.
  *
  * ISO dates compare lexicographically, which is what lets a civil date stay a
  * string here, as the generator already relies on.
+ *
+ * Range only, deliberately: it says nothing about `status`. The publish path
+ * asks this of a *draft* candidate -- `TimetablesService.publishTimetable`
+ * validates before it flips the status -- so a status check here would make
+ * publish validation skip every date and stop checking fares. Selecting among
+ * versions is where status matters, and `pickEffectiveTimetable` applies it.
  */
 export function isWithinEffectiveRange(
   timetable: TimetableEntity,
@@ -50,6 +56,12 @@ function isNewerVersion(
  * Pure, and shared with trip generation on purpose: generation resolving a
  * service date one way while a publish resolved it another is the whole bug
  * class this task exists to close.
+ *
+ * Only published rows are candidates, matching the exclusion constraint's own
+ * `WHERE status = 'published'`. Every current caller already pre-filters, so
+ * this is a guard rather than a filter -- but an exported function that would
+ * hand back a draft as "effective" is a trap, and a draft's range is allowed
+ * to overlap a live version's.
  */
 export function pickEffectiveTimetable(
   timetables: TimetableEntity[],
@@ -58,6 +70,9 @@ export function pickEffectiveTimetable(
   let chosen: TimetableEntity | null = null;
 
   for (const timetable of timetables) {
+    if (timetable.status !== 'published') {
+      continue;
+    }
     if (!isWithinEffectiveRange(timetable, serviceDate)) {
       continue;
     }
@@ -70,13 +85,20 @@ export function pickEffectiveTimetable(
 }
 
 /**
- * Is `candidate` the version its train runs on `serviceDate`?
+ * Is `candidate` the row its train runs on `serviceDate`?
  *
- * Compares `(effective_from, version)` rather than the row's id, because that
- * pair *is* a version's identity: `uq_timetable_train_version` makes the
- * version unique per train, so no two published rows of one train can answer
- * true for the same date. Generation asks this per date instead of trusting
- * every published row it was handed.
+ * Compares the row **id**, so exactly one of the rows handed in can ever
+ * answer true for a date -- tautologically, whatever state the table is in.
+ * An earlier version of this compared `(effective_from, version)` on the
+ * grounds that `uq_timetable_train_version` makes that pair unique per train;
+ * that made "exactly one" a property *derived* from the constraints rather
+ * than one this guard holds on its own, and two rows that happened to share
+ * the pair would both have generated -- the double generation this whole task
+ * exists to prevent, and which `createDatedTrip`'s unique-violation recovery
+ * would then have hidden as "already exists".
+ *
+ * Generation asks this per date instead of trusting every published row it was
+ * handed.
  */
 export function isEffectiveVersionOn(
   candidate: TimetableEntity,
@@ -85,11 +107,7 @@ export function isEffectiveVersionOn(
 ): boolean {
   const effective = pickEffectiveTimetable(trainTimetables, serviceDate);
 
-  return (
-    effective !== null &&
-    effective.effectiveFrom === candidate.effectiveFrom &&
-    effective.version === candidate.version
-  );
+  return effective !== null && effective.id === candidate.id;
 }
 
 /**
