@@ -26,7 +26,30 @@ import { StationsModule } from '../stations/stations.module.js';
 import { TripsModule } from '../trips/trips.module.js';
 import { CacheInvalidationConsumer } from './cache-invalidation.consumer.js';
 
-export const CATALOG_INVALIDATION_QUEUE = 'catalog.invalidation';
+/**
+ * One queue per event type, never one queue for all four.
+ *
+ * A subscription validates a delivery against its own `eventType`
+ * (`parseEventEnvelope`), so four subscriptions sharing a queue get the
+ * deliveries round-robin and reject the three types that are not theirs as
+ * `invalid-payload`. Measured on the shared queue: two of eight events handled,
+ * the rest dead-lettered.
+ */
+export const CATALOG_FARE_CHANGED_QUEUE = 'catalog.invalidation.fare-changed';
+export const CATALOG_TIMETABLE_PUBLISHED_QUEUE =
+  'catalog.invalidation.timetable-published';
+export const CATALOG_STATION_CHANGED_QUEUE =
+  'catalog.invalidation.station-changed';
+export const CATALOG_SEAT_AVAILABILITY_QUEUE =
+  'catalog.invalidation.seat-availability-changed';
+
+/** Every queue this module reads, for tests and for operational checks. */
+export const CATALOG_INVALIDATION_QUEUES = [
+  CATALOG_FARE_CHANGED_QUEUE,
+  CATALOG_TIMETABLE_PUBLISHED_QUEUE,
+  CATALOG_STATION_CHANGED_QUEUE,
+  CATALOG_SEAT_AVAILABILITY_QUEUE,
+] as const;
 
 export function createCatalogInvalidationSubscriptions(
   handler: EventHandlerPort,
@@ -35,25 +58,25 @@ export function createCatalogInvalidationSubscriptions(
     {
       eventType: FARE_CHANGED_EVENT_TYPE,
       version: FARE_CHANGED_VERSION,
-      queueName: CATALOG_INVALIDATION_QUEUE,
+      queueName: CATALOG_FARE_CHANGED_QUEUE,
       handler,
     },
     {
       eventType: TIMETABLE_PUBLISHED_EVENT_TYPE,
       version: TIMETABLE_PUBLISHED_VERSION,
-      queueName: CATALOG_INVALIDATION_QUEUE,
+      queueName: CATALOG_TIMETABLE_PUBLISHED_QUEUE,
       handler,
     },
     {
       eventType: STATION_CHANGED_EVENT_TYPE,
       version: STATION_CHANGED_VERSION,
-      queueName: CATALOG_INVALIDATION_QUEUE,
+      queueName: CATALOG_STATION_CHANGED_QUEUE,
       handler,
     },
     {
       eventType: SEAT_AVAILABILITY_CHANGED_EVENT_TYPE,
       version: SEAT_AVAILABILITY_CHANGED_VERSION,
-      queueName: CATALOG_INVALIDATION_QUEUE,
+      queueName: CATALOG_SEAT_AVAILABILITY_QUEUE,
       handler,
     },
   ];

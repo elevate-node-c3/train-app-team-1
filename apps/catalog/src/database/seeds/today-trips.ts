@@ -1,7 +1,8 @@
 import { addCivilDays, cairoToday } from '@app/contracts';
 import { DataSource } from 'typeorm';
 
-import { SEARCH_FIXTURE, SEARCH_FIXTURE_IDS as IDS } from '../../../apps/catalog/src/database/seeds/search-fixture.js';
+import { seedDatabaseUrlFromEnv } from '../../config/database-settings.js';
+import { SEARCH_FIXTURE, SEARCH_FIXTURE_IDS as IDS } from './search-fixture.js';
 
 /**
  * Trips for the e2e tier, anchored to the real clock.
@@ -16,11 +17,7 @@ import { SEARCH_FIXTURE, SEARCH_FIXTURE_IDS as IDS } from '../../../apps/catalog
  * rows are duplicated here.
  */
 
-const CATALOG_DATABASE_URL =
-  process.env.CATALOG_TEST_DATABASE_URL ??
-  `postgres://catalog:${process.env.CATALOG_DB_PASSWORD ?? 'catalog_dev'}@127.0.0.1:${
-    process.env.POSTGRES_HOST_PORT ?? '15432'
-  }/catalog`;
+const CATALOG_DATABASE_URL = seedDatabaseUrlFromEnv();
 
 /** Ids clear of both the shared fixture's groups and the load spec's. */
 function e2eUuid(group: number, item: number): string {
@@ -44,13 +41,7 @@ export interface E2eSearchFixture {
   trainNumbers: { mainLine: number; sleeper: number; returning: number };
 }
 
-/**
- * Loads the network and a handful of trips relative to today.
- *
- * Writes through the published Postgres port rather than a container, which is
- * what `docker-compose.override.yml` publishes it for. The catalog service
- * reaches the same database as the same role from inside the network.
- */
+/** Loads the network and a handful of trips relative to today. */
 export async function seedSearchE2e(): Promise<E2eSearchFixture> {
   const source = new DataSource({
     type: 'postgres',
