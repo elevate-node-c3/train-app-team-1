@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package train.inventory.v1;
+
+// Inventory has no seat tables yet this sprint, so every answer below is
+// zero. That zero is a real answer -- not an absence catalog has to guess
+// at -- which is what lets catalog safely refuse a rewrite over a trip that
+// might already be sold, rather than only after seats exist (TA-20).
+service InventoryService {
+  rpc SeatUsageForTrips (SeatUsageForTripsRequest)
+      returns (SeatUsageForTripsResponse);
+}
+
+message SeatUsageForTripsRequest {
+  repeated string tripIds = 1;  // uuid, dated-trip ids
+}
+
+// Counts and the stations in use travel together because catalog needs
+// both for one decision: the counts build the refusal message, and the
+// station ids say whether a stop catalog wants to remove is actually in
+// use, which a count alone cannot answer.
+message TripSeatUsage {
+  string tripId = 1;
+  int32 soldCount = 2;
+  int32 heldCount = 3;
+  repeated string stationIdsInUse = 4;
+}
+
+message SeatUsageForTripsResponse {
+  repeated TripSeatUsage usages = 1;
+}
