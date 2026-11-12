@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope } from '@app/contracts';
 import { EVENT_TYPES } from '@app/contracts';
 
+import { buildFareChanged } from '../operations/fare-events.factory.js';
 import type { RouteVersionService } from '../cache/route-version.service.js';
 import type { StationsService } from '../stations/stations.service.js';
 import type { TripStopsService } from '../trips/trip-stops.service.js';
@@ -47,6 +49,35 @@ describe('CacheInvalidationConsumer', () => {
     expect(mockRouteVersion.incrementRouteVersion).toHaveBeenCalledWith(
       'sta-cairo',
       'sta-alex',
+    );
+  });
+
+  // TA-20 Task 9, step 6: the CAT-5 consumer already handles `fareChanged`
+  // (the test above proves that with a hand-built envelope) -- this proves
+  // the *new* factory's envelope reaches it too, so FareChangeService's
+  // `buildFareChanged` output is not a shape the consumer merely happens to
+  // tolerate.
+  it('bumps the route version for a FareChanged envelope built by the new factory', async () => {
+    const envelope = buildFareChanged({
+      eventId: randomUUID(),
+      correlationId: 'corr-fare-change',
+      occurredAt: new Date(),
+      payload: {
+        originStationId: 'sta-cairo',
+        destinationStationId: 'sta-alexandria',
+        travelClassId: 'cls-first-ac',
+        trainId: 'train-916',
+        newAmountPiastres: 20_000,
+        effectiveFrom: new Date().toISOString(),
+      },
+    });
+
+    const res = await consumer.handle(envelope);
+
+    expect(res.status).toBe('handled');
+    expect(mockRouteVersion.incrementRouteVersion).toHaveBeenCalledWith(
+      'sta-cairo',
+      'sta-alexandria',
     );
   });
 

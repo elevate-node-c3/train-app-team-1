@@ -1,0 +1,517 @@
+import { randomUUID } from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ErrorCode, type EventEnvelope } from '@app/contracts';
+import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
+
+import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
+import type { StoredOperationsRequest } from './operations-request.types.js';
+import { OperationsAuditService } from './operations-audit.service.js';
+import {
+  FareChangeService,
+  type ChangeFareRequest,
+} from './fare-change.service.js';
+
+/**
+ * `FareChangeService.changeFare` -- the happy path, every refusal, the
+ * replay and the two-same-second-operators case.
+ *
+ * The honesty rule this harness follows is the one `timetable-publish-harness.ts`
+ * states: writes staged inside `withTransaction` become visible only once the
+ * callback resolves, and a rejection discards the stage entirely -- the same
+ * guarantee a Postgres `ROLLBACK` gives. That is enough to prove this
+ * *service's* contract with its collaborators. It is deliberately not offered
+ * as proof of the transactional property itself, or of real row-level
+ * locking: `test/integration/fare-change.int-spec.ts` proves the one-
+ * transaction property against real Postgres, because an in-memory double
+ * cannot exercise `entityManagerOf`'s real contract at all.
+ */
+
+const TRAIN_ID = '11111111-1111-4111-8111-111111111111';
+const TRAIN_NUMBER = '916';
+const OPERATOR = '33333333-3333-4333-8333-333333333333';
+const OPERATOR_B = '33333333-3333-4333-8333-333333333334';
+
+const CAIRO = 'aaaaaaaa-0000-4000-8000-000000000001';
+const GIZA = 'aaaaaaaa-0000-4000-8000-000000000002';
+const ALEXANDRIA = 'aaaaaaaa-0000-4000-8000-000000000003';
+const UNKNOWN_STATION = 'aaaaaaaa-0000-4000-8000-0000000000ff';
+
+const FIRST_CLASS_AC = 'bbbbbbbb-0000-4000-8000-000000000001';
+const UNKNOWN_CLASS = 'bbbbbbbb-0000-4000-8000-0000000000ff';
+
+/** Cairo -> Giza -> Alexandria, in the train's real travel order. */
+const ROUTE = [CAIRO, GIZA, ALEXANDRIA];
+
+interface FareRow {
+  id: string;
+  trainId: string;
+  travelClassId: string;
+  originStationId: string;
+  destinationStationId: string;
+  amountPiastres: number;
+  effectiveFrom: Date;
+}
+
+interface StagingContext extends TransactionContext {
+  staging: (() => void)[];
+}
+
+interface Store {
+  fares: FareRow[];
+  audit: OperationsAuditEntity[];
+  requests: StoredOperationsRequest[];
+  events: EventEnvelope[];
+}
+
+function emptyStore(): Store {
+  return { fares: [], audit: [], requests: [], events: [] };
+}
+
+function tupleKey(params: {
+  trainId: string;
+  travelClassId: string;
+  originStationId: string;
+  destinationStationId: string;
+}): string {
+  return `${params.trainId}|${params.travelClassId}|${params.originStationId}|${params.destinationStationId}`;
+}
+
+function makeRepository(store: Store, stage: (ctx: TransactionContext, work: () => void) => void) {
+  return {
+    resolveReferences: vi.fn(
+      async (params: {
+        trainNumber: number | null;
+        travelClassId: string;
+        stationIds: string[];
+      }) => ({
+        train: params.trainNumber === Number(TRAIN_NUMBER) ? { id: TRAIN_ID } : null,
+        travelClass:
+          params.travelClassId === FIRST_CLASS_AC ? { id: FIRST_CLASS_AC } : null,
+        knownStationIds: new Set(
+          params.stationIds.filter((id) => ROUTE.includes(id)),
+        ),
+      }),
+    ),
+
+    routeStationOrder: vi.fn(async (trainId: string) =>
+      trainId === TRAIN_ID ? [...ROUTE] : null,
+    ),
+
+    fareAmountAsOf: vi.fn(
+      async (params: {
+        trainId: string;
+        travelClassId: string;
+        originStationId: string;
+        destinationStationId: string;
+        asOf: Date;
+      }) => {
+        const rows = store.fares.filter(
+          (row) =>
+            row.trainId === params.trainId &&
+            row.travelClassId === params.travelClassId &&
+            row.originStationId === params.originStationId &&
+            row.destinationStationId === params.destinationStationId &&
+            row.effectiveFrom.getTime() <= params.asOf.getTime(),
+        );
+        if (rows.length === 0) return null;
+        return rows.sort(
+          (left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime(),
+        )[0].amountPiastres;
+      },
+    ),
+
+    lockFareHistory: vi.fn(
+      async (
+        _ctx: TransactionContext,
+        params: {
+          trainId: string;
+          travelClassId: string;
+          originStationId: string;
+          destinationStationId: string;
+        },
+      ) => {
+        const key = tupleKey(params);
+        return store.fares
+          .filter((row) => tupleKey(row) === key)
+          .sort((left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime());
+      },
+    ),
+
+    insertFare: vi.fn(
+      async (
+        ctx: TransactionContext,
+        params: {
+          trainId: string;
+          travelClassId: string;
+          originStationId: string;
+          destinationStationId: string;
+          amountPiastres: number;
+          effectiveFrom: Date;
+        },
+      ) => {
+        const row: FareRow = { id: randomUUID(), ...params };
+        stage(ctx, () => store.fares.push(row));
+        return row;
+      },
+    ),
+  };
+}
+
+export interface FareChangeHarness {
+  service: FareChangeService;
+  store: Store;
+  fareRowsFor: (pair: { originStationId: string; destinationStationId: string }) => FareRow[];
+  auditCount: () => number;
+  lastEvent: () => EventEnvelope;
+  requestCount: () => number;
+}
+
+function makeHarness(): FareChangeHarness {
+  const store = emptyStore();
+
+  const stage = (ctx: TransactionContext, work: () => void): void => {
+    (ctx as StagingContext).staging.push(work);
+  };
+
+  const unitOfWork = {
+    withTransaction: vi.fn(
+      async <T>(work: (ctx: TransactionContext) => Promise<T>): Promise<T> => {
+        const ctx: StagingContext = { driver: 'harness', staging: [] };
+        const result = await work(ctx);
+        for (const apply of ctx.staging) apply();
+        return result;
+      },
+    ),
+  };
+
+  const outbox = {
+    append: vi.fn(async (ctx: TransactionContext, envelope: EventEnvelope) => {
+      stage(ctx, () => store.events.push(envelope));
+    }),
+  };
+
+  const auditService = new OperationsAuditService({
+    append: async (ctx: TransactionContext, entity: OperationsAuditEntity) => {
+      stage(ctx, () => store.audit.push(entity));
+      return entity;
+    },
+    list: async () => ({ entries: [], nextCursor: null }),
+  } as never);
+
+  const requests = {
+    find: vi.fn(async (idempotencyKey: string) =>
+      store.requests.find((row) => row.idempotencyKey === idempotencyKey) ?? null,
+    ),
+    record: vi.fn(
+      async (ctx: TransactionContext, request: StoredOperationsRequest) => {
+        if (store.requests.some((row) => row.idempotencyKey === request.idempotencyKey)) {
+          throw Object.assign(new Error('duplicate key value'), { code: '23505' });
+        }
+        stage(ctx, () => store.requests.push(request));
+      },
+    ),
+  };
+
+  const repository = makeRepository(store, stage);
+
+  const service = new FareChangeService(
+    repository as never,
+    auditService,
+    requests as never,
+    unitOfWork as never,
+    outbox as never,
+    { isActive: () => false } as never,
+  );
+
+  return {
+    service,
+    store,
+    fareRowsFor: (pair) =>
+      store.fares.filter(
+        (row) =>
+          row.originStationId === pair.originStationId &&
+          row.destinationStationId === pair.destinationStationId,
+      ),
+    auditCount: () => store.audit.length,
+    lastEvent: () => store.events[store.events.length - 1],
+    requestCount: () => store.requests.length,
+  };
+}
+
+/** A pre-existing fare, as the row a previous change left behind. */
+function seedExistingFare(
+  store: Store,
+  overrides: Partial<FareRow> = {},
+): FareRow {
+  const row: FareRow = {
+    id: randomUUID(),
+    trainId: TRAIN_ID,
+    travelClassId: FIRST_CLASS_AC,
+    originStationId: CAIRO,
+    destinationStationId: ALEXANDRIA,
+    amountPiastres: 15_000,
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  };
+  store.fares.push(row);
+  return row;
+}
+
+function request(overrides: Partial<ChangeFareRequest> = {}): ChangeFareRequest {
+  return {
+    trainNumber: TRAIN_NUMBER,
+    travelClassId: FIRST_CLASS_AC,
+    originStationId: CAIRO,
+    destinationStationId: ALEXANDRIA,
+    amountPiastres: 20_000,
+    effectiveFrom: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe('FareChangeService.changeFare', () => {
+  let harness: FareChangeHarness;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-20T09:00:00.000Z'));
+    harness = makeHarness();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('records the new fare and reports the previous amount', async () => {
+    seedExistingFare(harness.store);
+
+    const result = await harness.service.changeFare(request(), 'k', OPERATOR);
+
+    expect(result).toMatchObject({
+      previousAmountPiastres: 15_000,
+      newAmountPiastres: 20_000,
+    });
+    expect(result.fareId).toBeTruthy();
+    expect(result.effectiveFrom).toBe(request().effectiveFrom);
+  });
+
+  it('reports no previous amount for the first fare ever recorded', async () => {
+    const result = await harness.service.changeFare(request(), 'k', OPERATOR);
+
+    expect(result.previousAmountPiastres).toBeNull();
+  });
+
+  it('keeps the previous fare row in the history (CAT-2, BR-30)', async () => {
+    seedExistingFare(harness.store);
+
+    await harness.service.changeFare(
+      request({ amountPiastres: 20_000 }),
+      'k',
+      OPERATOR,
+    );
+
+    expect(
+      harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA }),
+    ).toHaveLength(2);
+  });
+
+  it('writes the fare, its audit entry and FareChanged in one transaction', async () => {
+    await harness.service.changeFare(request(), 'k', OPERATOR);
+
+    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
+    expect(harness.auditCount()).toBe(1);
+    expect(harness.lastEvent().type).toBe('catalog.fare.changed');
+    expect(harness.requestCount()).toBe(1);
+  });
+
+  it('publishes FareChanged with the train, class, pair, amount and instant', async () => {
+    const req = request({ amountPiastres: 20_000 });
+    await harness.service.changeFare(req, 'k', OPERATOR);
+
+    expect(harness.lastEvent().payload).toMatchObject({
+      travelClassId: FIRST_CLASS_AC,
+      originStationId: CAIRO,
+      destinationStationId: ALEXANDRIA,
+      newAmountPiastres: 20_000,
+    });
+  });
+
+  // Review Focus 5. "Now or a future instant" includes now.
+  it('accepts a fare effective exactly now', async () => {
+    await expect(
+      harness.service.changeFare(
+        request({ effectiveFrom: new Date().toISOString() }),
+        'k1',
+        OPERATOR,
+      ),
+    ).resolves.toMatchObject({ newAmountPiastres: 20_000 });
+  });
+
+  it('refuses a fare effective in the past (BR-51)', async () => {
+    await expect(
+      harness.service.changeFare(
+        request({ effectiveFrom: new Date(Date.now() - 1000).toISOString() }),
+        'k2',
+        OPERATOR,
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+  });
+
+  it('refuses a non-positive or non-integer amount', async () => {
+    const rejection = await harness.service
+      .changeFare(request({ amountPiastres: 0 }), 'k', OPERATOR)
+      .then(() => null, (error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [expect.objectContaining({ field: 'amountPiastres' })],
+    });
+
+    const fractional = await harness.service
+      .changeFare(request({ amountPiastres: 100.5 }), 'k-frac', OPERATOR)
+      .then(() => null, (error: unknown) => error);
+
+    expect(fractional).toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+  });
+
+  it('refuses an amount below the Stripe minimum with the fee (§6.3)', async () => {
+    const original = process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
+    process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000';
+
+    try {
+      const rejection = await harness.service
+        .changeFare(request({ amountPiastres: 500 }), 'k', OPERATOR)
+        .then(() => null, (error: unknown) => error);
+
+      expect(rejection).toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: [
+          expect.objectContaining({
+            field: 'amountPiastres',
+            issue: expect.stringContaining('minimum'),
+          }),
+        ],
+      });
+    } finally {
+      if (original === undefined) delete process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
+      else process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = original;
+    }
+  });
+
+  it('refuses an unknown train, class or station pair', async () => {
+    const unknownTrain = await harness.service
+      .changeFare(request({ trainNumber: '999' }), 'k-train', OPERATOR)
+      .then(() => null, (error: unknown) => error);
+    expect(unknownTrain).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [expect.objectContaining({ field: 'trainNumber' })],
+    });
+
+    const unknownClass = await harness.service
+      .changeFare(request({ travelClassId: UNKNOWN_CLASS }), 'k-class', OPERATOR)
+      .then(() => null, (error: unknown) => error);
+    expect(unknownClass).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [expect.objectContaining({ field: 'travelClassId' })],
+    });
+
+    const unknownStation = await harness.service
+      .changeFare(request({ destinationStationId: UNKNOWN_STATION }), 'k-station', OPERATOR)
+      .then(() => null, (error: unknown) => error);
+    expect(unknownStation).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [expect.objectContaining({ field: 'destinationStationId' })],
+    });
+  });
+
+  it('refuses a pair the train does not run in order', async () => {
+    const rejection = await harness.service
+      .changeFare(
+        request({ originStationId: ALEXANDRIA, destinationStationId: CAIRO }),
+        'k',
+        OPERATOR,
+      )
+      .then(() => null, (error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [
+        expect.objectContaining({
+          field: 'destinationStationId',
+          issue: expect.stringContaining('does not run this pair in order'),
+        }),
+      ],
+    });
+  });
+
+  it('refuses an amount that would price a segment below one it contains (CAT-2)', async () => {
+    seedExistingFare(harness.store, {
+      originStationId: CAIRO,
+      destinationStationId: GIZA,
+      amountPiastres: 12_000,
+    });
+
+    const rejection = await harness.service
+      .changeFare(
+        request({
+          originStationId: CAIRO,
+          destinationStationId: ALEXANDRIA,
+          amountPiastres: 10_000,
+        }),
+        'k',
+        OPERATOR,
+      )
+      .then(() => null, (error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+      details: [
+        expect.objectContaining({
+          field: 'amountPiastres',
+          issue: expect.stringContaining('segment it contains'),
+        }),
+      ],
+    });
+  });
+
+  it('replays the first response for a repeated idempotency key', async () => {
+    const first = await harness.service.changeFare(request(), 'replay-key', OPERATOR);
+    const second = await harness.service.changeFare(request(), 'replay-key', OPERATOR);
+
+    expect(second).toEqual(first);
+    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
+    expect(harness.auditCount()).toBe(1);
+  });
+
+  // Two operators, same second: both are real requests, both recorded, the
+  // later effective_from wins for new searches. `lockFareHistory`'s real
+  // implementation is a Postgres `pessimistic_write`; this fake proves the
+  // service calls it and that both concurrent changes commit and are
+  // audited, not the row-level contention itself -- that is a database fact,
+  // proven in `test/integration/fare-change.int-spec.ts`.
+  it('serialises two concurrent changes to the same fare and records both', async () => {
+    const now = new Date();
+    await Promise.all([
+      harness.service.changeFare(
+        request({
+          amountPiastres: 20_000,
+          effectiveFrom: new Date(now.getTime() + 100).toISOString(),
+        }),
+        'k-a',
+        OPERATOR,
+      ),
+      harness.service.changeFare(
+        request({
+          amountPiastres: 30_000,
+          effectiveFrom: new Date(now.getTime() + 900).toISOString(),
+        }),
+        'k-b',
+        OPERATOR_B,
+      ),
+    ]);
+
+    expect(harness.auditCount()).toBe(2);
+    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(2);
+  });
+});
