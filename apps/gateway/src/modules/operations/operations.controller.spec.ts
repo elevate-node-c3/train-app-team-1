@@ -154,10 +154,14 @@ describe('OperationsController', () => {
     expect(exception.getStatus()).toBe(HttpStatus.BAD_REQUEST);
     const body = exception.getResponse() as {
       code: string;
-      message: { field: string }[];
+      message: ValidationIssueRef[];
     };
     expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
     expect(body.message[0].field).toBe('Idempotency-Key');
+    expect(body.message[0]).toMatchObject({
+      issueKey: 'ISSUE_IDEMPOTENCY_KEY_REQUIRED',
+      actionKey: 'ACTION_SEND_IDEMPOTENCY_KEY',
+    });
     expect(publishTimetable).not.toHaveBeenCalled();
   });
 

@@ -6,7 +6,7 @@ import {
   cairoCivilDateOf,
   ErrorCode,
   type FareChangedPayloadV1,
-  type ValidationErrorDetail,
+  type ValidationIssueRef,
 } from '@app/contracts';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import { UNIT_OF_WORK } from '@app/common/persistence/unit-of-work.port.js';
@@ -146,7 +146,7 @@ export class FareChangeService {
 
   private refusal(
     code: ErrorCode,
-    details: ValidationErrorDetail[],
+    details: ValidationIssueRef[],
   ): CatalogSearchError {
     return new CatalogSearchError(code, details, code);
   }
@@ -173,8 +173,8 @@ export class FareChangeService {
         {
           field: 'Idempotency-Key',
           rejectedValue: idempotencyKey,
-          issue: 'has already been used for a different fare change',
-          action: 'Send a new Idempotency-Key for a different request body',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REUSED',
+          actionKey: 'ACTION_SEND_NEW_IDEMPOTENCY_KEY',
         },
       ]);
     }
@@ -186,8 +186,8 @@ export class FareChangeService {
   private async validate(
     request: ChangeFareRequest,
     references: FareChangeReferences,
-  ): Promise<ValidationErrorDetail[]> {
-    const details: ValidationErrorDetail[] = [];
+  ): Promise<ValidationIssueRef[]> {
+    const details: ValidationIssueRef[] = [];
 
     const amountValid =
       Number.isSafeInteger(request.amountPiastres) &&
@@ -197,8 +197,8 @@ export class FareChangeService {
       details.push({
         field: 'amountPiastres',
         rejectedValue: request.amountPiastres,
-        issue: 'must be a positive integer number of piastres',
-        action: 'Send a positive whole number of piastres',
+        issueKey: 'ISSUE_FARE_NOT_POSITIVE_PIASTRES',
+        actionKey: 'ACTION_SEND_POSITIVE_PIASTRES',
       });
     } else if (!isChargeableFare(request.amountPiastres)) {
       // No fee term: the fee is positive, so `fare >= floor` implies
@@ -206,8 +206,8 @@ export class FareChangeService {
       details.push({
         field: 'amountPiastres',
         rejectedValue: request.amountPiastres,
-        issue: 'is below the minimum chargeable amount',
-        action: 'Raise this fare to at least the Stripe minimum',
+        issueKey: 'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+        actionKey: 'ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM',
       });
     }
 
@@ -218,16 +218,16 @@ export class FareChangeService {
       details.push({
         field: 'effectiveFrom',
         rejectedValue: request.effectiveFrom,
-        issue: 'is not a valid instant',
-        action: 'Send effectiveFrom as an ISO-8601 instant',
+        issueKey: 'ISSUE_NOT_AN_INSTANT',
+        actionKey: 'ACTION_SEND_ISO_INSTANT',
       });
     } else if (effectiveInstant.getTime() < Date.now()) {
       // Now is accepted; only strictly past is refused (BR-51).
       details.push({
         field: 'effectiveFrom',
         rejectedValue: request.effectiveFrom,
-        issue: 'is in the past',
-        action: 'Choose an instant that is now or later',
+        issueKey: 'ISSUE_INSTANT_IN_THE_PAST',
+        actionKey: 'ACTION_PICK_INSTANT_NOW_OR_LATER',
       });
     }
 
@@ -235,8 +235,8 @@ export class FareChangeService {
       details.push({
         field: 'trainNumber',
         rejectedValue: request.trainNumber,
-        issue: 'is not a known train number',
-        action: 'Choose a train number from the train list',
+        issueKey: 'ISSUE_TRAIN_NUMBER_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_TRAIN_FROM_LIST',
       });
     }
 
@@ -244,8 +244,8 @@ export class FareChangeService {
       details.push({
         field: 'travelClassId',
         rejectedValue: request.travelClassId,
-        issue: 'is not a known travel class',
-        action: 'Choose a travel class from the travel class list',
+        issueKey: 'ISSUE_TRAVEL_CLASS_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_TRAVEL_CLASS_FROM_LIST',
       });
     }
 
@@ -253,8 +253,8 @@ export class FareChangeService {
       details.push({
         field: 'originStationId',
         rejectedValue: request.originStationId,
-        issue: 'is not a known station',
-        action: 'Choose a station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_STATION_FROM_LIST',
       });
     }
 
@@ -262,8 +262,8 @@ export class FareChangeService {
       details.push({
         field: 'destinationStationId',
         rejectedValue: request.destinationStationId,
-        issue: 'is not a known station',
-        action: 'Choose a station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_STATION_FROM_LIST',
       });
     }
 
@@ -297,8 +297,8 @@ export class FareChangeService {
     request: ChangeFareRequest,
     trainId: string,
     effectiveInstant: Date,
-  ): Promise<ValidationErrorDetail[]> {
-    const details: ValidationErrorDetail[] = [];
+  ): Promise<ValidationIssueRef[]> {
+    const details: ValidationIssueRef[] = [];
     const order = await this.repository.routeStationOrder(
       trainId,
       cairoCivilDateOf(effectiveInstant),
@@ -308,8 +308,8 @@ export class FareChangeService {
       details.push({
         field: 'originStationId',
         rejectedValue: request.originStationId,
-        issue: 'this train has no published route to check the pair against',
-        action: 'Publish a timetable for this train before changing its fares',
+        issueKey: 'ISSUE_TRAIN_HAS_NO_PUBLISHED_ROUTE',
+        actionKey: 'ACTION_PUBLISH_TIMETABLE_FIRST',
       });
       return details;
     }
@@ -325,9 +325,8 @@ export class FareChangeService {
       details.push({
         field: 'destinationStationId',
         rejectedValue: request.destinationStationId,
-        issue: 'this train does not run this pair in order',
-        action:
-          'Choose an origin and destination the train visits in that travel order',
+        issueKey: 'ISSUE_TRAIN_DOES_NOT_RUN_PAIR_IN_ORDER',
+        actionKey: 'ACTION_PICK_PAIR_IN_TRAVEL_ORDER',
       });
       return details;
     }
@@ -354,9 +353,9 @@ export class FareChangeService {
         details.push({
           field: 'amountPiastres',
           rejectedValue: request.amountPiastres,
-          issue: `is less than the fare for a segment it contains (${inner} piastres)`,
-          action:
-            'Raise this fare so it is not cheaper than a segment it contains',
+          issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT',
+          actionKey: 'ACTION_RAISE_FARE_TO_CONTAINED_SEGMENT',
+          params: { containedFarePiastres: String(inner) },
         });
       }
     }
@@ -473,9 +472,8 @@ export class FareChangeService {
         {
           field: 'effectiveFrom',
           rejectedValue: request.effectiveFrom,
-          issue:
-            'a fare for this train, class and pair already takes effect at this exact instant',
-          action: 'Choose a different effectiveFrom, even by one millisecond',
+          issueKey: 'ISSUE_FARE_ALREADY_EFFECTIVE_AT_INSTANT',
+          actionKey: 'ACTION_PICK_DIFFERENT_EFFECTIVE_INSTANT',
         },
       ]);
     }
@@ -488,8 +486,8 @@ export class FareChangeService {
         {
           field: 'Idempotency-Key',
           rejectedValue: idempotencyKey,
-          issue: 'has already been used for a different fare change',
-          action: 'Send a new Idempotency-Key for a different request body',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REUSED',
+          actionKey: 'ACTION_SEND_NEW_IDEMPOTENCY_KEY',
         },
       ]);
     }

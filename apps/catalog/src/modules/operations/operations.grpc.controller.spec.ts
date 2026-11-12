@@ -82,7 +82,11 @@ describe('OperationsGrpcController', () => {
       publish: { publish } as Partial<TimetablePublishService>,
     }).publishTimetable(publishRequest, metadataWith('key-1'));
 
-    expect(response).toMatchObject({ timetableId: 't1', version: 1, created: 1 });
+    expect(response).toMatchObject({
+      timetableId: 't1',
+      version: 1,
+      created: 1,
+    });
 
     // Absent wire fields become `null`, matching the domain type.
     expect(publish.mock.calls[0][0]).toMatchObject({
@@ -153,7 +157,9 @@ describe('OperationsGrpcController', () => {
   it('narrows audit entries by train, date range and cursor', async () => {
     const list = vi.fn().mockResolvedValue({ entries: [], nextCursor: null });
 
-    await controllerWith({ audit: { list } as Partial<OperationsAuditService> }).listAuditEntries({
+    await controllerWith({
+      audit: { list } as Partial<OperationsAuditService>,
+    }).listAuditEntries({
       trainId: 'tr1',
       from: '2026-01-01T00:00:00.000Z',
       to: '2026-02-01T00:00:00.000Z',
@@ -183,6 +189,17 @@ describe('OperationsGrpcController', () => {
         .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(RpcException);
+      const payload = (error as RpcException).getError() as { details: string };
+      expect(JSON.parse(payload.details)).toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: [
+          {
+            field: 'callerAccountId',
+            issueKey: 'ISSUE_CALLER_ACCOUNT_MISSING',
+            actionKey: 'ACTION_SIGN_IN_AND_RETRY',
+          },
+        ],
+      });
       expect(publish).not.toHaveBeenCalled();
     });
 
@@ -197,6 +214,17 @@ describe('OperationsGrpcController', () => {
         .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(RpcException);
+      const payload = (error as RpcException).getError() as { details: string };
+      expect(JSON.parse(payload.details)).toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: [
+          {
+            field: 'Idempotency-Key',
+            issueKey: 'ISSUE_IDEMPOTENCY_KEY_REQUIRED',
+            actionKey: 'ACTION_SEND_IDEMPOTENCY_KEY',
+          },
+        ],
+      });
       expect(publish).not.toHaveBeenCalled();
     });
 
@@ -235,8 +263,8 @@ describe('OperationsGrpcController', () => {
       {
         field: 'trainNumber',
         rejectedValue: '999',
-        issue: 'is not a known train number',
-        action: 'Choose a train number from the train list',
+        issueKey: 'ISSUE_TRAIN_NUMBER_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_TRAIN_FROM_LIST',
       },
     ]);
     const publish = vi.fn().mockRejectedValue(refusal);
@@ -251,7 +279,7 @@ describe('OperationsGrpcController', () => {
     const payload = error.getError() as { details: string };
     expect(JSON.parse(payload.details)).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
-      details: expect.any(Array),
+      details: refusal.details,
     });
   });
 

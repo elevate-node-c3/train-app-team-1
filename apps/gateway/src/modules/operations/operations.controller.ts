@@ -39,8 +39,8 @@ function requireIdempotencyKey(value: string | undefined): string {
         {
           field: IDEMPOTENCY_KEY_HEADER,
           rejectedValue: value,
-          issue: 'is required for an operator change',
-          action: 'Send an Idempotency-Key header unique to this request',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REQUIRED',
+          actionKey: 'ACTION_SEND_IDEMPOTENCY_KEY',
         },
       ],
     },
@@ -84,9 +84,7 @@ export class OperationsController {
 
   @Get('audit')
   @RequireRole('operator')
-  async listAudit(
-    @Query() query: ListAuditQueryDto,
-  ): Promise<ListAuditResult> {
+  async listAudit(@Query() query: ListAuditQueryDto): Promise<ListAuditResult> {
     return this.operations.listAudit(query);
   }
 }
