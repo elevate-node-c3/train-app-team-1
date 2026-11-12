@@ -11,6 +11,7 @@ export * from './envelope/catalogue.js';
 export * from './envelope/response.interceptor.js';
 export * from './envelope/http-exception.filter.js';
 export * from './envelope/validation-exception.factory.js';
+export * from './validation/uuid.js';
 export * from './auth/access-token.claims.js';
 export * from './auth/access-token.signer.js';
 export * from './auth/access-token.verifier.js';

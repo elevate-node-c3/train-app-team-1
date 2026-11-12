@@ -1,3 +1,4 @@
+import { isRfcUuid } from '@app/common/validation/uuid.js';
 import type {
   SearchOneWayTripsRequest,
   ValidationErrorDetail,
@@ -22,14 +23,11 @@ import {
  * refusal names To, and the message has to match the form.
  */
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The identifier shape the catalogue mints; shared with the filter refusals. */
 export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_PATTERN.test(value);
+  return isRfcUuid(value);
 }
 
 /** What the catalogue knows about the ids a request referenced. */
