@@ -1,4 +1,4 @@
-import { ErrorCode } from '@app/contracts';
+import { ErrorCode, type ValidationIssueRef } from '@app/contracts';
 import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
@@ -7,17 +7,15 @@ import {
   parseCatalogBusinessError,
 } from './catalog-error.js';
 
-const refusalDetails = (
-  overrides: Record<string, unknown> = {},
-): string =>
+const refusalDetails = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
     code: ErrorCode.VALIDATION_ERROR,
     details: [
       {
         field: 'to',
         rejectedValue: 'x',
-        issue: 'is the same station as From',
-        action: 'Pick a different destination station',
+        issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+        actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
       },
     ],
     ...overrides,
@@ -30,7 +28,10 @@ describe('decoding a catalog refusal', () => {
     expect(refusal?.code).toBe(ErrorCode.VALIDATION_ERROR);
     expect(refusal?.details).toHaveLength(1);
     expect(refusal?.details[0].field).toBe('to');
-    expect(refusal?.details[0].action).not.toBe('');
+    expect(refusal?.details[0]).toMatchObject({
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+      actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+    });
   });
 
   // Anything beyond the code and the fields is ignored rather than decoded:
@@ -79,9 +80,10 @@ describe('decoding a catalog refusal', () => {
     const refusal = decodeCatalogRefusal(
       refusalDetails({
         details: [
-          { field: 'to', issue: 'bad', action: 'fix it' },
+          { field: 'to', issueKey: 'ISSUE_REQUIRED' },
           'not an object',
           { field: 'from' },
+          { field: 'to', issue: 'legacy prose', action: 'legacy action' },
           null,
         ],
       }),
@@ -90,6 +92,45 @@ describe('decoding a catalog refusal', () => {
     expect(refusal?.details).toHaveLength(1);
     expect(refusal?.details[0].field).toBe('to');
   });
+
+  it('keeps refs with optional string params and arbitrary rejected values', () => {
+    const detail = {
+      field: 'returnDate',
+      rejectedValue: { nested: ['٠٦:٠٠'] },
+      issueKey: 'ISSUE_RETURN_BEFORE_DEPARTURE',
+      actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+      params: { departureDate: '2026-12-01' },
+    };
+    const refusal = decodeCatalogRefusal(refusalDetails({ details: [detail] }));
+    expect(refusal?.details).toEqual([detail]);
+  });
+
+  it.each([
+    null,
+    'not a map',
+    ['2026-12-01'],
+    { departureDate: 42 },
+    { departureDate: { nested: true } },
+  ])('drops a detail whose params is not a string map: %j', (params) => {
+    const refusal = decodeCatalogRefusal(
+      refusalDetails({
+        details: [{ field: 'returnDate', issueKey: 'ISSUE_REQUIRED', params }],
+      }),
+    );
+    expect(refusal?.details).toEqual([]);
+  });
+
+  it.each([42, null, [], {}])(
+    'drops a detail with a malformed actionKey: %j',
+    (actionKey) => {
+      const refusal = decodeCatalogRefusal(
+        refusalDetails({
+          details: [{ field: 'to', issueKey: 'ISSUE_REQUIRED', actionKey }],
+        }),
+      );
+      expect(refusal?.details).toEqual([]);
+    },
+  );
 
   it('tolerates a refusal with no details array', () => {
     const refusal = decodeCatalogRefusal(
@@ -113,6 +154,9 @@ describe('decoding a catalog refusal', () => {
     );
 
     expect(refusal?.retryAfterSeconds).toBe(5);
+    expect(refusal?.details[0]).toMatchObject({
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+    });
   });
 
   it('leaves retryAfterSeconds undefined when the refusal carries none', () => {
@@ -134,7 +178,7 @@ describe('turning a refusal into an HTTP error', () => {
   /**
    * Under `message`, not a key of our own: that is the channel
    * `HttpExceptionFilter.extractValidationDetails` reads, and it already
-   * understands objects carrying field, issue and action. A parallel `details`
+   * understands objects carrying field, issueKey and actionKey. A parallel `details`
    * key looked right and was silently dropped, so a traveller got a 400
    * naming nothing.
    */
@@ -145,12 +189,12 @@ describe('turning a refusal into an HTTP error', () => {
 
     const body = exception?.getResponse() as {
       code: string;
-      message: { field: string; issue: string; action: string }[];
+      message: ValidationIssueRef[];
     };
     expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
     expect(Array.isArray(body.message)).toBe(true);
     expect(body.message[0].field).toBe('to');
-    expect(body.message[0].action).not.toBe('');
+    expect(body.message[0].actionKey).toBe('ACTION_PICK_DIFFERENT_DESTINATION');
   });
 
   /** The CARRY this gateway task closes: Task 10's §5 handoff. */
