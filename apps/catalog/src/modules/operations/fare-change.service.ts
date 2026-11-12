@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { ClsService } from 'nestjs-cls';
 
 import {
-  cairoToday,
+  cairoCivilDateOf,
   ErrorCode,
   type FareChangedPayloadV1,
   type ValidationErrorDetail,
@@ -44,8 +44,11 @@ export interface ChangeFareResult {
   effectiveFrom: string;
 }
 
-/** A unique violation -- here, a reused `Idempotency-Key`. */
+/** A unique violation -- a reused `Idempotency-Key`, or a reused fare tuple. */
 const UNIQUE_VIOLATION = '23505';
+
+/** `fare`'s own constraint: `(train, class, origin, destination, effective_from)`. */
+const FARE_UNIQUE_CONSTRAINT = 'uq_fare_effective_version';
 
 /**
  * Both `code` and `driverError.code`, because TypeORM wraps the driver's
@@ -62,6 +65,27 @@ function hasPostgresCode(error: unknown, sqlState: string): boolean {
   return (
     candidate.code === sqlState || candidate.driverError?.code === sqlState
   );
+}
+
+/**
+ * Which constraint a `23505` actually came from -- the only honest way to
+ * tell a reused `Idempotency-Key` (`operations_request`'s primary key) apart
+ * from a reused fare tuple (`fare`'s own `uq_fare_effective_version`), since
+ * both are the same SQLSTATE.
+ */
+function constraintNameOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+
+  const candidate = error as {
+    constraint?: unknown;
+    driverError?: { constraint?: unknown };
+  };
+
+  if (typeof candidate.constraint === 'string') return candidate.constraint;
+  if (typeof candidate.driverError?.constraint === 'string') {
+    return candidate.driverError.constraint;
+  }
+  return undefined;
 }
 
 /**
@@ -123,7 +147,12 @@ export class FareChangeService {
         actorAccountId,
       });
     } catch (error: unknown) {
-      const replay = await this.replayRace(error, idempotencyKey, fingerprint);
+      const replay = await this.replayRace(
+        error,
+        request,
+        idempotencyKey,
+        fingerprint,
+      );
       if (replay) return replay;
       throw error;
     }
@@ -284,8 +313,13 @@ export class FareChangeService {
   /**
    * CAT-2's two rules, for one fare instead of a whole timetable: the pair
    * must run in the train's real travel order, and the new amount must not
-   * undercut a segment it contains. Checked against the published route
-   * effective today -- the route this fare governs right now.
+   * undercut a segment it contains. Checked against the route effective on
+   * the fare's own `effectiveFrom` civil date, not today's -- an operator who
+   * publishes a timetable that only takes effect next month must still be
+   * able to correct its fares before it goes live. Checking "today" instead
+   * made `routeStationOrder` return null for any train whose only published
+   * version starts in the future, which refused every fare change against
+   * it.
    */
   private async validateOrderAndContainment(
     request: ChangeFareRequest,
@@ -295,7 +329,7 @@ export class FareChangeService {
     const details: ValidationErrorDetail[] = [];
     const order = await this.repository.routeStationOrder(
       trainId,
-      cairoToday(new Date()),
+      cairoCivilDateOf(effectiveInstant),
     );
 
     if (!order) {
@@ -460,14 +494,35 @@ export class FareChangeService {
    * `record` inserts rather than saves, so a concurrent fare change that
    * committed the same key first fails this transaction instead of
    * overwriting its answer. Re-reading the key is what tells that race apart
-   * from any other unique violation, which is rethrown untouched.
+   * from any other unique violation.
+   *
+   * Two different constraints raise the same `23505`, so the SQLSTATE alone
+   * cannot tell them apart: `operations_request`'s primary key (a reused
+   * `Idempotency-Key`) and `fare`'s own `uq_fare_effective_version` (a second
+   * change for the exact same train, class, pair and instant, submitted under
+   * a *different* key -- an operator correcting a typo by resubmitting the
+   * same `effectiveFrom`, say). The constraint name disambiguates; whichever
+   * it is not is rethrown untouched.
    */
   private async replayRace(
     error: unknown,
+    request: ChangeFareRequest,
     idempotencyKey: string,
     fingerprint: string,
   ): Promise<ChangeFareResult | null> {
     if (!hasPostgresCode(error, UNIQUE_VIOLATION)) return null;
+
+    if (constraintNameOf(error) === FARE_UNIQUE_CONSTRAINT) {
+      throw this.refusal(ErrorCode.CONFLICT, [
+        {
+          field: 'effectiveFrom',
+          rejectedValue: request.effectiveFrom,
+          issue:
+            'a fare for this train, class and pair already takes effect at this exact instant',
+          action: 'Choose a different effectiveFrom, even by one millisecond',
+        },
+      ]);
+    }
 
     const stored = await this.requests.find(idempotencyKey);
     if (!stored) return null;
