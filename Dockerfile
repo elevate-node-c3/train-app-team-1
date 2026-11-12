@@ -28,9 +28,9 @@ WORKDIR /usr/src/app
 # Merge identity and catalog output for both seeds.
 COPY --from=build-identity /usr/src/app/dist ./dist
 RUN test -f dist/apps/catalog/src/database/seeds/catalog.seed.js \
- && test -f dist/apps/identity/src/database/seeds/staff-accounts.seed.js \
- && test -f dist/libs/contracts/src/index.js \
- && ! grep -rq "from '@app/" dist/apps dist/libs
+    && test -f dist/apps/identity/src/database/seeds/staff-accounts.seed.js \
+    && test -f dist/libs/contracts/src/index.js \
+    && ! grep -rq "from '@app/" dist/apps dist/libs
 USER node
 CMD ["node", "scripts/seed-all.mjs"]
 

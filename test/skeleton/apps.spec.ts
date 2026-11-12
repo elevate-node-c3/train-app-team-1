@@ -54,8 +54,8 @@ describe('service apps', () => {
 
     const controllers =
       (Reflect.getMetadata('controllers', moduleClass) as
-        | (new () => Record<string, () => { service: string }>)[]
-        | undefined) ?? [];
+        (new () => Record<string, () => { service: string }>)[] | undefined) ??
+      [];
     const controller = controllers.find(
       (candidate) => candidate.name === 'ServiceInfoController',
     );

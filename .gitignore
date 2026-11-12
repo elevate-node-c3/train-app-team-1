@@ -34,6 +34,7 @@ lerna-debug.log*
 .settings/
 *.sublime-workspace
 .claude/
+.kilo/
 
 # Local agent notes
 CLAUDE.md
