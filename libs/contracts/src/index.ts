@@ -11,6 +11,7 @@ export * from './identity/password-policy.js';
 export * from './inventory/inventory.grpc.js';
 export * from './catalog/catalog.grpc.js';
 export * from './catalog/catalog.dto.js';
+export * from './catalog/operations.dto.js';
 export * from './catalog/cairo-time.js';
 export * from './catalog/booking-window.js';
 export * from './events/event-envelope.js';
