@@ -8,9 +8,7 @@ import {
   TimetableVersionService,
 } from './timetable-version.service.js';
 
-// `entityManagerOf` refuses anything that is not the real adapter's context
-// object, which a unit test has no way to build. Unwrapping is the only thing
-// it does for `supersede`, so it is stubbed to exactly that.
+// `entityManagerOf` refuses fake contexts; unwrapping is all `supersede` needs.
 vi.mock('@app/common/persistence/typeorm-unit-of-work.js', () => ({
   entityManagerOf: (ctx: { manager: unknown }) => ctx.manager,
 }));
@@ -36,10 +34,7 @@ interface FindOptions {
   order?: { version?: 'ASC' | 'DESC' };
 }
 
-/**
- * A small honest fake: it applies the train and status filters the service
- * asks for, so a service that forgot either one fails here.
- */
+// Applies the train and status filters, so a forgotten filter fails here.
 function makeService(rows: TimetableEntity[]) {
   const saved: TimetableEntity[] = [];
 
@@ -85,7 +80,7 @@ describe('TimetableVersionService', () => {
         effectiveUntil: '2026-06-19',
       }),
       timetable({ version: 2, effectiveFrom: '2026-06-20' }),
-      // Not live, and must never be chosen however new it looks.
+      // Not live, however new.
       timetable({ version: 3, effectiveFrom: '2026-01-01', status: 'draft' }),
     ]);
 
@@ -93,15 +88,13 @@ describe('TimetableVersionService', () => {
     expect(await service.effectiveOn(TRAIN, '2026-06-20')).toMatchObject({
       version: 2,
     });
-    // The day before is still the predecessor's -- `effective_until` is the
-    // last day it applies, not the first day it does not.
+    // `effective_until` is the last day it applies, not the first it does not.
     expect(await service.effectiveOn(TRAIN, '2026-06-19')).toMatchObject({
       version: 1,
     });
     expect(await service.effectiveOn(TRAIN, '2027-01-01')).toMatchObject({
       version: 2,
     });
-    // Another train's dates are not this train's business.
     expect(await service.effectiveOn(OTHER_TRAIN, '2026-06-20')).toBeNull();
   });
 
@@ -125,20 +118,18 @@ describe('TimetableVersionService', () => {
     await service.supersede(ctx, TRAIN, '2026-06-20');
 
     expect(live.effectiveUntil).toBe('2026-06-19');
-    // Already closed before the new version starts, so there is nothing to
-    // bound and rewriting it would lose a real range.
+    // Already closed; rewriting it would lose a real range.
     expect(history.effectiveUntil).toBe('2025-12-31');
     expect(saved).toEqual([live]);
 
-    // The point of the day-before: the bounded version still owns the last day
-    // before its successor starts, so no day is left without one.
+    // The bounded version keeps the last day before its successor, so no day
+    // is ownerless.
     expect(await service.effectiveOn(TRAIN, '2026-06-19')).toBe(live);
     expect(await service.effectiveOn(TRAIN, '2026-06-20')).toBeNull();
   });
 
   it('reports the latest version number for a train', async () => {
-    // Withdrawn and draft rows count: uq_timetable_train_version does not care
-    // what status the row it collides with has.
+    // Withdrawn and draft count: the unique version constraint ignores status.
     const { service } = makeService([
       timetable({ version: 1, status: 'withdrawn' }),
       timetable({ version: 3, status: 'draft' }),
@@ -157,13 +148,8 @@ describe('TimetableVersionService', () => {
 });
 
 describe('isEffectiveVersionOn', () => {
-  /**
-   * The guard must identify one row, not one `(effective_from, version)` pair.
-   * Those two rows cannot both exist under `uq_timetable_train_version`, but a
-   * guard that leans on a constraint to stay single-valued is restating the
-   * database rather than backing it up -- and the cost of being wrong is two
-   * dated trips for one service date.
-   */
+  // Must identify one row, not one `(effective_from, version)` pair; two trips
+  // on a service date is the failure.
   it('treats exactly one of two rows sharing a version as effective', () => {
     const first = timetable({
       id: 'tt-a',
@@ -203,9 +189,8 @@ describe('isEffectiveVersionOn', () => {
     expect(isEffectiveVersionOn(superseded, rows, '2026-06-21')).toBe(true);
   });
 
-  // Draft and withdrawn ranges are allowed to overlap a live version -- the
-  // exclusion constraint is partial on published -- so neither may ever come
-  // back as the effective row.
+  // Draft/withdrawn ranges may overlap a published one; neither may resolve as
+  // effective.
   it('never resolves to a row that is not published', () => {
     const draft = timetable({
       id: 'tt-draft',

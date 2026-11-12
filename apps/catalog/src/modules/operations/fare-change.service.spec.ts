@@ -12,20 +12,8 @@ import {
   type ChangeFareRequest,
 } from './fare-change.service.js';
 
-/**
- * `FareChangeService.changeFare` -- the happy path, every refusal, the
- * replay and the two-same-second-operators case.
- *
- * The honesty rule this harness follows is the one `timetable-publish-harness.ts`
- * states: writes staged inside `withTransaction` become visible only once the
- * callback resolves, and a rejection discards the stage entirely -- the same
- * guarantee a Postgres `ROLLBACK` gives. That is enough to prove this
- * *service's* contract with its collaborators. It is deliberately not offered
- * as proof of the transactional property itself, or of real row-level
- * locking: `test/integration/fare-change.int-spec.ts` proves the one-
- * transaction property against real Postgres, because an in-memory double
- * cannot exercise `entityManagerOf`'s real contract at all.
- */
+// Staged writes land only when `withTransaction` resolves. Real Postgres
+// transactions and row locking are tested in the integration spec.
 
 const TRAIN_ID = '11111111-1111-4111-8111-111111111111';
 const TRAIN_NUMBER = '916';
@@ -80,9 +68,7 @@ function tupleKey(params: {
 function makeRepository(
   store: Store,
   stage: (ctx: TransactionContext, work: () => void) => void,
-  // The civil date the train's one published version takes effect.
-  // Defaults far in the past, matching "a route that is already live" --
-  // overridden by the future-only-version test (F4).
+  // Defaults far in the past, matching an already-live route.
   routeEffectiveFrom: string,
 ) {
   return {
@@ -101,10 +87,7 @@ function makeRepository(
       }),
     ),
 
-    // Mirrors the real repository's own rule: null when `asOfDate` is before
-    // the version's `effectiveFrom` -- the exact behaviour F4 found broken
-    // when the service probed with "today" instead of the fare's own civil
-    // date.
+    // Null when `asOfDate` is before the version's `effectiveFrom`.
     routeStationOrder: vi.fn(async (trainId: string, asOfDate: string) =>
       trainId === TRAIN_ID && asOfDate >= routeEffectiveFrom ? [...ROUTE] : null,
     ),
@@ -161,9 +144,7 @@ function makeRepository(
           effectiveFrom: Date;
         },
       ) => {
-        // Mirrors `uq_fare_effective_version`: the exact same tuple at the
-        // exact same instant is a unique violation, the real constraint F5
-        // found unhandled.
+        // Mirrors `uq_fare_effective_version`: same tuple and instant is a violation.
         if (
           store.fares.some(
             (row) =>
@@ -272,7 +253,6 @@ function makeHarness(options: FareChangeHarnessOptions = {}): FareChangeHarness 
   };
 }
 
-/** A pre-existing fare, as the row a previous change left behind. */
 function seedExistingFare(
   store: Store,
   overrides: Partial<FareRow> = {},
@@ -370,7 +350,6 @@ describe('FareChangeService.changeFare', () => {
     });
   });
 
-  // Review Focus 5. "Now or a future instant" includes now.
   it('accepts a fare effective exactly now', async () => {
     await expect(
       harness.service.changeFare(
@@ -517,12 +496,8 @@ describe('FareChangeService.changeFare', () => {
     expect(harness.auditCount()).toBe(1);
   });
 
-  // Two operators, same second: both are real requests, both recorded, the
-  // later effective_from wins for new searches. `lockFareHistory`'s real
-  // implementation is a Postgres `pessimistic_write`; this fake proves the
-  // service calls it and that both concurrent changes commit and are
-  // audited, not the row-level contention itself -- that is a database fact,
-  // proven in `test/integration/fare-change.int-spec.ts`.
+  // Both requests are real and recorded; the later effective_from wins. Row
+  // contention itself is proven against Postgres.
   it('serialises two concurrent changes to the same fare and records both', async () => {
     const now = new Date();
     await Promise.all([
@@ -548,15 +523,11 @@ describe('FareChangeService.changeFare', () => {
     expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(2);
   });
 
-  // F4: checking the route against "today" refused every fare change for a
-  // train whose only published version starts in the future. The fix probes
-  // with the fare's own `effectiveFrom` civil date instead.
+  // Probe with the fare's own effective date, not today, or a future-only
+  // route looks missing.
   it('accepts a fare change for a train whose only published version starts in the future', async () => {
     const futureHarness = makeHarness({ routeEffectiveFrom: '2026-07-01' });
 
-    // Frozen "now" (2026-06-20) is before the route's effective date, so a
-    // probe with today's date would see no route at all; the fare's own
-    // effectiveFrom (on or after the route's date) must be used instead.
     const result = await futureHarness.service.changeFare(
       request({ effectiveFrom: new Date('2026-07-01T00:00:00.000Z').toISOString() }),
       'k',
@@ -566,10 +537,8 @@ describe('FareChangeService.changeFare', () => {
     expect(result).toMatchObject({ newAmountPiastres: 20_000 });
   });
 
-  // F5: the same train, class, pair and *instant*, resubmitted under a new
-  // idempotency key, hits `uq_fare_effective_version` -- a different
-  // constraint than the idempotency-key race, and must not surface as a raw
-  // 500.
+  // Same tuple and instant under a new key hits `uq_fare_effective_version`,
+  // not a 500.
   it('refuses a same-instant resubmission as a conflict, not a 500', async () => {
     const effectiveFrom = new Date('2026-06-25T00:00:00.000Z').toISOString();
 
@@ -591,7 +560,6 @@ describe('FareChangeService.changeFare', () => {
       code: ErrorCode.CONFLICT,
       details: [expect.objectContaining({ field: 'effectiveFrom' })],
     });
-    // Only the first change was written.
     expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
   });
 });

@@ -1,10 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * One row per `Idempotency-Key` a client has sent (TA-20). The fingerprint
- * lets a repeat with different content be told apart from a genuine retry;
- * the stored response is what a genuine retry gets back instead of redoing
- * the work.
+ * One row per `Idempotency-Key`: the request fingerprint, and the response a
+ * genuine retry gets instead of redoing the work.
  */
 export class CreateOperationsRequest1793300000008
   implements MigrationInterface

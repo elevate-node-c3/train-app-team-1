@@ -138,14 +138,8 @@ export function stopStack(): void {
 }
 
 /**
- * Runs identity's standalone staff seed after identity has migrated.
- *
- * The seeder image carries both identity's and catalog's compiled seeds, so
- * its command is narrowed to the one seed this harness needs. That keeps the
- * auth slice independent of a running catalog, which `seed-all` would require.
- * The image may not have been built by `startStack` (the seed is intentionally
- * not in the backbone slice), so allow the first-build budget and ask `run`
- * to build it.
+ * Runs identity's staff seed after migration. The seeder image also holds
+ * catalog's seed, so narrow it to identity to keep the auth stack independent.
  */
 export function seedStaff(): void {
   const password = process.env.IDENTITY_DB_PASSWORD ?? 'identity_dev';

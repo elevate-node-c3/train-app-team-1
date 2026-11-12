@@ -17,11 +17,7 @@ const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 /** A naive Cairo wall-clock time of day, e.g. '06:00'. */
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/**
- * One planned stop, as submitted: a naive Cairo wall-clock time plus a day
- * offset, never an instant -- `effectiveFrom` and each generated service date
- * supply the date, catalog's own rule unchanged.
- */
+/** A naive Cairo wall-clock time plus a day offset, never an instant. */
 export class PublishTimetableStopDto {
   @IsUUID()
   stationId!: string;
@@ -79,15 +75,9 @@ export class PublishTimetableFareDto {
   amountPiastres!: number;
 }
 
-/**
- * `POST /api/v1/operations/timetables`.
- *
- * Shape only. Whether the running days, the stop order or a fare are valid is
- * catalog's to decide -- it revalidates everything regardless, because a gRPC
- * peer is not a trusted caller.
- */
+/** Shape only; catalog revalidates everything because a gRPC peer is not trusted. */
 export class PublishTimetableDto {
-  /** Echoed verbatim in a refusal; resolved to the integer train column server-side. */
+  /** Echoed verbatim in refusals; resolved to the integer train column server-side. */
   @IsString()
   trainNumber!: string;
 

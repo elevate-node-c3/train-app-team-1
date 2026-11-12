@@ -10,20 +10,12 @@ import type {
   OperationsAuditPage,
 } from './operations-audit.types.js';
 
-/**
- * The append and the read, kept apart on purpose: `append` joins the
- * caller's transaction (BR-52 -- see the entity's doc comment), `list` never
- * does, because an operator reading the trail is not part of any write.
- */
+/** BR-52's trail: `append` joins the caller's transaction, `list` never does. */
 @Injectable()
 export class OperationsAuditRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /**
-   * Writes one row in `ctx`'s transaction. There is deliberately no overload
-   * that opens its own: a publish or a fare change must commit together with
-   * its record, or not at all.
-   */
+  /** Writes in `ctx`'s transaction; there is no self-opening overload. */
   async append(
     ctx: TransactionContext,
     entity: OperationsAuditEntity,
@@ -35,16 +27,9 @@ export class OperationsAuditRepository {
   }
 
   /**
-   * Newest first, optionally narrowed by train and date range, paged by a
-   * cursor rather than an offset so a row inserted mid-list cannot shift a
-   * later page.
-   *
-   * The cursor is the `id` of the last row the previous page returned.
-   * `(occurred_at, id)` is the sort key -- `id` breaks a tie between two rows
-   * sharing an instant, which `recent_search`'s trim already relies on for
-   * the same reason. A cursor from a row that no longer exists (or never
-   * did) matches nothing in the anchor subquery, so the page comes back
-   * empty rather than guessing a position.
+   * Newest first, paged by `(occurred_at, id)` so an insert mid-list cannot
+   * shift a later page. An unknown cursor matches nothing and returns an empty
+   * page.
    */
   async list(filter: OperationsAuditFilter): Promise<OperationsAuditPage> {
     const conditions: string[] = [];
@@ -76,8 +61,7 @@ export class OperationsAuditRepository {
     const where =
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // One extra row fetched, never returned: its presence is what tells us
-    // whether a next page exists, without a separate COUNT(*).
+    // One extra row, never returned, tells us whether a next page exists.
     params.push(filter.limit + 1);
     const limitParam = `$${params.length}`;
 

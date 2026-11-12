@@ -3,18 +3,13 @@ import { IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, Min } from 'class-
 
 const MAX_AUDIT_LIST_LIMIT = 200;
 
-/** A query string carries `limit` as text; the wire wants an integer. */
+/** `limit` arrives as text; the wire wants an integer. */
 function toInteger(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   return /^\d+$/.test(value) ? Number(value) : value;
 }
 
-/**
- * The query half of `GET /api/v1/operations/audit`.
- *
- * A missing `trainId` reads every train; `from`/`to` bound `occurredAt`,
- * inclusive -- the same reading catalog itself applies, checked again there.
- */
+/** A missing `trainId` reads every train; `from`/`to` bound `occurredAt` inclusively. */
 export class ListAuditQueryDto {
   @IsOptional()
   @IsUUID()

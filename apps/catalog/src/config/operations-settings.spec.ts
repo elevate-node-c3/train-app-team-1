@@ -149,8 +149,7 @@ describe('operations-settings', () => {
       expect(inventoryGrpcUrl()).toBe('inventory:50051');
     });
 
-    // A blank key in .env is the common shape a misconfigured compose file
-    // produces -- it must not become an empty host.
+    // A blank .env value must not become an empty host.
     it('falls back when the value is blank', () => {
       process.env[URL_ENV_VAR] = '   ';
       expect(inventoryGrpcUrl()).toBe('inventory:50051');

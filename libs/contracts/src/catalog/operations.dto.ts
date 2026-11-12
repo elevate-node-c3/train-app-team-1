@@ -1,24 +1,11 @@
-/**
- * The shapes an ENR operator's publish travels in (TA-20).
- *
- * Shapes only. Nothing fee-related, nothing price-deriving and no refusal
- * rules live here -- TA-72/BR-31 keep domain logic out of shared libraries,
- * and the publish's rules are catalog's (`timetable-publish.validator.ts`,
- * `timetable-publish.service.ts`). A reader of this file learns what a
- * request looks like and nothing about whether one would be accepted.
- */
+/** The shapes an ENR operator's publish travels in (TA-20); no rules live here. */
 
-/**
- * One planned stop, as submitted: naive Cairo wall-clock `'HH:mm'` plus a day
- * offset, never an instant. An operator publishes a timetable, not a day's
- * trip, so there is no date here -- `effectiveFrom` and each generated
- * service date supply it.
- */
+/** A naive Cairo wall-clock time plus a day offset, never an instant. */
 export interface PublishTimetableStopInput {
   stationId: string;
   /** Strictly increasing along the route; not necessarily contiguous. */
   position: number;
-  /** 0 for the departure day, 1 for an overnight leg, and so on. */
+  /** 0 for the departure day, 1 for an overnight leg. */
   dayOffset: number;
   /** Null at the first stop. */
   arrivalTime: string | null;
@@ -43,11 +30,8 @@ export interface PublishTimetableFareInput {
 }
 
 /**
- * A whole timetable for one train, in one call.
- *
- * `trainNumber` is a string because it arrives from a URL path segment or a
- * JSON body and is echoed back verbatim in a refusal's `rejectedValue`; the
- * column it resolves against is an integer, and catalog does that parse.
+ * A whole timetable for one train. `trainNumber` is a string because it is
+ * echoed verbatim in a refusal; catalog parses it to the integer column.
  */
 export interface PublishTimetableRequest {
   trainNumber: string;
@@ -60,11 +44,7 @@ export interface PublishTimetableRequest {
   fares: PublishTimetableFareInput[];
 }
 
-/**
- * What the publish changed, counted from the diff catalog computed before it
- * wrote anything -- never from the rows the generation pass happened to
- * insert, which a background timer can race.
- */
+/** Changes counted from the diff computed before anything was written. */
 export interface PublishTimetableResult {
   timetableId: string;
   version: number;

@@ -1,11 +1,6 @@
 import { IsISO8601, IsInt, IsString, IsUUID, Min } from 'class-validator';
 
-/**
- * `POST /api/v1/operations/fares`.
- *
- * Shape only -- whether `effectiveFrom` is far enough in the future (BR-51) is
- * catalog's rule, checked again there regardless of what this validates.
- */
+/** Shape only; whether `effectiveFrom` is future enough (BR-51) is catalog's rule. */
 export class ChangeFareDto {
   @IsString()
   trainNumber!: string;
@@ -23,7 +18,7 @@ export class ChangeFareDto {
   @Min(0)
   amountPiastres!: number;
 
-  /** ISO instant; "now or later" is catalog's rule, not this DTO's. */
+  /** ISO instant; "now or later" is catalog's rule. */
   @IsISO8601()
   effectiveFrom!: string;
 }

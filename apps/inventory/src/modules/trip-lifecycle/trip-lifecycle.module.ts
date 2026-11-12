@@ -4,9 +4,8 @@ import { MessagingModule } from '@app/messaging';
 import { TripLifecycleTopologyService } from './trip-lifecycle.topology.js';
 
 /**
- * Inventory's half of CAT-2's trip events. For now it only declares the queue
- * so nothing published before Sprint 3 is lost; the handler that creates the
- * seats subscribes to the same queue later.
+ * Declares the queue now so early trip events are held until Sprint 3's
+ * handler arrives.
  */
 @Module({
   imports: [MessagingModule],

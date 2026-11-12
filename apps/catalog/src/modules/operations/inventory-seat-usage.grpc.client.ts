@@ -13,7 +13,7 @@ import {
 
 import { seatUsageTimeoutMs } from '../../config/operations-settings.js';
 
-/** Token the owning module binds to its `ClientsModule.registerAsync` entry. */
+/** Bound by the owning module's `ClientsModule.registerAsync` entry. */
 export const INVENTORY_GRPC_CLIENT = 'INVENTORY_GRPC_CLIENT';
 
 interface InventoryGrpcService {
@@ -25,10 +25,8 @@ interface InventoryGrpcService {
 }
 
 /**
- * Silence is never zero. Every failure a publish could mistake for "no
- * tickets" -- a stopped channel, a timeout, a malformed answer, a response
- * missing a trip id -- becomes this instead, so a publish refuses rather
- * than guesses (TA-20).
+ * Silence is never zero: every failure becomes this, so a publish refuses
+ * instead of guessing (TA-20).
  */
 export class SeatUsageUnavailableError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -42,10 +40,8 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * Validates one decoded entry rather than trusting the wire. A count that is
- * not a finite integer, or a stations list that is not an array, must refuse
- * -- defaulting an absent count to zero would be the exact "silence is zero"
- * failure this task exists to prevent.
+ * Refuses a malformed count or stations list; defaulting an absent count to
+ * zero is the failure this prevents.
  */
 function validatedUsage(usage: TripSeatUsage): TripSeatUsage {
   if (
@@ -61,7 +57,6 @@ function validatedUsage(usage: TripSeatUsage): TripSeatUsage {
   return usage;
 }
 
-/** Guards the response shape itself before trusting `usages` is an array to map over. */
 function usagesOf(response: SeatUsageForTripsResponse): TripSeatUsage[] {
   if (!response || !Array.isArray(response.usages)) {
     throw new SeatUsageUnavailableError(
@@ -88,12 +83,8 @@ export class InventorySeatUsageClient implements OnModuleInit {
   }
 
   /**
-   * Keyed by trip id so a caller can ask "did this one sell" per trip. Never
-   * returns zeros it does not have: a transport error, a timeout, a
-   * malformed answer, or a response missing any requested trip id all
-   * become `SeatUsageUnavailableError` -- no retry, because a publish is an
-   * interactive action and a stalled retry loop is worse than a prompt
-   * refusal.
+   * Keyed by trip id. Never returns zeros it does not have: any failure or a
+   * missing trip id becomes `SeatUsageUnavailableError`, with no retry.
    */
   async seatUsageForTrips(
     tripIds: string[],
@@ -104,12 +95,9 @@ export class InventorySeatUsageClient implements OnModuleInit {
     try {
       const response = await withTimeout(
         firstValueFrom(
-          // The channel deadline and withTimeout are not redundant: the
-          // deadline is enforced by gRPC itself and covers a server that is
-          // slow to answer; withTimeout covers a channel that never
-          // produces a deadline event at all. Without the deadline here,
-          // a timed-out call keeps running against inventory with nothing
-          // telling it to stop.
+          // Deadline and withTimeout are not redundant: gRPC enforces one, and
+          // withTimeout covers a channel that never emits it. Without the
+          // deadline a timed-out call keeps running against inventory.
           this.service.seatUsageForTrips({ tripIds }, new Metadata(), {
             deadline: Date.now() + timeoutMs,
           }),
@@ -128,9 +116,8 @@ export class InventorySeatUsageClient implements OnModuleInit {
 
     const byTripId = new Map(usages.map((usage) => [usage.tripId, usage]));
 
-    // Inventory maps every requested id 1:1, so a gap here means a broken or
-    // wrong-version inventory, not an expected path -- but a partial answer
-    // is an unanswered question, not a zero, so it still refuses.
+    // A gap means a broken or wrong-version inventory, but a partial answer is
+    // not a zero, so it still refuses.
     const missing = tripIds.filter((tripId) => !byTripId.has(tripId));
     if (missing.length > 0) {
       throw new SeatUsageUnavailableError(

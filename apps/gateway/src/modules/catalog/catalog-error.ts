@@ -6,27 +6,14 @@ import {
 } from '@app/contracts';
 
 /**
- * Catalog's refusal, restored from the gRPC error.
- *
- * Deliberately a new function rather than a change to identity's: that one
- * reads only `code` and drops everything else, which is right for identity and
- * wrong here, because a search refusal's whole value is the field it names
- * (BR-57). It also belongs to another story's file.
- *
- * The trust rule is identity's, kept exactly: a `code` is accepted only if it
- * names a known `ErrorCode`, so an unrecognised string can never reach a
- * traveller. The same applies to the shapes -- a `details` entry that is not a
- * validation detail is dropped rather than forwarded.
+ * Catalog's refusal, restored from the gRPC error. A `code` is accepted only
+ * if it names a known `ErrorCode`; malformed details are dropped, not forwarded.
  */
 
 interface CatalogRefusal {
   code: ErrorCode;
   details: ValidationErrorDetail[];
-  /**
-   * Present only on a `DEPENDENCY_UNAVAILABLE` refusal (TA-20 CARRY): the
-   * catalog-side `toRpcException` attaches it to the JSON so an operator's
-   * tool knows how long to wait before retrying a publish.
-   */
+  /** Present only on a `DEPENDENCY_UNAVAILABLE` refusal: how long to wait before retrying. */
   retryAfterSeconds?: number;
 }
 
@@ -75,18 +62,8 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
 
 /**
  * The HTTP exception a catalog refusal becomes, or null to let the transport
- * status decide.
- *
- * The fields travel under `message`, which is the channel `HttpExceptionFilter`
- * actually reads: `extractValidationDetails` walks `response.message` and
- * already understands objects carrying `field`, `issue` and `action`. Putting
- * them under a `details` key of our own invention looked right and was silently
- * dropped, so the traveller got a 400 naming nothing.
- *
- * The strip and window that travelled with the refusal stop here. `ApiErrorDetail`
- * has nowhere to put them, and widening a shared envelope for one feature is a
- * bigger decision than this story should take on its own -- so they are not
- * forwarded rather than being attached somewhere that quietly discards them.
+ * status decide. Fields go under `message`, which `HttpExceptionFilter` reads;
+ * a `details` key would be silently dropped.
  */
 export function parseCatalogBusinessError(
   error: unknown,
@@ -98,8 +75,7 @@ export function parseCatalogBusinessError(
     {
       code: refusal.code,
       message: refusal.details,
-      // `HttpExceptionFilter` reads this generically and puts it on the
-      // envelope; absent here means absent there, same as every other field.
+      // Forwarded onto the envelope; absent here stays absent there.
       ...(refusal.retryAfterSeconds === undefined
         ? {}
         : { retryAfterSeconds: refusal.retryAfterSeconds }),

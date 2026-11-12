@@ -12,7 +12,7 @@ export interface SeatUsageForTripsRequest {
   tripIds: string[];
 }
 
-// Counts and stations travel together -- see inventory.proto for why.
+// Counts and stations travel together; see inventory.proto.
 export interface TripSeatUsage {
   tripId: string;
   soldCount: number;

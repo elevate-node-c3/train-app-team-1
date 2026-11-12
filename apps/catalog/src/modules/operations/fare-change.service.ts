@@ -25,14 +25,14 @@ import {
   OperationsRequestRepository,
 } from './operations-request.repository.js';
 
-/** The ENR operator's input (TA-20): one fare, for one train, class and pair. */
+/** The operator's input (TA-20): one fare for one train, class and pair. */
 export interface ChangeFareRequest {
   trainNumber: string;
   travelClassId: string;
   originStationId: string;
   destinationStationId: string;
   amountPiastres: number;
-  /** ISO instant. "Now or later" is accepted; a strictly past instant is not (BR-51). */
+  /** ISO instant; now or later, never strictly past (BR-51). */
   effectiveFrom: string;
 }
 
@@ -44,16 +44,13 @@ export interface ChangeFareResult {
   effectiveFrom: string;
 }
 
-/** A unique violation -- a reused `Idempotency-Key`, or a reused fare tuple. */
+/** A reused `Idempotency-Key` or fare tuple both raise this SQLSTATE. */
 const UNIQUE_VIOLATION = '23505';
 
-/** `fare`'s own constraint: `(train, class, origin, destination, effective_from)`. */
+/** `fare`'s unique key: (train, class, origin, destination, effective_from). */
 const FARE_UNIQUE_CONSTRAINT = 'uq_fare_effective_version';
 
-/**
- * Both `code` and `driverError.code`, because TypeORM wraps the driver's
- * error. Same shape as `timetable-publish.service.ts`'s `hasPostgresCode`.
- */
+/** Both `code` and `driverError.code`, because TypeORM wraps the driver's error. */
 function hasPostgresCode(error: unknown, sqlState: string): boolean {
   if (typeof error !== 'object' || error === null) return false;
 
@@ -68,10 +65,8 @@ function hasPostgresCode(error: unknown, sqlState: string): boolean {
 }
 
 /**
- * Which constraint a `23505` actually came from -- the only honest way to
- * tell a reused `Idempotency-Key` (`operations_request`'s primary key) apart
- * from a reused fare tuple (`fare`'s own `uq_fare_effective_version`), since
- * both are the same SQLSTATE.
+ * Which `23505` constraint fired. A reused `Idempotency-Key` and a reused fare
+ * tuple are the same SQLSTATE, so only the constraint name tells them apart.
  */
 function constraintNameOf(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
@@ -89,17 +84,8 @@ function constraintNameOf(error: unknown): string | undefined {
 }
 
 /**
- * Changing one fare, for future sales only (TA-20, BR-30).
- *
- * The previous fare row is never rewritten: a hold already made keeps the
- * price it was shown, and a search before the new `effectiveFrom` still
- * resolves the old amount. Only a new row is added -- the publish flow's own
- * governing rule, read for one fare instead of a whole timetable: change the
- * future, never the past.
- *
- * No seam call. A fare change writes no trip and alters no trip's times or
- * stops, so BR-50 (the seat-usage question `TimetablePublishService` must
- * ask) is not in play here.
+ * Changes one fare for future sales only (TA-20, BR-30). Adds a row, never
+ * rewrites one; no seam call because no trip changes, so BR-50 is not in play.
  */
 @Injectable()
 export class FareChangeService {
@@ -122,7 +108,7 @@ export class FareChangeService {
     const fingerprint = fingerprintOf(request);
 
     // A genuine retry gets the first answer back; a reused key on different
-    // content is a client bug, not a replay.
+    // content is not a replay.
     const replayed = await this.replay(idempotencyKey, fingerprint);
     if (replayed) return replayed;
 
@@ -174,11 +160,7 @@ export class FareChangeService {
     return ambient || randomUUID();
   }
 
-  /**
-   * A stored key with a matching fingerprint replays; a stored key with a
-   * different fingerprint is refused -- silently applying it would be worse
-   * than either answer.
-   */
+  /** A matching fingerprint replays; a different one is refused. */
   private async replay(
     idempotencyKey: string,
     fingerprint: string,
@@ -200,10 +182,7 @@ export class FareChangeService {
     return JSON.parse(stored.responseJson) as ChangeFareResult;
   }
 
-  /**
-   * Every problem in one answer -- an operator refused on the amount should
-   * still hear about an unknown station in the same response.
-   */
+  /** Every problem in one answer, so an operator hears all refusals at once. */
   private async validate(
     request: ChangeFareRequest,
     references: FareChangeReferences,
@@ -222,8 +201,8 @@ export class FareChangeService {
         action: 'Send a positive whole number of piastres',
       });
     } else if (!isChargeableFare(request.amountPiastres)) {
-      // No fee term: the fee is strictly positive, so `fare >= floor` already
-      // implies `fare + fee >= floor` (§6.3).
+      // No fee term: the fee is positive, so `fare >= floor` implies
+      // `fare + fee >= floor` (§6.3).
       details.push({
         field: 'amountPiastres',
         rejectedValue: request.amountPiastres,
@@ -288,8 +267,7 @@ export class FareChangeService {
       });
     }
 
-    // The order and segment-containment questions only make sense once every
-    // reference above resolved and the amount is a real number to compare.
+    // Order and containment need every reference resolved and a real amount.
     if (
       references.train &&
       references.travelClass &&
@@ -311,15 +289,9 @@ export class FareChangeService {
   }
 
   /**
-   * CAT-2's two rules, for one fare instead of a whole timetable: the pair
-   * must run in the train's real travel order, and the new amount must not
-   * undercut a segment it contains. Checked against the route effective on
-   * the fare's own `effectiveFrom` civil date, not today's -- an operator who
-   * publishes a timetable that only takes effect next month must still be
-   * able to correct its fares before it goes live. Checking "today" instead
-   * made `routeStationOrder` return null for any train whose only published
-   * version starts in the future, which refused every fare change against
-   * it.
+   * CAT-2's two rules for one fare: the pair runs in travel order, and the
+   * amount does not undercut a containing segment. Both check the route
+   * effective on the fare's own civil date, not today's.
    */
   private async validateOrderAndContainment(
     request: ChangeFareRequest,
@@ -360,8 +332,7 @@ export class FareChangeService {
       return details;
     }
 
-    // One stop shorter at either end is enough for containment, the same
-    // reduction `validateFareRules` uses for a whole timetable.
+    // One stop shorter at either end is enough for containment.
     const innerSegments: [number, number][] = [];
     if (destinationIndex - 1 > originIndex) {
       innerSegments.push([originIndex, destinationIndex - 1]);
@@ -393,10 +364,7 @@ export class FareChangeService {
     return details;
   }
 
-  /**
-   * The single transaction. The lock, the new fare row, the audit entry,
-   * `FareChanged` and the idempotency key commit together or not at all.
-   */
+  /** Lock, fare row, audit, event and key commit together or not at all. */
   private async commit(params: {
     request: ChangeFareRequest;
     trainId: string;
@@ -409,10 +377,8 @@ export class FareChangeService {
     const effectiveInstant = new Date(request.effectiveFrom);
 
     return this.unitOfWork.withTransaction(async (ctx) => {
-      // The lock first: it is what makes two same-second operators serialise
-      // rather than interleave. The "previous amount" the operator is told
-      // must be read only once this is held, or two concurrent changes could
-      // both read the same stale previous value.
+      // Lock first, or two same-second operators read the same stale previous
+      // amount and interleave.
       const history = await this.repository.lockFareHistory(ctx, {
         trainId,
         travelClassId: request.travelClassId,
@@ -454,9 +420,8 @@ export class FareChangeService {
           amountPiastres: request.amountPiastres,
           effectiveFrom: request.effectiveFrom,
         },
-        // 0 this sprint, matching the publish flow: inventory has no ticket
-        // tables yet, and a fare change refuses nothing on seats in use --
-        // it writes no trip at all.
+        // 0 this sprint: inventory has no ticket tables and a fare change
+        // writes no trip.
         ticketsAffected: 0,
         correlationId,
       });
@@ -491,18 +456,9 @@ export class FareChangeService {
   }
 
   /**
-   * `record` inserts rather than saves, so a concurrent fare change that
-   * committed the same key first fails this transaction instead of
-   * overwriting its answer. Re-reading the key is what tells that race apart
-   * from any other unique violation.
-   *
-   * Two different constraints raise the same `23505`, so the SQLSTATE alone
-   * cannot tell them apart: `operations_request`'s primary key (a reused
-   * `Idempotency-Key`) and `fare`'s own `uq_fare_effective_version` (a second
-   * change for the exact same train, class, pair and instant, submitted under
-   * a *different* key -- an operator correcting a typo by resubmitting the
-   * same `effectiveFrom`, say). The constraint name disambiguates; whichever
-   * it is not is rethrown untouched.
+   * A concurrent change that recorded the same key first fails this
+   * transaction. Both constraints raise `23505`; the constraint name decides
+   * which refusal applies.
    */
   private async replayRace(
     error: unknown,
