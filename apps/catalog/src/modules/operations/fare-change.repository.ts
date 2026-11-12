@@ -138,6 +138,18 @@ export class FareChangeRepository {
    * previous amount and inserting the new row is what makes two same-second
    * operators serialise instead of interleave -- the loser's transaction
    * blocks on this call until the winner commits or rolls back.
+   *
+   * `tables: ['fare']` is load-bearing, not cosmetic. The query joins `train`
+   * and `travel_class` to filter by their ids, and a bare `pessimistic_write`
+   * (no `OF` clause) locks every joined row too -- a review caught this
+   * taking a `FOR UPDATE` on the `train` row itself, which collided with
+   * `TimetablePublishService.insertVersion`'s `FOR KEY SHARE` on that same
+   * row and deadlocked (Postgres `40P01`), and separately blocked trip
+   * generation's own `FOR KEY SHARE` on any train with a fare change in
+   * flight. `tables` restricts the lock to the rows this method actually
+   * means to hold -- the `fare` rows -- so a publish and a fare change on the
+   * same train, or two fare changes on different pairs of the same train,
+   * never contend for anything.
    */
   async lockFareHistory(
     ctx: TransactionContext,
@@ -158,7 +170,7 @@ export class FareChangeRepository {
           destinationStationId: params.destinationStationId,
         },
         order: { effectiveFrom: 'DESC' },
-        lock: { mode: 'pessimistic_write' },
+        lock: { mode: 'pessimistic_write', tables: ['fare'] },
       });
   }
 
