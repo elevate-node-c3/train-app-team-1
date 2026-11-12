@@ -34,8 +34,7 @@ describe('decoding a catalog refusal', () => {
     });
   });
 
-  // Anything beyond the code and the fields is ignored rather than decoded:
-  // the envelope has nowhere to put it, so decoding it would be dead weight.
+  // Ignore fields the response envelope cannot use.
   it('ignores keys the envelope cannot carry', () => {
     const refusal = decodeCatalogRefusal(
       refusalDetails({ dateStrip: [{ date: '2026-06-15' }] }),
@@ -45,12 +44,7 @@ describe('decoding a catalog refusal', () => {
     expect(Object.keys(refusal!).sort()).toEqual(['code', 'details']);
   });
 
-  /**
-   * The trust rule, kept exactly as identity's client has it: a code is
-   * accepted only when it names a known ErrorCode. A downstream service -- or
-   * anything able to set that string -- must not be able to put an arbitrary
-   * code in front of a traveller.
-   */
+  /** Only known ErrorCode values may reach the caller. */
   it('rejects a code that is not in the enum', () => {
     expect(
       decodeCatalogRefusal(JSON.stringify({ code: 'MADE_UP_CODE' })),
@@ -74,8 +68,7 @@ describe('decoding a catalog refusal', () => {
     }
   });
 
-  // Shapes are checked, not just the code: an entry that is not a validation
-  // detail is dropped rather than forwarded into the envelope.
+  // Drop details that do not match the validation shape.
   it('drops entries that are not validation details', () => {
     const refusal = decodeCatalogRefusal(
       refusalDetails({
@@ -140,11 +133,7 @@ describe('decoding a catalog refusal', () => {
     expect(refusal?.details).toEqual([]);
   });
 
-  /**
-   * TA-20 CARRY: `toRpcException` attaches `retryAfterSeconds` to the JSON
-   * only for `DEPENDENCY_UNAVAILABLE`. The gateway must read it through, not
-   * drop it the way it used to drop everything beyond `code`/`details`.
-   */
+  /** Preserve retryAfterSeconds on DEPENDENCY_UNAVAILABLE errors. */
   it('restores retryAfterSeconds when the refusal carries one', () => {
     const refusal = decodeCatalogRefusal(
       refusalDetails({
@@ -197,7 +186,6 @@ describe('turning a refusal into an HTTP error', () => {
     expect(body.message[0].actionKey).toBe('ACTION_PICK_DIFFERENT_DESTINATION');
   });
 
-  /** The CARRY this gateway task closes: Task 10's §5 handoff. */
   it('carries retryAfterSeconds onto the HttpException response', () => {
     const exception = parseCatalogBusinessError({
       details: refusalDetails({
@@ -220,23 +208,14 @@ describe('turning a refusal into an HTTP error', () => {
     expect(body.retryAfterSeconds).toBeUndefined();
   });
 
-  // Null means "this was not a business refusal", which is what tells the
-  // caller to fall back to the transport status.
+  // Null means transport status should decide the HTTP error.
   it('returns null for a transport failure', () => {
     expect(parseCatalogBusinessError({ code: 14 })).toBeNull();
     expect(parseCatalogBusinessError(new Error('boom'))).toBeNull();
     expect(parseCatalogBusinessError(undefined)).toBeNull();
   });
 
-  /**
-   * `HttpExceptionFilter` only reads `message` for validation details on a
-   * 400, so a refusal whose code mapped elsewhere would arrive naming no
-   * field at all -- BR-57's failure, relocated.
-   *
-   * Catalog only ever refuses with VALIDATION_ERROR today, and this pins that
-   * so the day someone adds a second refusal code, this fails and points at
-   * the reason rather than the fields quietly vanishing.
-   */
+  /** Validation refusals must map to 400 so the shared filter keeps field details. */
   it('only carries fields on codes the envelope surfaces them for', () => {
     const exception = parseCatalogBusinessError({
       details: refusalDetails(),

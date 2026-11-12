@@ -99,8 +99,7 @@ function harness(
     ),
   };
 
-  // The consumer reads the error from the options object via closure; this is
-  // simpler than rebuilding the fake per test.
+  // Share the injected error through the options object.
   const publishError = options.publishError ?? null;
   plainChannel.consume.mockResolvedValue({ consumerTag: 'tag-1' });
   confirmChannel.publish.mockImplementation(
@@ -148,9 +147,7 @@ function harness(
     set: vi.fn(),
   } as any;
 
-  // The real republisher and router over the fake channel and store: the
-  // assertions below are about which exchange a failure lands on, which is a
-  // collaboration between all three.
+  // Test the real router and republisher over a fake channel and store.
   const republisher = new MessageRepublisher(amqp);
   const consumer = new EventConsumerService(
     [subscription(handler)],
@@ -163,8 +160,7 @@ function harness(
   return {
     consumer,
     sub: subscription(handler),
-    // The channel a delivery would have arrived on. Passed explicitly into
-    // `handleMessage` because that is where acks must land.
+    // Pass the delivery's own channel so acknowledgments use the right tags.
     plainChannel: plainChannel as unknown as Channel,
     calls,
     publishes,
@@ -247,7 +243,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
 
     const headers = h.publishes[0].options.headers;
-    // Superset of inbound — Sprint 5's replay depends on it.
+    // Preserve incoming headers so replay keeps its context.
     expect(headers.traceparent).toBe('00-abc-def-01');
     expect(headers['x-correlation-id']).toBe('corr-1');
     expect(headers['x-attempt']).toBe('1');
@@ -310,7 +306,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     expect(h.ack).toHaveBeenCalledTimes(1);
   });
 
-  // The whole correctness argument for two instances rests on one statement.
+  // Atomic claims prevent two workers from sending the same event.
   it('claims with a single ON CONFLICT ... WHERE ... RETURNING statement', () => {
     expect(CLAIM_PROCESSED_EVENT_SQL).toMatch(
       /^\s*INSERT[\s\S]*ON CONFLICT[\s\S]*WHERE[\s\S]*RETURNING/is,

@@ -33,8 +33,7 @@ describe('validating the search request shape', () => {
   });
 
   it('names every refusal with a field and an action to take', () => {
-    // BR-57: a refusal that does not say what to change is the failure this
-    // rule exists to prevent.
+    // Refusals must name the field and corrective action.
     const details = validateSearchShape(
       validRequest({
         originStationId: 'not-a-uuid',
@@ -70,8 +69,7 @@ describe('validating the search request shape', () => {
       ).toContain('to');
     });
 
-    // The rule names To, so the refusal must too: a traveller told "from is
-    // invalid" would change the wrong field.
+    // Name To in same-station refusals so the traveller changes the correct field.
     it('refuses the same station twice, naming To', () => {
       const details = validateSearchShape(
         validRequest({ destinationStationId: CAIRO }),
@@ -112,8 +110,7 @@ describe('validating the search request shape', () => {
       ).toEqual(['departureDate']);
     });
 
-    // Review Focus 1: '2026-02-30' matches the pattern but is not a day. A
-    // naive Date would roll it to 2 March and search the wrong date silently.
+    // Reject 2026-02-30; Date would silently roll it into March.
     it('refuses a date that passes the pattern but is not a real day', () => {
       for (const impossible of ['2026-02-30', '2026-13-01', '2026-04-31']) {
         expect(
@@ -205,8 +202,7 @@ describe('validating the search request shape', () => {
 
   describe('the seat class', () => {
     it('refuses an absent class rather than defaulting to one', () => {
-      // Every result's seats and fare are for one class, so there is no
-      // sensible default to pick on the traveller's behalf.
+      // Class is required; choosing one would change the traveller's seats and fare.
       expect(
         fieldsOf(validateSearchShape(validRequest({ travelClassId: '' }), NOW)),
       ).toEqual(['travelClassId']);
@@ -230,8 +226,7 @@ describe('validating the search request shape', () => {
     });
 
     it('refuses Arabic-Indic digits, which the gateway normalizes first', () => {
-      // Catalog only ever sees ASCII: the edge converts '٨٠٣' to 803. A
-      // non-number arriving here means the edge was bypassed.
+      // Catalog accepts ASCII train numbers; the edge normalizes Arabic digits.
       expect(
         fieldsOf(
           validateSearchShape(
@@ -243,10 +238,7 @@ describe('validating the search request shape', () => {
     });
   });
 
-  /**
-   * The outbound search carries the return date so BR-20 can refuse it here,
-   * one screen before the traveller would otherwise find out.
-   */
+  /** Validate return dates before the traveller selects an outbound trip. */
   describe('the return date on an outbound search', () => {
     it('accepts an absent return date -- that is a one-way search', () => {
       expect(validateSearchShape(validRequest(), NOW)).toEqual([]);
@@ -312,8 +304,7 @@ describe('validating the search request shape', () => {
       ).toEqual(['returnDate']);
     });
 
-    // A broken departure date must not produce a refusal pointing at the
-    // return date: the traveller would go and change the wrong field.
+    // Malformed departure dates must not produce a refusal blaming returnDate.
     it('does not blame the return date for a broken departure date', () => {
       const details = validateSearchShape(
         validRequest({ departureDate: 'nonsense', returnDate: '2026-06-25' }),
@@ -340,8 +331,7 @@ describe('validating a return date (BR-20)', () => {
     });
   });
 
-  // The second leg calls this with the chosen trip's own departure date, which
-  // the server read -- so the two legs cannot disagree about one return date.
+  // Both legs share return-date validation; return search uses server-read departure dates.
   it('compares against whatever departure date the caller supplies', () => {
     expect(validateReturnDate('2026-06-21', '2026-06-20', NOW)).toEqual([]);
     expect(
@@ -368,7 +358,7 @@ describe('validating the search request against the catalogue', () => {
     expect(validateSearchReferences(validRequest(), facts)).toEqual([]);
   });
 
-  // Review Focus 2: existence is a database fact a pattern check cannot know.
+  // Existence is a database fact, not a syntax check.
   it('refuses an unknown station, naming the side it came from', () => {
     const unknown = '44444444-4444-4444-8444-444444444444';
 
@@ -390,8 +380,7 @@ describe('validating the search request against the catalogue', () => {
     ).toEqual(['to']);
   });
 
-  // An inactive station must refuse, not return an empty list: "no trains on
-  // this date" would send the traveller to change the date forever.
+  // Refuse inactive stations; changing dates cannot restore service.
   it('refuses a known but inactive station', () => {
     const details = validateSearchReferences(validRequest(), {
       ...facts,

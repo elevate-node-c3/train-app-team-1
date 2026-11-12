@@ -37,8 +37,7 @@ describe('Identity environment schema', () => {
   });
 
   it('keeps every code-side default equal to its Joi default', () => {
-    // validateEnv() discards the coerced value, so code reads these constants.
-    // A drifting pair is a silently wrong runtime default.
+    // validateEnv discards coerced values, so runtime defaults must match Joi.
     expect(defaultOf('OUTBOX_RELAY_ENABLED')).toBe(OUTBOX_DEFAULTS.enabled);
     expect(defaultOf('OUTBOX_POLL_INTERVAL_MS')).toBe(
       OUTBOX_DEFAULTS.pollIntervalMs,
@@ -50,9 +49,7 @@ describe('Identity environment schema', () => {
   });
 
   it('bounds the relay interval by its share of the delivery budget', () => {
-    // Identity owns this knob, so identity is the only process that can catch
-    // it being mis-set. Notification used to read OUTBOX_POLL_INTERVAL_MS off
-    // its own environment, where Compose never sets it, so nothing checked it.
+    // Only identity has the relay setting in its environment.
     expect(() =>
       validateEnvOrThrow(
         identityEnvSchema,

@@ -130,7 +130,7 @@ function clientWith(
   );
 }
 
-/** A client with every method stubbed by one factory, for the shared-path specs. */
+/** Shared-path test client with all RPC methods stubbed. */
 function clientForAll(
   stub: (name: string) => (...args: unknown[]) => Observable<unknown>,
   values: Record<string, unknown> = {},
@@ -163,11 +163,7 @@ describe('calling catalog over gRPC', () => {
     await expect(service.searchOneWayTrips(request)).resolves.toBe(RESPONSE);
   });
 
-  /**
-   * The point is not the number, it is that there is one: a slow or stopped
-   * catalog has to produce a retryable error rather than a request that never
-   * returns.
-   */
+  /** Slow or stopped catalog calls must time out with a retryable error. */
   it('sends a deadline with every call', async () => {
     const spy = vi.fn().mockReturnValue(of(RESPONSE));
     const before = Date.now();
@@ -183,17 +179,11 @@ describe('calling catalog over gRPC', () => {
     );
   });
 
-  /**
-   * A channel that never produces a deadline event is the case the rxjs
-   * timeout exists for, so the belt-and-braces is not redundant. The spec's
-   * own timeout is shorter than the runner's default, so a regression here
-   * fails rather than stalls the suite.
-   */
+  /** RxJS also times out channels that never emit a gRPC deadline error. */
   it(
     'gives up on a call that never answers, instead of hanging',
     async () => {
-      // Never emits, never errors -- exactly a stopped catalog holding the
-      // connection open.
+      // Simulate a catalog connection that never responds.
       const service = clientWith(() => new Observable<never>(() => {}));
 
       const error = await service
@@ -208,7 +198,7 @@ describe('calling catalog over gRPC', () => {
         retryAfterSeconds?: number;
       };
       expect(body.code).toBe(ErrorCode.GATEWAY_TIMEOUT);
-      // The traveller is told to try again, not just that it failed.
+      // Tell the user to retry.
       expect(body.retryAfterSeconds).toBeGreaterThan(0);
     },
     CATALOG_SEARCH_TIMEOUT_MS + 2000,
@@ -283,8 +273,7 @@ describe('calling catalog over gRPC', () => {
       );
     });
 
-    // The no-leak rule: an unrecognised code is not forwarded, and the call
-    // falls back to what the transport status says.
+    // Unknown business codes fall back to transport status.
     it('ignores an unknown code and uses the transport status', async () => {
       const service = clientWith(() =>
         throwError(() => ({

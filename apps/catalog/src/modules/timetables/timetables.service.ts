@@ -68,9 +68,8 @@ export class TimetablesService {
   }
 
   /**
-   * Seeding path: publishes a prepared draft, with no audit entry because
-   * there is no operator. The database allows one published version per train
-   * and effective range, so seed one version per train.
+   * Seed-only publication has no operator audit entry.
+   * Published effective ranges cannot overlap; seed one version per train.
    */
   async publishTimetable(timetableId: string): Promise<TimetableEntity> {
     // Validate before writing; generation runs after the commit.

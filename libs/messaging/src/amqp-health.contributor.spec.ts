@@ -17,8 +17,7 @@ function contributorOver(health: { status: string; message?: string }) {
 
 describe('AmqpHealthContributor', () => {
   it('registers itself under "broker" on init and leaves on destroy', () => {
-    // Push, not pull: a pull would mean @app/common importing @app/messaging,
-    // which is the cycle this replaced.
+    // Messaging registers readiness; common never imports messaging.
     const { registry, contributor } = contributorOver({ status: 'ready' });
     expect(registry.all()).toEqual([]);
 

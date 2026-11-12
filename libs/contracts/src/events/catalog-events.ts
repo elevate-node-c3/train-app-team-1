@@ -29,7 +29,7 @@ export type FareChangedEvent = EventEnvelope<
   FareChangedPayloadV1
 >;
 
-/** Stations are required: CAT-5 invalidates by them and cannot look them up. */
+/** Both stations are required so caches can invalidate without database lookups. */
 export interface TimetablePublishedPayloadV1 {
   timetableId: string;
   tripId?: string;

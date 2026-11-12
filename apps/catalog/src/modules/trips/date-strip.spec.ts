@@ -30,8 +30,7 @@ describe('the date strip', () => {
     ]);
   });
 
-  // Near an edge the selected day moves off-centre rather than the strip
-  // shrinking: a traveller always gets five choices.
+  // Slide the selected day off-center at an edge to keep five choices.
   it('slides off-centre rather than showing a day before today', () => {
     expect(datesOf(TODAY)).toEqual([
       '2026-06-15',
@@ -93,8 +92,7 @@ describe('the date strip', () => {
   });
 
   it('returns consecutive civil dates across a DST transition', () => {
-    // Egypt's spring-forward falls in late April; a strip straddling it must
-    // still be five consecutive calendar days, not four or six.
+    // DST crossings must preserve five consecutive Cairo calendar days.
     const inApril = new Date('2026-04-23T09:00:00Z');
     const strip = buildDateStrip('2026-04-24', inApril);
 
@@ -105,8 +103,7 @@ describe('the date strip', () => {
   });
 
   it('is a function of now, so the same selection rolls with the window', () => {
-    // The strip is never cached: tomorrow the same request must not be able to
-    // offer yesterday.
+    // Do not cache the strip; tomorrow's choices must not include yesterday.
     const tomorrow = new Date('2026-06-16T09:00:00Z');
 
     expect(datesOf(TODAY, tomorrow)[0]).toBe('2026-06-16');

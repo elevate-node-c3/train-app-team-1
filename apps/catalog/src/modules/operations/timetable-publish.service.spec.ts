@@ -15,8 +15,7 @@ import {
   type PublishHarness,
 } from '../../../../../test/fixtures/timetable-publish-harness.js';
 
-// Frozen clock: the window is 2026-06-20..2026-07-20, so a publish effective
-// 2026-06-22 touches 29 dates.
+// Frozen 2026-06-20..2026-07-20 window: 2026-06-22 publication affects 29 dates.
 const DATES_FROM_EFFECTIVE = 29;
 /** A date well inside the new version's range. */
 const D_PLUS_3 = '2026-06-25';
@@ -46,7 +45,6 @@ describe('TimetablePublishService.publish', () => {
 
     expect(result).toMatchObject({ version: 1, withdrawn: 0, changed: 0 });
     expect(result.created).toBeGreaterThan(0);
-    // Exact: every date from the effective date to the window's end, none before.
     expect(result.created).toBe(DATES_FROM_EFFECTIVE);
     expect(result.timetableId).toBeTruthy();
     expect(harness.store.timetables[0]).toMatchObject({
@@ -171,13 +169,11 @@ describe('TimetablePublishService.publish', () => {
     expect(result.withdrawn).toBe(FRIDAYS_IN_WINDOW);
     expect(result.changed).toBe(DATES_FROM_EFFECTIVE - FRIDAYS_IN_WINDOW);
     expect(harness.publishedEventTypes()).toContain(EVENT_TYPES.tripWithdrawn);
-    // First Friday on or after the effective date.
     expect((await harness.tripOn('2026-06-26')).status).toBe('withdrawn');
   });
 
-  // A withdrawn trip still owns its (train, service_date). A diff that misses
-  // it would count the date as created and leave it withdrawn, with no
-  // `TripPublished` for inventory to recreate seats.
+  // Withdrawn rows still own train/date pairs; resurrect them with TripPublished
+  // so inventory recreates seats, rather than counting them as new.
   describe('a date whose trip was withdrawn', () => {
     it('resurrects it, keeping its trip id, and announces it again', async () => {
       harness = makeHarness({ withExistingVersion: true });
@@ -206,8 +202,7 @@ describe('TimetablePublishService.publish', () => {
         OPERATOR,
       );
 
-      // Rows already existed, so `changed`, not `created`; `created` promises
-      // a new trip id.
+      // Count existing IDs as changed; created promises a new trip ID.
       expect(restored.created).toBe(0);
       expect(restored.withdrawn).toBe(0);
       expect(restored.changed).toBeGreaterThan(0);
@@ -263,8 +258,7 @@ describe('TimetablePublishService.publish', () => {
     });
   });
 
-  // The timer can insert version-2 trips before the apply pass, so counts
-  // must come from the diff.
+  // Use diff counts; the timer may insert trips before application.
   it('reports the counts it computed even when the generation loop got there first', async () => {
     harness = makeHarness();
     harness.afterFirstCommit(() =>
@@ -323,8 +317,7 @@ describe('TimetablePublishService.publish', () => {
     expect(await harness.auditCount()).toBe(1);
   });
 
-  // `record` inserts, so a concurrent same-key publish fails with a plain
-  // unique violation; re-reading the key tells that race apart.
+  // Insert-only recording makes same-key races fail; reread the key to detect replay.
   it('replays a response a concurrent publish of the same request committed', async () => {
     harness = makeHarness();
     const winner = await harness.service.publish(

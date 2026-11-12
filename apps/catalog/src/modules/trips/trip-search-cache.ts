@@ -14,12 +14,9 @@ export {
 };
 
 /**
- * The static projection of one search result.
- *
- * Deliberately everything that is a function of the data and the Cairo date
- * alone, and nothing that is a function of `now` or of inventory. Availability,
- * sold-out, sales state and the date strip are all absent: they are computed
- * on every read, hit or miss.
+ * Cache only date-dependent catalog data, never live inventory or now-dependent
+ * sales state. Recompute availability, sold-out state, eligibility, and date strips
+ * after every read, including hits.
  */
 export interface CachedStaticTrip {
   tripId: string;
@@ -43,12 +40,7 @@ export interface CachedStaticTrip {
   farePiastres: number | null;
 }
 
-/**
- * The key for one search.
- *
- * `v2` is a format version. When `routeVersion` is provided, includes `rv<routeVersion>`
- * for O(1) bulk invalidation (§6.3, §2.3 rule 2 & rule 5).
- */
+/** v2 versions the payload format; rv<routeVersion> enables O(1) route invalidation. */
 export function searchCacheKey(params: {
   originStationId: string;
   destinationStationId: string;
@@ -75,7 +67,7 @@ export function searchCacheKey(params: {
   return parts.join(':');
 }
 
-/** How long this date's answer may be kept. */
+/** Use shorter TTLs for today's results. */
 export function cacheTtlSecondsFor(serviceDate: string, now: Date): number {
   return serviceDate === cairoToday(now)
     ? SEARCH_CACHE_TTL_TODAY_SECONDS
@@ -106,9 +98,7 @@ const STRING_FIELDS = [
   'destinationNameAr',
 ] as const;
 
-/**
- * Whether a decoded cache entry is actually one of ours.
- */
+/** Treat unknown cache shapes as misses. */
 export function isCachedStaticTrip(value: unknown): value is CachedStaticTrip {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;

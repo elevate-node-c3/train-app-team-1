@@ -14,8 +14,8 @@ const GRPC_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
 };
 
 /**
- * Turns a refusal into a gRPC status. Every catalog controller imports this;
- * do not copy it. The business code travels in `details`.
+ * Business code and dependency retry delays belong in transport details.
+ * Share this mapping across controllers.
  */
 export function toRpcException(error: unknown): unknown {
   if (!isCatalogSearchError(error)) return error;

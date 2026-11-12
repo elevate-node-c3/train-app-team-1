@@ -52,11 +52,6 @@ describe('CacheInvalidationConsumer', () => {
     );
   });
 
-  // TA-20 Task 9, step 6: the CAT-5 consumer already handles `fareChanged`
-  // (the test above proves that with a hand-built envelope) -- this proves
-  // the *new* factory's envelope reaches it too, so FareChangeService's
-  // `buildFareChanged` output is not a shape the consumer merely happens to
-  // tolerate.
   it('bumps the route version for a FareChanged envelope built by the new factory', async () => {
     const envelope = buildFareChanged({
       eventId: randomUUID(),

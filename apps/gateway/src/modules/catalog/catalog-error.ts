@@ -6,10 +6,7 @@ import {
   type ValidationIssueRef,
 } from '@app/contracts';
 
-/**
- * Catalog's refusal, restored from the gRPC error. A `code` is accepted only
- * if it names a known `ErrorCode`; malformed details are dropped, not forwarded.
- */
+/** Accept known ErrorCode values and drop malformed error details. */
 
 interface CatalogRefusal {
   code: ErrorCode;
@@ -51,9 +48,8 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
 }
 
 /**
- * The HTTP exception a catalog refusal becomes, or null to let the transport
- * status decide. Fields go under `message`, which `HttpExceptionFilter` reads;
- * a `details` key would be silently dropped.
+ * Map business refusals to HTTP; otherwise let transport status decide.
+ * Put field details under message, which HttpExceptionFilter reads.
  */
 export function parseCatalogBusinessError(
   error: unknown,
@@ -67,7 +63,7 @@ export function parseCatalogBusinessError(
     {
       code: refusal.code,
       message: refusal.details,
-      // Forwarded onto the envelope; absent here stays absent there.
+      // Preserve missing retry hints.
       ...(refusal.retryAfterSeconds === undefined
         ? {}
         : { retryAfterSeconds: refusal.retryAfterSeconds }),

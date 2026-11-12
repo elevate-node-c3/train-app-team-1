@@ -42,8 +42,7 @@ describe('the trip-stops cache key', () => {
     expect(key()).not.toBe(key({ destinationStationId: CAIRO }));
   });
 
-  // Direction is part of the answer: the same pair in reverse is a different
-  // segment of the same trip.
+  // Reverse pairs describe different segments and must not share cache entries.
   it('distinguishes the two travel directions', () => {
     expect(key()).not.toBe(
       key({ originStationId: ALEX, destinationStationId: CAIRO }),

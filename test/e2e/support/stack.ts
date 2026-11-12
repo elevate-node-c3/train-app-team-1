@@ -4,12 +4,8 @@ import type { ApiResponse, SignUpResponseDto } from '@app/contracts';
 import { STAFF_SEED_ACCOUNTS } from '../../../apps/identity/src/database/seeds/staff-accounts.js';
 
 /**
- * Shared harness for the two outbox e2e specs.
- *
- * The tests drive the real Compose stack: they stop and start containers and
- * wipe volumes, so the e2e config runs files one at a time. Only the services
- * the backbone needs are started; building the other four would add minutes and
- * prove nothing about messaging.
+ * These Compose tests restart containers and wipe volumes, so files run serially.
+ * Start only the services needed for messaging.
  */
 
 const COMPOSE_TIMEOUT_MS = 60_000;
@@ -26,11 +22,7 @@ export const AUTH_BASE_URL = `${GATEWAY_URL}/api/v1/auth`;
 /** Satisfies BR-02: at least 8 characters, a letter, a digit and a symbol. */
 export const DEFAULT_PASSWORD = 'Str0ng!Passw0rd';
 
-/**
- * The seed data has one source: identity's standalone seed. The e2e harness
- * aliases the two accounts rather than restating their addresses and
- * development passwords.
- */
+/** Reuse identity's seed accounts instead of duplicating emails and passwords. */
 const [OPERATOR_SEED_ACCOUNT, CONDUCTOR_SEED_ACCOUNT] = STAFF_SEED_ACCOUNTS;
 
 export const OPERATOR_SEED_EMAIL = OPERATOR_SEED_ACCOUNT.email;
@@ -91,11 +83,8 @@ export function compose(...args: string[]): string {
 }
 
 /**
- * Builds and starts a slice of the project, on the first-build budget.
- *
- * Goes through `docker()` rather than calling execFileSync directly, so a
- * failed build reports its stderr and the seed passwords in COMPOSE_ENV are
- * present -- both of which a bare execFileSync silently drops.
+ * Use the first-build timeout and docker() wrapper to retain stderr and
+ * COMPOSE_ENV seed passwords.
  */
 export function composeUpBuild(services: readonly string[]): void {
   docker(
@@ -113,11 +102,10 @@ export function composeUpBuild(services: readonly string[]): void {
   );
 }
 
-/** Builds and starts the backbone's slice of the Compose project. */
 export function startStack(): void {
   compose('down', '-v', '--remove-orphans');
-  // `--wait` is not a readiness gate for the apps: Compose only understands the
-  // infra healthchecks. The caller polls `/health/ready` below.
+  // Compose's --wait covers infra healthchecks, not app readiness.
+  // Callers must also poll /health/ready.
   docker(
     [
       'compose',
@@ -160,11 +148,7 @@ export function seedStaff(): void {
   );
 }
 
-/**
- * Polls until `predicate` is truthy, swallowing transient failures. Every
- * readiness wait in the suite goes through this rather than sleeping a fixed
- * amount and hoping.
- */
+/** Retry transient failures until the readiness predicate succeeds. */
 export async function waitFor(
   description: string,
   predicate: () => boolean | Promise<boolean>,
@@ -205,10 +189,8 @@ export async function waitForGateway(timeoutMs = 180_000): Promise<void> {
   );
 }
 
-// Identity and notification publish no host port; their own HTTP listener is
-// reachable only inside the container, so readiness is probed with `compose
-// exec`. The route throws 503 while a dependency is not ready, which makes the
-// process exit code the whole predicate.
+// Identity and notification have no host ports; probe readiness with compose exec.
+// Exit nonzero on HTTP 503 or a failed request.
 const READY_SCRIPT =
   "fetch('http://127.0.0.1:3000/health/ready')" +
   '.then(async (r) => { await r.text(); process.exit(r.ok ? 0 : 1); })' +
@@ -317,11 +299,8 @@ export async function mailpitMessage(
 }
 
 /**
- * Waits for a particular email and extracts the six-digit code from its body.
- *
- * The code is deliberately absent from the subject, so the body is the only
- * place to read it. `Text` is checked before `HTML` so a CSS colour cannot be
- * mistaken for the code.
+ * Read codes from the body, never the subject. Prefer Text over HTML so
+ * CSS colors are not mistaken for six-digit codes.
  */
 export async function waitForEmailCode(
   email: string,
@@ -391,12 +370,8 @@ export function deliveredCount(stats: QueueStats): number {
 }
 
 /**
- * The broker's own answer to "is anyone reading this queue".
- *
- * `/health/ready` now folds in the consumer's liveness, so it no longer reports
- * `ready` while nothing is subscribed. This is still the stronger gate for
- * specs that need delivery: it is measured from the broker's side rather than
- * from the service's own view of itself.
+ * The readiness route checks consumer liveness, but the broker confirms
+ * the queue is actually subscribed.
  */
 export async function waitForConsumer(
   queue: string,
@@ -409,7 +384,7 @@ export async function waitForConsumer(
   );
 }
 
-/** Runs SQL through the superuser, the same operator path the runbook uses. */
+/** Run SQL as the Postgres superuser, matching the runbook. */
 export function psql(
   database: 'identity' | 'notification',
   sql: string,
@@ -432,9 +407,8 @@ export function psql(
 }
 
 /**
- * Reads a key from the shared Redis. Revocation is asynchronous (outbox →
- * broker → gateway consumer), so a spec that needs the edge to have applied an
- * event waits on the marker itself rather than sleeping.
+ * Revocation travels through outbox, broker and gateway asynchronously.
+ * Wait for the Redis marker instead of sleeping.
  */
 export function redisGet(key: string): string {
   return compose(

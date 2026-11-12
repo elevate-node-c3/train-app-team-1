@@ -24,15 +24,7 @@ export { HEALTH_GRPC_CLIENTS };
 const healthClientToken = (service: DownstreamService) =>
   `HEALTH_GRPC_${service.toUpperCase()}`;
 
-/**
- * `@Global()` so `@app/common`'s HealthController can resolve
- * `AGGREGATE_READINESS` without the library importing this app — which it
- * cannot. Binding it here is what replaced `if (process.env.APP ===
- * 'gateway')` inside that shared controller.
- *
- * One token for both routes: `/health` reaches it through the library's
- * controller, `/api/ping-all` through this module's own.
- */
+/** Global readiness supports both health routes without library-to-app imports. */
 @Global()
 @Module({
   imports: [

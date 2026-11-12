@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-// Deep import: the barrel pulls in consumers and creates a cycle that leaves
-// MessageRepublisher undefined at runtime.
+// Import directly to avoid a consumer-side cycle that leaves MessageRepublisher undefined.
 import { OutboxModule } from '@app/messaging/outbox/outbox.module.js';
 
 import { CatalogCacheModule } from '../cache/catalog-cache.module.js';
@@ -25,10 +24,6 @@ import { TripStopsService } from './trip-stops.service.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
 import { TripsService } from './trips.service.js';
 
-/**
- * Trip search -- one way, the return leg, a trip's stops -- and the generation
- * that creates the dated trips all of it reads (TA-16).
- */
 @Module({
   imports: [
     TypeOrmModule.forFeature([

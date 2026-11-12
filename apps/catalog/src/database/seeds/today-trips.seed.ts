@@ -1,22 +1,7 @@
 /**
- * Seeds catalog with trips a traveller can actually search for today.
- *
- * `catalog:seed:search` loads the shared fixture verbatim, and that fixture
- * dates its trips in June 2026 -- which the integration specs can search
- * because they pass a frozen `now`, and which nothing else can: the real
- * booking window is thirty days from today, so those trips are either in the
- * past or beyond the window on every other day of the year. The Postman
- * collection has needed this since TA-17 and the README claimed it was
- * happening; it was not.
- *
- * This runs the e2e tier's seed, which places the same network's trips relative
- * to today: the main line, a second train type on Tanta -> Ramsis for the
- * filters, and the reverse route for a round trip. Reused rather than copied --
- * two seeds claiming to produce "today's trips" would drift, and then a Postman
- * run and an e2e run would be testing different data.
- *
- * Idempotent, like the fixture seed: every row is keyed by a fixed uuid and
- * conflicts are ignored. Run it again after `compose down -v`.
+ * Reuse the e2e seed so Postman and e2e share trips inside today's 30-day window.
+ * The fixed June fixture requires a frozen clock; this seed uses relative dates.
+ * Fixed IDs and ignored conflicts make reruns safe.
  */
 import {
   clearRecentSearches,
@@ -26,8 +11,7 @@ import {
 async function main(): Promise<void> {
   const fixture = await seedSearchE2e();
 
-  // A fresh run should start from an empty list, or "the last five" is five of
-  // somebody else's searches.
+  // Clear prior searches when the run needs a fresh recent-search list.
   if (process.argv.includes('--clear-recent')) {
     await clearRecentSearches();
   }

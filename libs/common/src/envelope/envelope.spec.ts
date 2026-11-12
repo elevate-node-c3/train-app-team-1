@@ -659,7 +659,6 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         }),
       } as unknown as any;
 
-      // Sensitive internal DB error
       const rawSqlError = new Error(
         'syntax error at or near "SELECT * FROM users WHERE password = secret"',
       );
@@ -670,7 +669,6 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
       expect(responseBody.success).toBe(false);
       expect(responseBody.data).toBeNull();
       expect(responseBody.error.code).toBe(ErrorCode.INTERNAL_SERVER_ERROR);
-      // Ensure raw SQL and password are NOT in the client envelope
       expect(responseBody.error.message).toBe(
         'An unexpected internal server error occurred, please try again later',
       );

@@ -137,8 +137,7 @@ describe('InventorySeatUsageClient', () => {
   });
 });
 
-// Stubs cannot catch this: proto3 omits zero scalars, so decoding zero
-// depends on the real loader's `defaults` option.
+// Proto3 zero-count decoding needs the real loader's defaults option; stubs cannot test it.
 describe('the real inventory proto loader', () => {
   function tripSeatUsageType(): {
     serialize(message: unknown): Buffer;

@@ -9,7 +9,7 @@ import {
 
 import { SeatUsageService } from './seat-usage.service.js';
 
-/** Catalog's seam into whether a dated trip can be safely rewritten. */
+/** Seat counts let catalog reject unsafe trip rewrites. */
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
 export class SeatUsageGrpcController {

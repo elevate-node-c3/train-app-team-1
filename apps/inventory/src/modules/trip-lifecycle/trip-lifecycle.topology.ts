@@ -16,20 +16,16 @@ import {
 import { retryDelaysFor } from '@app/messaging/consumer/consumer-config.js';
 import { messageOf } from '@app/messaging/error-message.js';
 
-/** Inventory owns the seats, so it owns their events. */
+/** Inventory owns this queue because it owns seat data. */
 export const INVENTORY_TRIP_LIFECYCLE_QUEUE = 'inventory.trip-lifecycle';
 
-/** One queue for both: one handler creates and removes the seats. */
+/** One queue for a future handler to create and remove seats. */
 export const TRIP_LIFECYCLE_EVENT_TYPES = [
   TRIP_PUBLISHED_EVENT_TYPE,
   TRIP_WITHDRAWN_EVENT_TYPE,
 ] as const;
 
-/**
- * Declares inventory's trip-lifecycle queue before anything reads it. Messages
- * with no bound queue are dropped, so this holds the booking-window backlog
- * until Sprint 3 adds the consumer.
- */
+/** Declare durable queues early so trip events wait safely for a future consumer. */
 @Injectable()
 export class TripLifecycleTopologyService
   implements OnApplicationBootstrap, BeforeApplicationShutdown
@@ -40,7 +36,7 @@ export class TripLifecycleTopologyService
   constructor(private readonly amqp: AmqpClientService) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    // A new connection loses the channel, not the durable queue; re-assert on reconnect.
+    // Reassert durable queues on each new channel.
     this.unsubscribeReconnect = this.amqp.onReconnect(() => this.declare());
     await this.declare();
   }
@@ -54,10 +50,10 @@ export class TripLifecycleTopologyService
     try {
       const channel = await this.amqp.ensureChannel();
 
-      // Sprint 3's consumer must find these retry queues; size them from the platform budget.
+      // Match retry queues to the future consumer's platform budget.
       const retryDelaysMs = retryDelaysFor({});
 
-      // One event type per binding; asserts are idempotent.
+      // Bind each event type; repeated declarations are safe.
       for (const eventType of TRIP_LIFECYCLE_EVENT_TYPES) {
         await declareTopology(
           channel,
@@ -73,7 +69,7 @@ export class TripLifecycleTopologyService
         `Holding ${TRIP_LIFECYCLE_EVENT_TYPES.join(', ')} in ${INVENTORY_TRIP_LIFECYCLE_QUEUE}`,
       );
     } catch (error: unknown) {
-      // Degrade, don't crash: the next reconnect retries; queued trips are durable.
+      // Keep running; the next reconnect retries queue setup.
       this.logger.error(
         `Could not declare ${INVENTORY_TRIP_LIFECYCLE_QUEUE}: ${messageOf(error)}`,
       );

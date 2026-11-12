@@ -28,17 +28,9 @@ export class TripsGrpcController {
   ) {}
 
   /**
-   * `now` is captured here, once, and threaded through the whole search.
-   *
-   * The transport is the only honest place for it: a service that called
-   * `new Date()` itself could not be tested against a frozen clock, and two
-   * calls inside one request could disagree about whether a trip's sales are
-   * still open.
-   *
-   * The traveller comes from the same place, for the same reason -- caller
-   * metadata the gateway minted from a verified token, never a field on the
-   * request. It is only used to record the search; an unidentified caller
-   * still gets results, because they are identical for everyone.
+   * Capture now once per request so validation and sales checks share one clock.
+   * Read traveller identity from gateway-verified metadata, never request fields.
+   * Identity affects recording only; unidentified callers get the same results.
    */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'SearchOneWayTrips')
   async searchOneWayTrips(
@@ -56,11 +48,8 @@ export class TripsGrpcController {
   }
 
   /**
-   * The second list of a round trip.
-   *
-   * `now` is captured here too, and for the same reason. The arrival that
-   * bounds this list is NOT captured here: the service reads it from the trip
-   * itself, so no clock and no client can move it.
+   * Capture now once; the service reads outbound arrival from the trip itself.
+   * Client input and the clock must not move that arrival bound.
    */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'SearchReturnTrips')
   async searchReturnTrips(
@@ -73,13 +62,7 @@ export class TripsGrpcController {
     }
   }
 
-  /**
-   * The stops of the pair the search result offered.
-   *
-   * No clock is captured: unlike search, this answer is not a function of
-   * `now`. The cache TTL is the only time-dependent part, and it is chosen
-   * inside the service.
-   */
+  /** Stops do not depend on now; the service chooses their cache TTL. */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'GetTripStops')
   async getTripStops(request: GetTripStopsRequest): Promise<TripStopsResponse> {
     try {

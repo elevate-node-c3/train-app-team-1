@@ -2,11 +2,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 import type { VerificationCodePurpose } from '@app/contracts';
 import type { EmailDeliveryOutcome } from '../email-delivery.types.js';
 
-/**
- * The append-only delivery measurement. The nullable columns are meaningful
- * only in combination with `outcome`; the repository's union-to-row mapping and
- * the database CHECK keep them consistent.
- */
+/** Append-only delivery log; outcome controls nullable fields. */
 @Entity('email_delivery')
 export class EmailDeliveryEntity {
   @PrimaryColumn('uuid')

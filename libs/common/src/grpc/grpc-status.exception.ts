@@ -2,10 +2,8 @@ import { HttpException } from '@nestjs/common';
 import { mapGrpcStatus } from '@app/contracts';
 
 /**
- * Converts a gRPC status into the edge's HTTP exception without accepting the
- * upstream `details` string. That is the whole point: an internal message can
- * name a table, a stack frame or another account, so it never crosses into the
- * envelope (F5/G6).
+ * Maps gRPC status to HTTP without forwarding upstream `details`, which may
+ * expose database, stack or account information.
  */
 export function grpcStatusException(code: number): HttpException {
   const mapping = mapGrpcStatus(code);

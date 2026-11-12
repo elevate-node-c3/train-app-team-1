@@ -15,9 +15,7 @@ describe('catalog invalidation subscriptions', () => {
   const subscriptions = createCatalogInvalidationSubscriptions(handler);
 
   it('gives every event type its own queue', () => {
-    // A subscription validates a delivery against its own eventType, so four
-    // subscriptions on one queue would take turns receiving each other's
-    // events and dead-letter three in four as invalid-payload.
+    // Shared queues deliver events to mismatched subscriptions, which dead-letter them.
     const queues = subscriptions.map((s) => s.queueName);
 
     expect(new Set(queues).size).toBe(subscriptions.length);
@@ -35,7 +33,6 @@ describe('catalog invalidation subscriptions', () => {
 
   it('names each queue after the event it carries', () => {
     for (const subscription of subscriptions) {
-      // catalog.fare.changed -> catalog.invalidation.fare-changed
       const tail = subscription.eventType.split('.').slice(1).join('-');
 
       expect(subscription.queueName).toBe(`catalog.invalidation.${tail}`);

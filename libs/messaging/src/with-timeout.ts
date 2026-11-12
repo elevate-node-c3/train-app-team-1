@@ -1,4 +1,4 @@
-/** Rejects if `work` has not settled in `ms`. The timer never holds the process open. */
+/** Time out unfinished work; the timer does not keep Node running. */
 export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {

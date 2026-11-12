@@ -1,18 +1,8 @@
-/**
- * The shapes the search path passes between its pieces.
- *
- * They live here rather than beside the repository because more than one thing
- * consumes them -- the service maps a row onto the wire, and the cache stores
- * a projection of one -- and because a `*.repository.ts` is required to export
- * nothing but its concrete class.
- */
+/** Keep shared types outside repositories, which export only their concrete class. */
 
 /**
- * One candidate trip, as the query returns it.
- *
- * Deliberately raw: no time conversion, no money formatting, no eligibility.
- * The repository's job is to get the right set of rows in a bounded number of
- * statements; the service turns them into the wire shape.
+ * Raw rows have no time conversion, money formatting, or eligibility checks.
+ * Repositories use bounded queries; services produce the wire shape.
  */
 export interface TripSearchRow {
   tripId: string;
@@ -39,13 +29,8 @@ export interface TripSearchRow {
 }
 
 /**
- * The outbound trip's own segment, as the return search reads it.
- *
- * The return list may not depart before `destinationArrivalAt` (BR-20) -- the
- * instant the outbound trip lands at what becomes the return origin -- and that
- * instant comes from here rather than from anything a client sent.
- * `originDepartureAt` is the outbound's own departure, and its Cairo civil date
- * is the earliest return date the server will accept.
+ * Returns cannot depart before the server-read destinationArrivalAt.
+ * The outbound originDepartureAt's Cairo date is the earliest accepted return date.
  */
 export interface PassengerSegmentRow {
   originStationId: string;
@@ -57,12 +42,8 @@ export interface PassengerSegmentRow {
 }
 
 /**
- * One stop on the passenger's own segment, in travel order.
- *
- * Both instants are whatever the timetable holds, not what the passenger uses:
- * a segment that alights mid-route keeps that stop's onward departure, because
- * the train does depart and hiding it would be a different claim. Only the
- * trip's own first and last stops are genuinely one-sided.
+ * Preserve timetable arrivals and departures, including onward departures where
+ * the passenger alights mid-route. Only the trip's first and last stops are one-sided.
  */
 export interface TripStopRow {
   stationId: string;
@@ -74,7 +55,6 @@ export interface TripStopRow {
   departureAt: Date | null;
 }
 
-/** What the probes found when a search came back empty. */
 export interface RouteServedProbe {
   routeServed: boolean;
   trainServesRoute: boolean;

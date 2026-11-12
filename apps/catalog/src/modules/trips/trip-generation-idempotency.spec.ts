@@ -62,8 +62,7 @@ describe('createDatedTrip idempotency', () => {
       service.createDatedTrip(timetable, SERVICE_DATE),
     ).resolves.toBe(existing);
 
-    // The second run of a tick must not write anything, nor emit a second
-    // event for a trip inventory has already been told about.
+    // Repeated ticks must neither write nor emit another event for an existing trip.
     expect(withTransaction).not.toHaveBeenCalled();
   });
 
@@ -92,8 +91,7 @@ describe('createDatedTrip idempotency', () => {
   });
 
   it('propagates a failure that is not a duplicate', async () => {
-    // The blanket catch this replaces turned every failure into "a trip
-    // already exists", hiding real bugs behind a sibling's success.
+    // Propagate real failures; do not hide them as another instance's successful insert.
     const { service } = makeService({
       findOne: [null, existing],
       transaction: () => Promise.reject(new Error('outbox insert failed')),

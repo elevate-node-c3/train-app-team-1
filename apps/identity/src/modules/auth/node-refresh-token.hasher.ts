@@ -10,9 +10,8 @@ import { tokenGraceSecretFromEnv } from '../../config/token-settings.js';
 const VERSION = 'v1';
 
 /**
- * Refresh tokens are opaque random bytes; only their SHA-256 hash is stored.
- * The 10-second grace successor pair is sealed with AES-256-GCM so a database
- * reader cannot lift a usable token out of the row.
+ * Store random refresh tokens as SHA-256 hashes. Encrypt the 10-second grace
+ * successor pair with AES-256-GCM so database readers cannot use it.
  */
 @Injectable()
 export class NodeRefreshTokenHasher {

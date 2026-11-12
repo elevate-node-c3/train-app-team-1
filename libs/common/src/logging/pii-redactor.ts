@@ -4,16 +4,12 @@ const SENSITIVE_KEY_REGEX =
 const EMAIL_REGEX =
   /\b([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]*@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b/g;
 
-/**
- * Masks an email string: e.g. "john.doe@example.com" -> "j***@example.com"
- */
+/** Masks email usernames, keeping the first character and domain. */
 export function maskEmail(email: string): string {
   return email.replace(EMAIL_REGEX, '$1***@$2');
 }
 
-/**
- * Deeply sanitizes any object, array, or primitive, masking personal data and credentials.
- */
+/** Masks emails and redacts sensitive keys recursively. */
 export function redactPii<T>(
   data: T,
   seen: WeakSet<object> = new WeakSet(),

@@ -1,10 +1,6 @@
 /**
- * Code-side defaults that must match the Joi `.default()` values.
- *
- * `validateEnv()` discards the coerced result, so a Joi default never reaches
- * `process.env`; code reads the variable with `?? default`. Keeping both
- * numbers here and asserting they match in `joi-env-validation.spec.ts` is what
- * stops the two from drifting.
+ * Keep these fallbacks in sync with Joi defaults. Joi does not write defaults
+ * to `process.env`, so readers still need fallback values.
  */
 export const OUTBOX_DEFAULTS = {
   enabled: true,

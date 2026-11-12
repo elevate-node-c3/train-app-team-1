@@ -6,9 +6,7 @@ import { StampedeGuard } from './stampede-guard.js';
 
 export const REDIS_OP_TIMEOUT_MS = 150;
 
-/**
- * Executes a promise with a hard timeout, rejecting if not finished in time (§2.3 rule 7).
- */
+/** Rejects after the timeout in milliseconds. */
 async function withTimeout<T>(
   promise: Promise<T>,
   ms: number = REDIS_OP_TIMEOUT_MS,
@@ -29,14 +27,8 @@ async function withTimeout<T>(
 }
 
 /**
- * Read-through caching with a JSON codec, over the shared Redis client.
- *
- * Degrade, never fail. Redis being down, slow, out of memory or holding a
- * value this caller cannot decode all mean the same thing here: a miss. The
- * caller then reads its source of truth and returns the same answer it always
- * would, a little slower. That is the contract `RateLimitStore` already keeps,
- * and for a read path it is the whole point -- a cache outage must not become
- * a search outage.
+ * JSON caching over the shared Redis client. Outages, timeouts and decode
+ * errors are cache misses, never search failures; reads fall back to the source.
  */
 @Injectable()
 export class CacheAsideService {
@@ -77,7 +69,7 @@ export class CacheAsideService {
     }
   }
 
-  /** Stores a value, or quietly does not. */
+  /** Writes are best effort; TTL is in seconds. */
   async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
     const client = this.redis.isAvailable() ? this.redis.getClient() : null;
     if (!client) return;
@@ -97,9 +89,7 @@ export class CacheAsideService {
     }
   }
 
-  /**
-   * Removes a key, or quietly does not.
-   */
+  /** Deletes are best effort. */
   async del(key: string): Promise<void> {
     const client = this.redis.isAvailable() ? this.redis.getClient() : null;
     if (!client) return;
@@ -171,7 +161,6 @@ export class CacheAsideService {
       return loader();
     }
 
-    // 1. Initial Redis lookup
     const cached = await this.get<T>(key);
     if (isUsable(cached)) {
       this.metrics.recordHit(family);
@@ -180,9 +169,8 @@ export class CacheAsideService {
 
     this.metrics.recordMiss(family);
 
-    // 2. Coalesce in-process callers so multiple local queries share one promise
     return this.stampedeGuard.coalesceInProcess(key, async () => {
-      // Re-check cache in case another caller populated it while waiting
+      // Another caller may have filled the cache while this one waited.
       const warmCheck = await this.get<T>(key);
       if (isUsable(warmCheck)) {
         return warmCheck;
@@ -203,7 +191,7 @@ export class CacheAsideService {
         }
       }
 
-      // If lock was not acquired, another worker is rebuilding: poll until ready or timeout
+      // Wait for the lease owner's result, up to maxWaitMs.
       const maxWaitMs = options?.maxWaitMs ?? 1000;
       const pollIntervalMs = options?.pollIntervalMs ?? 25;
       const start = Date.now();
@@ -223,7 +211,7 @@ export class CacheAsideService {
         }
       }
 
-      // If wait timed out or lock was dropped without value: degrade to direct rebuild
+      // Rebuild directly if the wait expires or the lease ends without a value.
       return loader();
     });
   }

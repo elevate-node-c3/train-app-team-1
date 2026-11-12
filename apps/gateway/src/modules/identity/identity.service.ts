@@ -28,12 +28,8 @@ import { IdentityGrpcClient } from './identity.grpc.client.js';
 import type { WireTokenPair } from './identity.types.js';
 
 /**
- * The gateway's identity surface, shaped for HTTP.
- *
- * Transport lives in `IdentityGrpcClient`; this service owns the one edge
- * decision that is not transport: identity speaks wire token pairs, the
- * gateway's public contract speaks `Bearer` pairs, and a missing pair after a
- * successful verification or refresh is a server error — never a null token.
+ * Converts wire tokens to Bearer pairs for HTTP.
+ * Verification and refresh require tokens; missing tokens are server errors.
  */
 @Injectable()
 export class IdentityService {

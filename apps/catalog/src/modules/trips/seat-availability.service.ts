@@ -6,10 +6,6 @@ import {
   jitteredTtlSeconds,
 } from '../cache/catalog-cache.keys.js';
 
-/**
- * One segment to price availability for: a trip, the two stations the
- * passenger actually travels between, and the class they asked for.
- */
 export interface SegmentAvailabilityQuery {
   tripId: string;
   originStationId: string;
@@ -18,10 +14,7 @@ export interface SegmentAvailabilityQuery {
   classCapacity: number;
 }
 
-/**
- * Key format for segment availability (§2.3, SEAT-4).
- * Lives under its own keys and is merged into results at read time.
- */
+/** Keep availability in separate keys and merge it into results at read time. */
 export function segmentAvailabilityCacheKey(params: {
   tripId: string;
   originStationId: string;
@@ -39,20 +32,15 @@ export function segmentAvailabilityCacheKey(params: {
 }
 
 /**
- * How many seats are available, behind one seam.
- *
- * Availability lives under its own keys (`catalog:availability:v1:...`) and
- * is merged into search results at read time. In Sprint 3, inventory's events
- * update just those keys: a seat sold never invalidates a results list, and
- * a timetable change never touches counts it did not affect (§2.3, SEAT-4).
+ * Inventory events should update availability keys, not search lists; timetable
+ * changes should affect only relevant counts. Inventory integration is pending,
+ * so misses use provisional class capacity.
  */
 @Injectable()
 export class SeatAvailabilityService {
   constructor(@Optional() private readonly cache?: CacheAsideService) {}
 
-  /**
-   * Seats available per trip, keyed by `tripId`.
-   */
+  /** Available seats keyed by tripId. */
   async availabilityFor(
     segments: readonly SegmentAvailabilityQuery[],
   ): Promise<Map<string, number>> {
@@ -64,14 +52,13 @@ export class SeatAvailabilityService {
     const missing: SegmentAvailabilityQuery[] = [];
 
     if (!this.cache) {
-      // Direct fallback without cache
+      // Without cache, use provisional class capacity until inventory is connected.
       for (const segment of segments) {
         result.set(segment.tripId, segment.classCapacity);
       }
       return result;
     }
 
-    // 1. Batch read from Redis
     for (const segment of segments) {
       const key = segmentAvailabilityCacheKey(segment);
       const cached = await this.cache.get<number>(key);
@@ -85,7 +72,7 @@ export class SeatAvailabilityService {
       }
     }
 
-    // 2. Rebuild missing segments (provisional capacity; inventory in Sprint 3)
+    // Use provisional capacity until inventory integration is available.
     if (missing.length > 0) {
       const ttl = jitteredTtlSeconds(
         AVAILABILITY_TTL_SECONDS,

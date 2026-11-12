@@ -5,13 +5,7 @@ import {
 } from '@app/common/health/dependency-health.js';
 import { AmqpClientService } from './amqp-client.service.js';
 
-/**
- * Reports the broker into the shared readiness report.
- *
- * This direction is the point: messaging knows about common, not the reverse.
- * `HealthService` used to inject `AmqpClientService` directly, which is what
- * made the two libraries mutually dependent.
- */
+/** Register broker readiness with common without creating circular imports. */
 @Injectable()
 export class AmqpHealthContributor
   implements DependencyHealthContributor, OnModuleInit, OnModuleDestroy

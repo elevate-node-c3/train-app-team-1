@@ -85,7 +85,7 @@ describe('seat availability', () => {
       const keyA = segmentAvailabilityCacheKey(segA);
       const keyB = segmentAvailabilityCacheKey(segB);
 
-      const store = new Map<string, number>([[keyA, 15]]); // Trip A has 15 seats left in cache
+      const store = new Map<string, number>([[keyA, 15]]);
 
       const mockCache = {
         get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -98,9 +98,7 @@ describe('seat availability', () => {
       const cachedService = new SeatAvailabilityService(mockCache);
       const result = await cachedService.availabilityFor([segA, segB]);
 
-      // Trip A got 15 from Redis (warm)
       expect(result.get('trip-a')).toBe(15);
-      // Trip B was cold, computed capacity 50 and wrote back to Redis
       expect(result.get('trip-b')).toBe(50);
       expect(mockCache.set).toHaveBeenCalledWith(keyB, 50, expect.any(Number));
     });

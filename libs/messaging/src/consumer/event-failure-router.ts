@@ -20,15 +20,11 @@ import {
   type ProcessedEventStorePort,
 } from './processed-event.port.js';
 
-/** What the caller should do with the delivery once routing is decided. */
 export type Disposition = 'ack' | 'nack';
 
 /**
- * Decides where a failed delivery goes: a retry queue, the dead letter
- * exchange, or back on the queue.
- *
- * Returns a disposition instead of acking, so it needs no channel and the
- * consumer keeps sole ownership of the delivery tag.
+ * Choose retry, dead-letter, or requeue behavior.
+ * Return the action; only the consumer may acknowledge the delivery.
  */
 @Injectable()
 export class EventFailureRouter {
@@ -64,9 +60,7 @@ export class EventFailureRouter {
 
       const delays = retryDelaysFor(subscription);
       if (attempt <= delays.length) {
-        // Load-bearing order: release the lease BEFORE the retry copy can
-        // arrive, or the 1s copy meets the 60s lease, the claim is refused,
-        // and the email is dropped on the first SMTP blip.
+        // Release the claim before republishing so a retry is not skipped as a duplicate.
         await this.processedEvents.markFailed(envelope.id, reason);
         await this.republisher.republish(
           RETRY_EXCHANGE,
@@ -87,7 +81,7 @@ export class EventFailureRouter {
         'retries-exhausted',
       );
     } catch (routingError: unknown) {
-      // The republish *is* the retry; acking now would lose the message.
+      // A failed retry publish needs requeue, not acknowledgment.
       this.logger.error(
         `Could not route failed event ${envelope.id}; requeueing: ${messageOf(
           routingError,
@@ -97,7 +91,7 @@ export class EventFailureRouter {
     }
   }
 
-  /** An unreadable envelope cannot be retried, so it dead-letters at once. */
+  /** Malformed envelopes dead-letter immediately, without retry. */
   async routeUnparsed(
     subscription: EventSubscription,
     message: ConsumeMessage,

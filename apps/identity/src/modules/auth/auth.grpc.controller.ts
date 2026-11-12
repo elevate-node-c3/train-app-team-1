@@ -39,10 +39,8 @@ import { SessionsService } from './services/sessions.service.js';
 import { PassengersService } from './services/passengers.service.js';
 
 /**
- * gRPC status per business code. The business code itself travels in
- * `details`; the status only tells generic gRPC clients how to categorise the
- * failure. The gateway restores the code from `details` after validating it
- * against the enum, so an unknown string can never reach a client.
+ * Status classifies the failure; details carries its business code.
+ * The gateway validates that code against the enum before returning it.
  */
 const GRPC_STATUS_BY_ERROR: Partial<Record<ErrorCode, grpc.status>> = {
   [ErrorCode.VALIDATION_ERROR]: grpc.status.INVALID_ARGUMENT,
@@ -166,9 +164,8 @@ interface DeletePassengerRequestWire {
 }
 
 /**
- * The gRPC transport adapter. It owns no business rule: it reads the caller
- * from CLS (restored from metadata by the interceptor), calls one service, and
- * translates a business failure into a status plus a machine-readable detail.
+ * Read the caller from CLS metadata and leave auth rules to the services.
+ * Translate business errors into gRPC status and details.
  */
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)

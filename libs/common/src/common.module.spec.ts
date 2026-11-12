@@ -6,11 +6,8 @@ import { CallerMetadataMiddleware } from './caller/caller-metadata.middleware.js
 import { CorrelationMiddleware } from './correlation/correlation.middleware.js';
 
 /**
- * The gateway's global prefix exposed an ordering bug: the automatically
- * mounted ClsMiddleware did not run for excluded routes such as /health/live,
- * so CorrelationMiddleware wrote into a store that did not exist and the route
- * answered 500. Pinning the chain here makes the order explicit in every
- * service, not dependent on module scanning.
+ * CLS must run before correlation on every route, including unprefixed health
+ * routes. Automatic mounting can miss those routes.
  */
 describe('CommonModule middleware chain', () => {
   it('establishes the CLS context before caller stripping and correlation', () => {

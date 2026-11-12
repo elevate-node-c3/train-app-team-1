@@ -14,10 +14,7 @@ import type {
 } from './recent-searches.types.js';
 
 /**
- * Column value to wire enum, spelled out so neither can drift silently.
- *
- * UNSPECIFIED is deliberately unreachable: a stored row always knows which
- * kind it is, and a check constraint on the column keeps it that way.
+ * Map stored kinds explicitly; the database constraint makes UNSPECIFIED unreachable.
  */
 const KIND_ON_THE_WIRE: Record<RecentSearchInput['kind'], RecentSearchKind> = {
   one_way: 'RECENT_SEARCH_KIND_ONE_WAY',
@@ -25,13 +22,8 @@ const KIND_ON_THE_WIRE: Record<RecentSearchInput['kind'], RecentSearchKind> = {
 };
 
 /**
- * The traveller's last five searches (CAT-4, BR-21).
- *
- * Deliberately has no cache. Recent searches are per traveller, so a shared
- * cache key is the one thing §2.3 rule 6 forbids outright, and a per-traveller
- * key would buy a few milliseconds on a once-per-screen read in exchange for a
- * place another account's data could leak through. The module provides no
- * `CacheAsideService` at all, so there is nothing to misuse.
+ * Never cache per-traveller recent searches: shared keys would leak account data,
+ * and per-account caching is not part of this feature.
  */
 @Injectable()
 export class RecentSearchesService {
@@ -49,12 +41,8 @@ export class RecentSearchesService {
   }
 
   /**
-   * Records a search for a traveller, or says why it could not.
-   *
-   * Returns rather than throws, and the caller ignores the answer: recording
-   * must never slow a search down and never make one fail (BR-21). A traveller
-   * who gets their trains and no new recent-search entry has lost nothing they
-   * asked for; a traveller who gets an error instead of their trains has.
+   * Recording must never delay or fail search responses; swallow and warn on errors.
+   * Callers run it off the response's critical path.
    */
   async record(search: RecentSearchInput, now: Date): Promise<void> {
     try {
@@ -70,20 +58,11 @@ export class RecentSearchesService {
   }
 
   /**
-   * One stored row on the wire.
-   *
-   * A search whose departure date has passed comes back **without its dates**,
-   * so the client knows to ask for new ones rather than replaying a journey
-   * that cannot be booked. Both dates go together: a round trip with no
-   * outbound date cannot be repeated either, and returning half a pair would
-   * invite a client to fill in the other half itself.
-   *
-   * Station names travel in both languages and the edge picks (BR-56) --
-   * `language` on the request is carried, never acted on here.
+   * If departure is missing or past, omit both dates so the client asks for new ones.
+   * Never return half a round-trip date pair. Send both languages; the edge chooses,
+   * and request.language does not filter names here.
    */
   private toWire(row: RecentSearchRow, now: Date): RecentSearch {
-    // A missing departure date is treated as stale: there is nothing to
-    // repeat, which is the same thing a passed date means to a client.
     const repeatable =
       row.departureDate !== null && row.departureDate >= cairoToday(now)
         ? {

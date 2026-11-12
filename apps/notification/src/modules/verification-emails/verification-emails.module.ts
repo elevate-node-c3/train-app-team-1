@@ -23,16 +23,11 @@ import { EmailDeliveryRepository } from './email-delivery.repository.js';
 import { NodemailerEmailSender } from './email-sender.js';
 import { EmailDeliveryEntity } from './entities/email-delivery.entity.js';
 
-/** The consumer's own queue. A second consumer gets a different one. */
+/** Each consumer needs its own queue. */
 export const VERIFICATION_EMAIL_QUEUE = 'notification.verification-code-issued';
 export const ACCOUNT_REGISTERED_QUEUE = 'notification.account-registered';
 
-/**
- * Pure on purpose: the module's DI factory receives the handler and returns
- * data. No transport is built, no environment is read, and no SMTP socket is
- * opened here — `test/skeleton/apps.spec.ts` compiles the root module with no
- * Docker, and a factory with a side effect would fail that test.
- */
+/** Build subscriptions without opening connections or reading the environment. */
 export function createVerificationEmailSubscriptions(
   handler: EventHandlerPort,
   accountRegistered: EventHandlerPort,
@@ -53,12 +48,7 @@ export function createVerificationEmailSubscriptions(
   ];
 }
 
-/**
- * The feature owns its consumer runtime because it owns the subscriptions.
- * `MessagingModule` supplies the shared connection; binding the store and the
- * concrete sender/repository here keeps the consumers unaware of TypeORM and
- * nodemailer.
- */
+/** Keep database and SMTP setup in this feature, not its consumers. */
 @Module({
   imports: [MessagingModule, TypeOrmModule.forFeature([EmailDeliveryEntity])],
   providers: [

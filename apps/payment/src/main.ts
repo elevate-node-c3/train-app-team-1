@@ -4,7 +4,6 @@ import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
 import { getHealthProtoPath, HEALTH_PACKAGE_NAME } from '@app/contracts';
 import { PaymentModule } from './payment.module.js';
 
-// 1. Fail-fast configuration validation at boot (§2.1)
 validateEnv(commonEnvSchema, process.env, 'payment');
 
 async function bootstrap() {

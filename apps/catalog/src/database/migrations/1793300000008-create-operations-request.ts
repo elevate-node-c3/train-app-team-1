@@ -1,9 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * One row per `Idempotency-Key`: the request fingerprint, and the response a
- * genuine retry gets instead of redoing the work.
- */
+/** Store each Idempotency-Key's fingerprint and response for safe retries. */
 export class CreateOperationsRequest1793300000008
   implements MigrationInterface
 {

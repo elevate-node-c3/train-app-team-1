@@ -11,11 +11,7 @@ import {
   MARK_PROCESSED_EVENT_SKIPPED_SQL,
 } from './processed-event.sql.js';
 
-/**
- * Raw SQL on purpose: for this ledger the statement *is* the concurrency
- * design, and a TypeORM entity would hide the `ON CONFLICT ... WHERE` predicate
- * that makes deduplication correct.
- */
+/** Explicit SQL keeps the ON CONFLICT predicate visible for correct concurrent claims. */
 @Injectable()
 export class TypeOrmProcessedEventStore implements ProcessedEventStorePort {
   constructor(private readonly initializer: DataSourceInitializer) {}

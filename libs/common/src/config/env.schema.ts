@@ -13,13 +13,7 @@ export const SECRET_KEYS = new Set([
   'NOTIFICATION_DB_PASSWORD',
 ]);
 
-/**
- * What every service needs to boot. A service's own variables live with that
- * service: a library shared by all seven has no business enumerating one
- * service's outbox knobs or another's SMTP host, and reaching for
- * `@app/messaging` to validate them is what made the two libraries mutually
- * dependent.
- */
+/** Shared boot settings only; service-specific schemas stay with each service. */
 export const commonEnvSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')

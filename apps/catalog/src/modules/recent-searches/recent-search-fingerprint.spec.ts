@@ -3,13 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { fingerprintOf } from './recent-search-fingerprint.js';
 import type { RecentSearchInput } from './recent-searches.types.js';
 
-/**
- * What counts as the same search (BR-21).
- *
- * This function alone decides whether a traveller's five slots fill up with
- * near-duplicates or stay the five journeys they actually look for, so each
- * rule below is one of the story's sentences.
- */
+/** Date changes must not consume extra recent-search slots. */
 
 const RAMSIS = '11111111-1111-4111-8111-111111111111';
 const ALEX = '22222222-2222-4222-8222-222222222222';
@@ -36,11 +30,7 @@ describe('the recent-search fingerprint', () => {
     expect(fingerprintOf(search())).toBe(fingerprintOf(search()));
   });
 
-  /**
-   * The story's "repeating one moves it to the top with its new dates": if
-   * dates were part of identity, the sixth search of one route would evict the
-   * first instead of refreshing it.
-   */
+  /** Date changes refresh one entry; they must not evict another of the five slots. */
   it('ignores the dates, so the same route repeats rather than duplicates', () => {
     expect(fingerprintOf(search({ departureDate: '2026-07-01' }))).toBe(
       fingerprintOf(search({ departureDate: '2026-06-20' })),
@@ -74,8 +64,7 @@ describe('the recent-search fingerprint', () => {
     expect(fingerprintOf(search({ trainNumber: 903 }))).not.toBe(base);
   });
 
-  // '*' rather than an empty segment, so "any train" cannot collide with a
-  // train number or produce two adjacent colons.
+  // Use '*' for any train to avoid ambiguous empty fingerprint segments.
   it('spells an absent train number without an empty segment', () => {
     const anyTrain = fingerprintOf(search({ trainNumber: null }));
 

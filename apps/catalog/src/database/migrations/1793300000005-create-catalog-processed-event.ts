@@ -1,13 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Catalog's inbox. Its cache invalidation consumer (CAT-5) claims every event
- * in this table before handling it, so a redelivery is skipped rather than
- * applied twice.
- *
- * Same shape as notification's, because the claim SQL is shared
- * (libs/messaging/src/consumer/processed-event.sql.ts). The schema-agreement
- * spec holds both copies to it.
+ * Claim events before handling to skip redeliveries.
+ * Keep this schema aligned with notification's inbox and the shared claim SQL.
  */
 export class CreateCatalogProcessedEvent1793300000005
   implements MigrationInterface
@@ -31,8 +26,7 @@ export class CreateCatalogProcessedEvent1793300000005
       )
     `);
 
-    // Partial: only stuck claims are ever queried, so handled history does not
-    // belong in this index.
+    // Index only processing claims; handled history is not queried for recovery.
     await queryRunner.query(`
       CREATE INDEX idx_processed_event_processing
         ON processed_event (claimed_at)

@@ -1,10 +1,7 @@
 import { ErrorCode } from './error-codes.enum.js';
 
 /**
- * Numeric gRPC status values, duplicated as a const enum-like object rather
- * than imported from `@grpc/grpc-js`: contracts is pure shapes by charter, and
- * the values are part of the gRPC wire protocol, not an implementation detail
- * of one client library.
+ * gRPC wire values kept here so contracts do not depend on a client library.
  */
 export const GRPC_STATUS = {
   OK: 0,
@@ -31,17 +28,15 @@ export type GrpcStatusCode = (typeof GRPC_STATUS)[keyof typeof GRPC_STATUS];
 export interface GrpcHttpMapping {
   httpStatus: number;
   errorCode: ErrorCode;
-  /** True when retrying the same call can plausibly succeed. */
+  /** True when retrying the same call may succeed. */
   retryable: boolean;
-  /** A hint the edge may expose in the envelope. */
+  /** Retry delay the edge may expose, in seconds. */
   retryAfterSeconds?: number;
 }
 
 /**
- * The one place a gRPC status becomes an HTTP answer (F5/G6).
- *
- * PERMISSION_DENIED deliberately maps to 404, not 403: BR-09 says "not yours"
- * and "does not exist" must be indistinguishable.
+ * PERMISSION_DENIED maps to 404, not 403, so "not yours" and "does not exist"
+ * are indistinguishable.
  */
 export const GRPC_HTTP_MAP: Readonly<Record<number, GrpcHttpMapping>> = {
   [GRPC_STATUS.OK]: {
@@ -82,7 +77,6 @@ export const GRPC_HTTP_MAP: Readonly<Record<number, GrpcHttpMapping>> = {
     retryable: false,
   },
   [GRPC_STATUS.PERMISSION_DENIED]: {
-    // BR-09: the same answer as NOT_FOUND.
     httpStatus: 404,
     errorCode: ErrorCode.RESOURCE_NOT_FOUND,
     retryable: false,
@@ -137,10 +131,7 @@ export const GRPC_HTTP_MAP: Readonly<Record<number, GrpcHttpMapping>> = {
   },
 };
 
-/**
- * Total, including unknown numeric statuses: an unrecognised code must never
- * become a success. Returns INTERNAL for values outside the protocol.
- */
+/** Unknown statuses return HTTP 500, never success. */
 export function mapGrpcStatus(code: number): GrpcHttpMapping {
   return (
     GRPC_HTTP_MAP[code] ?? {

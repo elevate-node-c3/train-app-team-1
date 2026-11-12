@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * A barrier background work awaits so it cannot query a table before the
- * migration that creates it has run. Starts open: a service with no
- * `MigrationModule` never constructs a runner, so nobody closes it.
+ * Background work waits for migrations to settle. Starts open for services
+ * without MigrationModule.
  */
 @Injectable()
 export class SchemaReadinessGate {

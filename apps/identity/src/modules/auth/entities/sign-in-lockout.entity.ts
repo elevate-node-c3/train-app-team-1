@@ -1,9 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
-/**
- * Keyed by normalized email, with no foreign key to `account` on purpose:
- * failed attempts against an address that does not exist must still count.
- */
+/** No account foreign key; count unknown normalized emails toward lockout too. */
 @Entity('sign_in_lockout')
 export class SignInLockoutEntity {
   @PrimaryColumn('text')

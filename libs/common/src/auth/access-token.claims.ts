@@ -29,7 +29,7 @@ export class AccessTokenVerificationError extends Error {
   }
 }
 
-/** Claims are assembled in one place so a PII field cannot slip in per-call. */
+/** Build claims centrally to keep PII out of tokens. */
 export function buildAccessTokenClaims(
   input: SignAccessTokenInput,
   options: {

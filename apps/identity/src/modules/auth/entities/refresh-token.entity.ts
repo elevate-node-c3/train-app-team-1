@@ -2,10 +2,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 export type RefreshTokenStatus = 'active' | 'rotated' | 'revoked';
 
-/**
- * A refresh token row stores only a hash. The successor pair is kept encrypted
- * for the grace window, never as a usable plaintext token in the table.
- */
+/** Store only token hashes; encrypt successor pairs during the grace window. */
 @Entity('refresh_token')
 export class RefreshTokenEntity {
   @PrimaryColumn('uuid')

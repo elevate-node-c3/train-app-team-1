@@ -13,8 +13,8 @@ import {
   type ChangeFareRequest,
 } from './fare-change.service.js';
 
-// Staged writes land only when `withTransaction` resolves. Real Postgres
-// transactions and row locking are tested in the integration spec.
+// Fake transactions commit only successful work. PostgreSQL boundaries and
+// row locking are tested separately.
 
 const TRAIN_ID = '11111111-1111-4111-8111-111111111111';
 const TRAIN_NUMBER = '916';
@@ -635,8 +635,7 @@ describe('FareChangeService.changeFare', () => {
     ).toHaveLength(2);
   });
 
-  // Probe with the fare's own effective date, not today, or a future-only
-  // route looks missing.
+  // Resolve routes on the fare's effective date, not today, including future-only routes.
   it('accepts a fare change for a train whose only published version starts in the future', async () => {
     const futureHarness = makeHarness({ routeEffectiveFrom: '2026-07-01' });
 
@@ -651,8 +650,7 @@ describe('FareChangeService.changeFare', () => {
     expect(result).toMatchObject({ newAmountPiastres: 20_000 });
   });
 
-  // Same tuple and instant under a new key hits `uq_fare_effective_version`,
-  // not a 500.
+  // A new key for the same fare tuple/instant hits uq_fare_effective_version, not 500.
   it('refuses a same-instant resubmission as a conflict, not a 500', async () => {
     const effectiveFrom = new Date('2026-06-25T00:00:00.000Z').toISOString();
 

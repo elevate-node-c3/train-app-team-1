@@ -9,10 +9,7 @@ function normalize(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/**
- * Every issuance is recorded, including one for an address with no account.
- * The counter is what makes "is this address registered?" expensive to ask.
- */
+/** Record unknown addresses too, so account discovery is rate-limited. */
 @Injectable()
 export class VerificationRequestRepository {
   constructor(private readonly dataSource: DataSource) {}

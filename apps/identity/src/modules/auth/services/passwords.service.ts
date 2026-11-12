@@ -45,9 +45,8 @@ type ResetOutcome =
   | { account: AccountEntity; revokedSessionIds: string[] };
 
 /**
- * BR-09: the answer must not reveal whether the address exists. Every address
- * gets the same status, the same interval, and the same body. Only an address
- * with an account also gets a mail and an outbox row.
+ * Keep status, wait and body identical for known and unknown addresses.
+ * Only existing accounts get an email and outbox event.
  */
 @Injectable()
 export class PasswordsService {
@@ -86,8 +85,7 @@ export class PasswordsService {
 
     await this.unitOfWork.withTransaction(async (ctx) => {
       if (!account) {
-        // The counter exists even for an unknown address; that is what keeps
-        // the sixth request as slow as the first.
+        // Count unknown addresses too, so quotas do not reveal account existence.
         await this.issuer.recordRequest(ctx, {
           email,
           accountId: null,
@@ -133,8 +131,7 @@ export class PasswordsService {
 
     const now = new Date();
     const email = command.email.trim().toLowerCase();
-    // Hash before the transaction; bcrypt is a deliberate part of latency but
-    // not of the row-lock lifetime.
+    // Hash before the transaction to avoid holding row locks during bcrypt.
     const newHash = await this.passwords.hash(command.newPassword);
 
     const outcome = await this.unitOfWork.withTransaction(
@@ -200,8 +197,7 @@ export class PasswordsService {
             accountId: account.id,
             sessionId: revokedSessionIds[0] ?? '',
             jti: '',
-            // Access tokens are short-lived; the account marker need not
-            // outlive the longest one that could already exist.
+            // Keep the marker until existing access tokens expire.
             expiresAt: new Date(
               now.getTime() + TOKEN_DEFAULTS.accessTtlSeconds * 1000,
             ),

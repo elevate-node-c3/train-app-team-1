@@ -13,13 +13,7 @@ export interface JwtVerificationSettings {
   clockSkewSeconds: number;
 }
 
-/**
- * Composition-root parsing for the gateway's public-key-only verifier.
- *
- * Returns `null` when no key is configured so the verifier can degrade instead
- * of crashing a root-module compile. A configured but missing file is still
- * fatal: that is a deployment bug, not an absent optional setting.
- */
+/** No key returns null for degraded mode; a configured missing file is fatal. */
 export function jwtVerificationSettingsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): JwtVerificationSettings | null {
@@ -57,7 +51,7 @@ export function jwtVerificationSettingsFromEnv(
   };
 }
 
-/** Reads an inline PEM first, then a file. A configured but missing file is fatal. */
+/** Prefers inline PEM; a configured missing key file is fatal. */
 function readPublicKeyPem(
   inline: string | undefined,
   file: string | undefined,

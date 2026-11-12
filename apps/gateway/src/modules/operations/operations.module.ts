@@ -21,10 +21,7 @@ import {
 
 const OPERATIONS_CLIENT = 'OPERATIONS_GRPC';
 
-/**
- * A second catalog client on purpose; sharing `CatalogModule`'s proxy would
- * couple the two surfaces. The loader options must match catalog's.
- */
+/** Separate clients keep operations and search independent; use matching loader options. */
 @Module({
   imports: [
     ClientsModule.registerAsync([

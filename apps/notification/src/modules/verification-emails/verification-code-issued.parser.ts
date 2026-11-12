@@ -9,14 +9,8 @@ import {
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
 
 /**
- * The consumer-owned contract. It is deliberately hand-written rather than
- * derived from the producer's TypeScript type: the type disappears at runtime,
- * and the whole point of the sweep below is to catch a producer that stopped
- * emitting a field the handler needs.
- *
- * Error messages name the offending field but never echo its value. This
- * payload can carry a live verification code and a real email address, and a
- * dead-letter reason is persisted and shown in an operator console.
+ * Check incoming fields at runtime; producer types disappear after compilation.
+ * Errors name fields, not values, so emails and codes stay private.
  */
 export function parseVerificationCodeIssuedPayload(
   envelope: EventEnvelope,
@@ -61,8 +55,7 @@ export function parseVerificationCodeIssuedPayload(
     );
   }
 
-  // An unknown locale is a catalogue miss, not a reason to dead-letter a real
-  // sign-up. BR-56 already defines Arabic as the fallback (ADR-0006).
+  // Unknown languages fall back to Arabic instead of blocking delivery.
   const language: EventLanguage = record.language === 'en' ? 'en' : 'ar';
 
   const issuedAt = instant(record, 'issuedAt');

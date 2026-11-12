@@ -47,9 +47,6 @@ describe('Notification environment schema', () => {
   });
 
   it('ignores the relay interval, which belongs to identity', () => {
-    // Another service's knob must not change this service's verdict, and its
-    // absence must not either — the old check read it from here and silently
-    // validated against the shared constant regardless.
     const base = {
       ...validCommonEnv,
       SMTP_HOST: 'mailpit',

@@ -5,9 +5,8 @@ import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js
 import { AccountEntity } from '../entities/account.entity.js';
 
 /**
- * Writes take the caller's `TransactionContext`; reads that do not need a lock
- * use the shared DataSource. The repository cannot accidentally commit a write
- * outside the service's transaction.
+ * Writes and locked reads use the caller's transaction.
+ * Unlocked reads use the shared DataSource.
  */
 @Injectable()
 export class AccountRepository {

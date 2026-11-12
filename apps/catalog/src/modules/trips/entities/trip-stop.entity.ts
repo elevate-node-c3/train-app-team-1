@@ -11,14 +11,9 @@ import { DatedTripEntity } from './dated-trip.entity.js';
 import { StationEntity } from '../../stations/entities/station.entity.js';
 
 /**
- * A stop a dated trip actually makes, with absolute instants.
- *
- * Every index the table carries is declared here as well as in the migration
- * that creates it, so a reader of the entity sees the whole picture. Search
- * drives off two of them: stops at one station departing inside a Cairo day,
- * and then, given a trip, its stop at the destination station. The partial one
- * covers only boardable stops, because a stop with no departure can never
- * begin a journey.
+ * Store absolute stop instants; mirror migration indexes here.
+ * Search needs station/day departures and trip/station destination lookups.
+ * The partial index includes only boardable stops; without departure, no journey starts.
  */
 @Entity('trip_stop')
 @Index('idx_trip_stop_station', ['stationId'])

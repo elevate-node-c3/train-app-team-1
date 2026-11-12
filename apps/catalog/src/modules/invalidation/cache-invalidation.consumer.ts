@@ -17,13 +17,7 @@ import { StationsService } from '../stations/stations.service.js';
 import { segmentAvailabilityCacheKey } from '../trips/seat-availability.service.js';
 import { TripStopsService } from '../trips/trip-stops.service.js';
 
-/**
- * Event-driven cache invalidation consumer via Catalog's Inbox (§2.3 rule 2 & §6.3).
- *
- * In response to published timetables, fare modifications, or station changes,
- * invalidates or makes unreachable exactly the affected entries without touching
- * unrelated routes.
- */
+/** Invalidate only affected cache entries, leaving unrelated routes untouched. */
 @Injectable()
 export class CacheInvalidationConsumer implements EventHandlerPort {
   private readonly logger = new Logger(CacheInvalidationConsumer.name);

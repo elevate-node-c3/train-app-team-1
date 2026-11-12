@@ -8,10 +8,8 @@ import type {
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
 
 /**
- * `identity.account.registered` carries no secret and no delivery request.
- * It is consumed so the event has an owner and shows up in the ledger, but it
- * deliberately sends no mail: the code email is driven by
- * `identity.verification-code.issued`, which carries the code and its TTL.
+ * Track account registration without sending mail.
+ * Code emails are sent only for identity.verification-code.issued.
  */
 @Injectable()
 export class AccountRegisteredConsumer implements EventHandlerPort {

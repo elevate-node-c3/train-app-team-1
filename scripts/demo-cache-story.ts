@@ -1,15 +1,6 @@
 /**
- * Developer Demo Runner for Story TA-19:
- * "The cache layer — fast answers from Redis, correct answers from Postgres"
- *
- * Demonstrates the exact 7 steps:
- * 1. Search Cairo → Alexandria for tomorrow, First Class AC: cold, built from Postgres, written to Redis.
- * 2. Search it again: warm, no database query at all.
- * 3. Change that fare through OPS-1: the next search returns the new fare, without waiting for a TTL.
- * 4. Fire 200 identical searches at a cold key at once: the database rebuilds it once.
- * 5. Stop Redis: searches still answer, slower; the health check says degraded; the logs say why.
- * 6. Start Redis again: the cache is used again, with no restart.
- * 7. Show the search cache hit rate. You will be asked for it.
+ * Shows cache hits, fare updates, shared rebuilds, and Redis recovery.
+ * Clears all data from the configured Redis instance.
  */
 import { RedisClientService } from '../libs/common/src/cache/redis-client.service.js';
 import { CacheMetrics } from '../libs/common/src/cache/cache-metrics.js';
@@ -83,21 +74,18 @@ async function runDemo() {
     return cache.getOrRebuild(key, 'search', mockDbQuery, 300);
   };
 
-  // Step 1
   console.log('[Step 1] Search Cairo -> Alexandria for tomorrow, First Class AC (Cold)');
   dbQueries = 0;
   const res1 = await executeSearch();
   console.log(`  -> Result: Trip ${res1[0].tripId}, Fare: ${res1[0].farePiastres / 100} EGP`);
   console.log(`  -> Database queries: ${dbQueries} (Cold: rebuilt from Postgres, written to Redis)\n`);
 
-  // Step 2
   console.log('[Step 2] Search Cairo -> Alexandria again (Warm)');
   const prevQueries = dbQueries;
   const res2 = await executeSearch();
   console.log(`  -> Result: Trip ${res2[0].tripId}, Fare: ${res2[0].farePiastres / 100} EGP`);
   console.log(`  -> Database queries: ${dbQueries - prevQueries} (Warm: 0 queries, served from Redis)\n`);
 
-  // Step 3
   console.log('[Step 3] Change fare through OPS-1 (150 EGP -> 175 EGP)');
   dbFarePiastres = 17500;
   await invalidationConsumer.handle({
@@ -119,7 +107,6 @@ async function runDemo() {
   const res3 = await executeSearch();
   console.log(`  -> Next search returned new fare: ${res3[0].farePiastres / 100} EGP without waiting for TTL\n`);
 
-  // Step 4
   console.log('[Step 4] Fire 200 concurrent identical searches at a cold key');
   const coldOrigin = '00000003-0000-4000-8000-000000000003';
   const coldDest = '00000003-0000-4000-8000-000000000004';
@@ -146,7 +133,6 @@ async function runDemo() {
   console.log(`  -> 200 simultaneous requests finished.`);
   console.log(`  -> Database queries: ${coldDbQueries} (Stampede guard coalesced to exactly 1 rebuild)\n`);
 
-  // Step 5
   console.log('[Step 5] Stop Redis: searches still answer, slower; health check says degraded');
   const privRedis = redisService as unknown as { handleConnectionError: (err: Error) => void; handleConnectionReady: () => void };
   privRedis.handleConnectionError(new Error('Connection lost to Redis'));
@@ -155,7 +141,6 @@ async function runDemo() {
   const resDegraded = await cache.getOrRebuild('cold:degraded:key', 'search', mockDbQuery, 300);
   console.log(`  -> Search answered in degraded mode: Fare: ${resDegraded[0].farePiastres / 100} EGP\n`);
 
-  // Step 6
   console.log('[Step 6] Start Redis again: cache is used again, with no restart');
   privRedis.handleConnectionReady();
   const healthReady = await healthService.checkReadiness('catalog');
@@ -163,7 +148,6 @@ async function runDemo() {
   const resWarm = await executeSearch();
   console.log(`  -> Search served normally with Redis back online\n`);
 
-  // Step 7
   console.log('[Step 7] Show the search cache hit rate (real counters per family)');
   const snapshot = await metrics.getSnapshotAsync();
   console.log('---------------------------------------------------------------');

@@ -12,7 +12,7 @@ import { CreateOperationsAudit1793300000007 } from './1793300000007-create-opera
 import { CreateOperationsRequest1793300000008 } from './1793300000008-create-operations-request.js';
 import { AddStationAuditTimestamps1794525266218 } from './1794525266218-add-station-audit-timestamps.js';
 
-// Run order. Two migrations must never share a timestamp: TypeORM keys them by name.
+// Keep migration timestamps unique; TypeORM keys migrations by name.
 export const migrations: (new () => MigrationInterface)[] = [
   CreateStationCatalog1793292475941,
   CreateCatalogTrainTables1793300000000,

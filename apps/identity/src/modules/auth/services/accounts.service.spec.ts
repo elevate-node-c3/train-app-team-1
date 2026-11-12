@@ -397,7 +397,6 @@ describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
       UNIT_OF_WORK,
       OUTBOX,
     ]);
-    // The remaining collaborators are concrete classes, not DI tokens.
     expect(AccountsService.length).toBe(8);
   });
 
@@ -463,8 +462,7 @@ describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
     expect(JSON.stringify(result)).not.toContain('user@example.com');
     expect(JSON.stringify(result)).not.toContain(PASSWORD);
     expect(JSON.stringify(h.savedAccount())).not.toContain(PASSWORD);
-    // The account row needs the address to send the code; only the response
-    // and the logs must carry the mask.
+    // Store the address for delivery; mask it in responses and logs.
     expect(h.savedAccount()?.email).toBe('user@example.com');
     expect(result.maskedEmail).not.toBe('user@example.com');
   });
@@ -524,8 +522,7 @@ describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
   });
 
   it('honours the configured TTL inside the ten-minute cap', async () => {
-    // Injected, not stubbed: the issuer takes its TTL from TOKEN_SETTINGS, so
-    // an environment stub here would be inert and the assertion vacuous.
+    // The issuer reads injected TOKEN_SETTINGS, not process.env.
     const h = harness({ verificationCodeTtlSeconds: 60 });
 
     await h.service.signUp(signUpCommand());

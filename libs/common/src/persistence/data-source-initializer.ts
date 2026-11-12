@@ -2,17 +2,8 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 /**
- * The one place that calls `dataSource.initialize()`.
- *
- * `manualInitialization: true` (see typeorm.config.ts) means Nest never
- * connects the DataSource, so whoever needs it first has to. Two callers
- * racing throws `CannotConnectAlreadyConnectedError`, and there are several:
- * the readiness probe, the unit of work, and the migration runner. They all go
- * through this and await the same promise.
- *
- * A failed attempt clears the promise so the next caller retries — a Postgres
- * outage at boot must not be cached as permanent, because the platform
- * degrades rather than crash-loops.
+ * Nest uses manual initialization. All callers share one initialize() promise
+ * to avoid connection races. Failures clear it so the next caller can retry.
  */
 @Injectable()
 export class DataSourceInitializer {
@@ -27,9 +18,8 @@ export class DataSourceInitializer {
   }
 
   /**
-   * Resolves once the DataSource is connected. Rejects with the underlying
-   * driver error, which callers are expected to turn into a degraded report
-   * rather than a crash.
+   * Returns the connected DataSource. Driver errors must be reported as
+   * degraded health, not crash the service.
    */
   async ensureInitialized(): Promise<DataSource> {
     if (!this.dataSource) {

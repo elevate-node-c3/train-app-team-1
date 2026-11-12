@@ -1,11 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Credentials, sessions, refresh rotation, durable counters and lockouts.
- *
- * Every invariant that prevents a double rotation, a reset replay or a counter
- * reset on a Redis restart lives here: an `if` in a use-case cannot survive two
- * processes, a partial unique index can.
+ * Database constraints prevent concurrent refresh rotation and reset replay.
+ * Stored counters and lockouts survive Redis restarts.
  */
 export class CreateAuthSessions1761314600000 implements MigrationInterface {
   name = 'CreateAuthSessions1761314600000';
@@ -45,8 +42,7 @@ export class CreateAuthSessions1761314600000 implements MigrationInterface {
       )
     `);
 
-    // Counts for addresses that do not exist too: otherwise an attacker can
-    // hammer "is this address registered" without ever touching a counter.
+    // Count unknown addresses too, so account lookup cannot bypass limits.
     await queryRunner.query(`
       CREATE INDEX idx_verification_code_request_email
         ON verification_code_request (email, issued_at DESC)
@@ -105,9 +101,7 @@ export class CreateAuthSessions1761314600000 implements MigrationInterface {
       )
     `);
 
-    // The rotation guarantee. Two transactions may both read the old row, but
-    // only one can leave an active successor; the loser sees the rotated row
-    // after its lock is released.
+    // One active token per session; concurrent rotations see the row after unlock.
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_refresh_token_active_session
         ON refresh_token (session_id)

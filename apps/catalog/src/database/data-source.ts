@@ -23,14 +23,9 @@ import { TripStopEntity } from '../modules/trips/entities/trip-stop.entity.js';
 import { migrations } from './migrations/index.js';
 
 /**
- * The catalog database connection shared by the TypeORM CLI and the station
- * seed:
- *
- *   npm run migration:run -- apps/catalog/src/database/data-source.ts
- *
- * The running service uses `createTypeOrmAsyncOptions(undefined, { migrations })`
- * and the shared `MigrationRunnerService` instead, because one DataSource must
- * be initialized once per process (`manualInitialization: true`).
+ * CLI and seed connection. The service uses createTypeOrmAsyncOptions and
+ * MigrationRunnerService with manualInitialization to initialize each DataSource
+ * only once per process.
  */
 export default new DataSource({
   type: 'postgres',

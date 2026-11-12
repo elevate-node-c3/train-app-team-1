@@ -272,7 +272,7 @@ describe('OperationsController', () => {
       controller.publishTimetable(publishBody(), 'key-4'),
     ).resolves.toEqual(PUBLISH_RESULT);
 
-    // A genuine zero must survive the wire, not become absent.
+    // Preserve zero counts instead of treating them as missing.
     await expect(
       controller.publishTimetable(publishBody(), 'key-4'),
     ).resolves.toHaveProperty('created', 0);

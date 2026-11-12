@@ -5,11 +5,7 @@ import type { FareIndex } from '../trips/trip-generation.types.js';
 import { fareKey, resolveStopTimes } from '../trips/trip-generation.types.js';
 import { isChargeableFare } from '../../config/operations-settings.js';
 
-/**
- * A publish candidate's view of one stop, before it is resolved onto any
- * service date. `'HH:mm'`, not a `Date`: an operator submits a timetable, not
- * a day's trip.
- */
+/** Timetable stops use HH:mm wall-clock times, not dated instants. */
 export interface TimetableStopDraftInput {
   stationId: string;
   position: number;
@@ -18,10 +14,6 @@ export interface TimetableStopDraftInput {
   departureTime: string | null;
 }
 
-/**
- * Everything one publish refusal needs to check, in one place, so a problem
- * on stop 14 of 15 cannot hide the other four.
- */
 export interface TimetableCandidate {
   stops: TimetableStopDraftInput[];
   coaches: TrainCoachEntity[];
@@ -31,7 +23,6 @@ export interface TimetableCandidate {
   effectiveFrom: string;
 }
 
-/** A stop resolved onto real instants, independent of how it got there. */
 interface ResolvedStop {
   stationId: string;
   arrivalAt: Date | null;
@@ -39,16 +30,9 @@ interface ResolvedStop {
 }
 
 /**
- * The one entry point generation and publish both end at. Collects, never
- * throws -- an operator refused on the 14th of 15 stops still needs to hear
- * about the other four in the same answer.
- *
- * Two rules live only here, not in the groups generation's own methods call:
- * no-duplicate-station and the Stripe floor. Both are real TA-20 publish
- * rules, but neither is safe to run against an already-published timetable --
- * a loop route that generation has been running for months has no unique
- * constraint stopping a repeated station, and the floor is a live config
- * value that must not retroactively break trips a publish already accepted.
+ * Collect all candidate errors without throwing.
+ * Duplicate stations and Stripe's live minimum are publish-only checks; do not
+ * apply them to existing loop routes or previously accepted fares during generation.
  */
 export function validateTimetableCandidate(
   candidate: TimetableCandidate,
@@ -85,12 +69,9 @@ function resolveStopInstants(
 }
 
 /**
- * No station may appear twice in a published route. Publish-only: there is
- * no DB constraint stopping an already-published loop route (same station
- * twice, e.g. a round trip back to its origin) from existing today, and
- * generation must keep producing trips for it. Composed only in
- * `validateTimetableCandidate`, never in `validateStopsStructure`, so the
- * generator can never pick this rule up by accident.
+ * Publish-only: reject duplicate station IDs.
+ * Keep this out of validateStopsStructure so generation supports existing loop
+ * routes, which have no database uniqueness constraint.
  */
 export function validateNoDuplicateStations(
   stops: TimetableStopDraftInput[],
@@ -119,9 +100,8 @@ export function validateNoDuplicateStations(
 }
 
 /**
- * The route's shape: enough stops, the right ends, every id real and used
- * once, positions and day offsets that never go backwards. Nothing here
- * touches a clock reading -- that is `validateStopsChronology`'s job.
+ * Check stop count, endpoint times, known stations, ordered positions, and
+ * nondecreasing day offsets. Chronology and publish-only duplicate checks are separate.
  */
 export function validateStopsStructure(
   stops: TimetableStopDraftInput[],
@@ -221,10 +201,6 @@ export function validateStopsStructure(
     }
   }
 
-  // Station identity, last: an id that is not even real is a worse problem
-  // than its position, but reporting both costs nothing. Whether a station
-  // repeats is a separate, publish-only question -- see
-  // `validateNoDuplicateStations`.
   for (let i = 0; i < stops.length; i++) {
     const stationId = stops[i].stationId;
 
@@ -242,10 +218,8 @@ export function validateStopsStructure(
 }
 
 /**
- * Real clock order: a stop's own departure must not precede its arrival, and
- * each stop must not precede the one before it. Works from resolved instants
- * so generation (already-resolved dates) and publish (resolved here from
- * `effectiveFrom`) share the same check.
+ * Departures must not precede arrivals; stops must not precede previous stops.
+ * Use resolved instants so publish and generation share this check.
  */
 export function validateStopsChronology(
   stops: ResolvedStop[],
@@ -323,12 +297,9 @@ function resolveFareAmount(
 }
 
 /**
- * Every in-order pair, for every class, must have one positive fare, and a
- * longer segment must never cost less than one it contains (CAT-2). The
- * Stripe floor is a separate check -- see `validateFareFloor`.
- *
- * Comparing each pair with the pair one stop shorter at either end is
- * enough for containment -- it follows by shrinking one end at a time.
+ * Every forward pair in every class needs a positive fare. A segment must cost
+ * at least as much as any segment it contains; checking one stop shorter at each
+ * end proves containment. Stripe's minimum is checked separately.
  */
 export function validateFareRules(
   coaches: TrainCoachEntity[],
@@ -446,18 +417,10 @@ export function validateFareRules(
 }
 
 /**
- * The cheapest purchasable thing in each class must clear Stripe's floor
- * (§6.3) -- cheapest, not shortest: the question is whether the smallest
- * amount a traveller could actually be charged clears the floor, which is
- * the minimum fare in the class, not the fare spanning the fewest stops.
- * CAT-2 containment guarantees the minimum fare is also the one every other
- * fare in the class is at least as large as.
- *
- * Publish-only: the floor is a live config value (`STRIPE_MINIMUM_CHARGE_PIASTRES`),
- * and generation must not stop producing trips for an already-published
- * timetable purely because that value changed. The fee is strictly positive,
- * so `fare >= floor` already implies `fare + fee >= floor` -- no fee term
- * belongs in this comparison.
+ * Each class's cheapest fare, not its shortest segment, must meet Stripe's minimum.
+ * Publish-only: changing STRIPE_MINIMUM_CHARGE_PIASTRES must not stop generation
+ * for accepted timetables. Fees are positive, so fare >= floor already implies
+ * fare + fee >= floor; do not include a fee term here.
  */
 export function validateFareFloor(
   coaches: TrainCoachEntity[],
@@ -516,7 +479,7 @@ export function validateFareFloor(
   return details;
 }
 
-/** Every seat of every coach, counted once. No validation -- just the sum. */
+/** Capacity calculation does not validate layouts. */
 export function computeCapacity(coaches: TrainCoachEntity[]): number {
   let capacity = 0;
 
@@ -530,9 +493,8 @@ export function computeCapacity(coaches: TrainCoachEntity[]): number {
 }
 
 /**
- * A coach must name a real layout, and a layout must not repeat a seat
- * number -- a repeat would inflate capacity and, from Sprint 3, would make
- * inventory create two seats with the same label.
+ * Require real layouts and unique seat labels to avoid inflated capacity and
+ * duplicate inventory seats.
  */
 export function validateCapacityIssues(
   coaches: TrainCoachEntity[],

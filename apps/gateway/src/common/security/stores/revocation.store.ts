@@ -5,11 +5,7 @@ import type {
 } from '@app/contracts';
 import { RedisClientService } from '@app/common';
 
-/**
- * The minimum a guard needs from the token to answer "was this revoked?".
- * `iat` is compared against the account-wide marker written by a password
- * reset: every token minted at or before that instant is dead.
- */
+/** Account-wide revocation rejects tokens issued at or before the reset marker. */
 export type RevocationSubject = Pick<
   AccessTokenClaims,
   'jti' | 'sid' | 'sub' | 'iat'
@@ -26,13 +22,9 @@ const SID_PREFIX = 'auth:revoked:sid:';
 const ACCOUNT_PREFIX = 'auth:revoked:account:';
 
 /**
- * Revocation markers live in Redis so every gateway instance sees them, and in
- * process memory so a Redis outage does not silently un-revoke a token this
- * instance already knows about.
- *
- * Redis being down is a deliberate fail-open: an unavailable cache must not
- * take the whole API down. The degraded readiness report is the honest signal,
- * and access tokens are short-lived enough that the exposure is bounded.
+ * Share revocations in Redis; keep known local revocations in memory.
+ * Redis outages allow tokens with no known revocation and degrade readiness.
+ * Short token lifetimes limit this risk.
  */
 @Injectable()
 export class RevocationStore {

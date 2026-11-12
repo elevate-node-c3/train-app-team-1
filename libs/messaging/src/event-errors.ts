@@ -1,11 +1,6 @@
 /**
- * Failure classification drives routing, so the distinction is in the type
- * system rather than in a string compared at the call site.
- *
- * Both subclasses are permanent — retrying either is forever wrong — but they
- * stay separate because `x-death-reason` drives replay: `invalid-payload` is a
- * producer bug and unreplayable, while `unsupported-version` becomes replayable
- * once the consumer that understands the version is deployed.
+ * Both errors dead-letter without retry; their reason controls replay.
+ * Invalid payloads cannot replay; unsupported versions can after a consumer update.
  */
 export type PermanentEventReason = 'invalid-payload' | 'unsupported-version';
 

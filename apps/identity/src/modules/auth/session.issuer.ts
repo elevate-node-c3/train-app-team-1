@@ -26,9 +26,8 @@ export interface IssuedSuccessor {
 }
 
 /**
- * Mints a token pair and writes the session/refresh rows in the caller's
- * transaction. Keeping signing here means every flow (verify, sign-in, refresh)
- * produces exactly the same claim set.
+ * Issue consistent token claims across all auth flows.
+ * Save session and refresh rows in the caller's transaction.
  */
 @Injectable()
 export class SessionIssuer {
@@ -76,9 +75,8 @@ export class SessionIssuer {
   }
 
   /**
-   * Rotation. The old row is marked rotated before the successor is inserted:
-   * the partial unique index allows one active token per session, so the order
-   * is load-bearing rather than stylistic.
+   * Mark the old token rotated before inserting its successor; the unique index
+   * allows only one active token per session.
    */
   async rotate(
     ctx: TransactionContext,

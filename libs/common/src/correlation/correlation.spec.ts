@@ -48,7 +48,6 @@ describe('Correlation ID & PII Logging Redaction (§2.4)', () => {
       expect(nextCalled).toBe(true);
       expect(responseHeaderKey).toBe(CORRELATION_ID_HEADER);
       expect(responseHeaderVal).not.toBe(clientSentId);
-      // Valid UUIDv4 format
       expect(responseHeaderVal).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );

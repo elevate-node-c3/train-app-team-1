@@ -33,7 +33,6 @@ function minuteString(minutes: number): string {
   return `${hh}:${mm}`;
 }
 
-/** A route of `count` distinct, chronologically sound stops, 20 minutes apart. */
 function makeStops(count: number): TimetableStopDraftInput[] {
   const stops: TimetableStopDraftInput[] = [];
 
@@ -73,7 +72,7 @@ function coach(
   } as unknown as TrainCoachEntity;
 }
 
-/** Full, monotonic fare coverage for every in-order pair of `count` stops. */
+/** Positive, monotonic fares for every forward pair. */
 function coveringFares(
   stationIds: string[],
   travelClassIds: string[],
@@ -98,7 +97,6 @@ function coveringFares(
   return index;
 }
 
-/** A timetable the current generator would accept outright. */
 function validCandidate(count = 15): TimetableCandidate {
   const stops = makeStops(count);
 
@@ -147,7 +145,7 @@ function candidateWith(faults: {
   return { ...candidate, stops };
 }
 
-/** A minimal, otherwise-valid candidate whose cheapest segment is `amount`. */
+/** Keep other fields valid to isolate the minimum-fare check. */
 function candidateWithShortestSegmentFare(amount: number): TimetableCandidate {
   const stops = makeStops(3);
   const [a, b, c] = stops.map((stop) => stop.stationId);
@@ -192,7 +190,6 @@ function candidateWithShortestSegmentFare(amount: number): TimetableCandidate {
   };
 }
 
-/** One of every kind of problem this validator knows about, all at once. */
 function candidateWithEveryProblem(): TimetableCandidate {
   const stops = makeStops(5);
   const [a, b] = stops.map((stop) => stop.stationId);
@@ -245,8 +242,7 @@ describe('validateTimetableCandidate', () => {
     expect(validateTimetableCandidate(validCandidate())).toEqual([]);
   });
 
-  // A problem on the 14th stop must not hide the others, or publishing is
-  // guess-and-retry.
+  // Return all validation faults together, including late-route faults.
   it('names every problem, not the first', () => {
     const details = validateTimetableCandidate(
       candidateWith({
@@ -487,8 +483,7 @@ describe('validateTimetableCandidate', () => {
   });
 });
 
-// Publish-only rules must not reach the generator: it calls only
-// `validateStopsStructure` and `validateFareRules`.
+// Generation must not inherit publish-only duplicate-station or fare-floor checks.
 describe('generation safety: duplicate-station and the Stripe floor stay publish-only', () => {
   let originalFloor: string | undefined;
 

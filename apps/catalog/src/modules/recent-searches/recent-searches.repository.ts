@@ -8,7 +8,7 @@ import type {
   RecentSearchRow,
 } from './recent-searches.types.js';
 
-/** The story's cap: the last five per traveller, newest first (BR-21). */
+/** Keep the latest five searches per traveller, newest first. */
 export const RECENT_SEARCH_LIMIT = 5;
 
 interface RawRow {
@@ -29,52 +29,28 @@ interface RawRow {
   searched_at: Date;
 }
 
-/**
- * A traveller's recent searches, in their own table.
- *
- * Raw SQL rather than the query builder, for both statements. The write is an
- * `ON CONFLICT ... DO UPDATE` against a named constraint and the trim is a
- * window function; the builder can express neither, and spelling them out is
- * what makes the concurrency guarantee readable.
- */
+/** Use raw SQL for named-constraint upserts and rank-based trims. */
 @Injectable()
 export class RecentSearchesRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * Records a search, then trims the traveller back to five.
-   *
-   * **No read-then-write**, and no count the caller carries: the upsert
-   * resolves a duplicate on `uq_recent_search_account_fingerprint`, and the
-   * trim deletes by rank. Both run in one transaction, so a crash between them
-   * cannot leave a sixth row visible.
-   *
-   * The advisory lock is what makes the cap hold under concurrency, and it was
-   * added because the integration spec proved the obvious version does not.
-   * Two clients of one account recording at the same instant open two
-   * transactions, and at READ COMMITTED neither one's trim can see the other's
-   * uncommitted row -- so both rank five rows, both delete nothing, and the
-   * traveller ends up with six. Taking a transaction-scoped lock keyed on the
-   * account serializes just those two writers: the second one sees the first's
-   * row and trims correctly.
-   *
-   * Keyed on the account, so travellers never wait for each other, and
-   * `hashtext` collisions merely make two unrelated accounts take turns.
-   * Recording is already off the search's critical path, so the wait costs a
-   * traveller nothing.
+   * Upsert on account/fingerprint and trim by rank in one transaction.
+   * A transaction-scoped account lock enforces the five-row cap at READ COMMITTED:
+   * concurrent trims cannot see uncommitted inserts and could otherwise leave six.
+   * hashtext collisions only serialize unrelated accounts. Recording stays off
+   * the search response's critical path.
    */
   async record(search: RecentSearchInput, now: Date): Promise<void> {
     const fingerprint = fingerprintOf(search);
 
     await this.dataSource.transaction(async (manager) => {
-      // Released when the transaction ends, committed or not -- there is no
-      // unlock to forget and nothing to leak on a crash.
+      // Transaction-scoped locks release on commit or rollback.
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         search.accountId,
       ]);
 
-      // Repeating a search moves it: the dates are overwritten with the new
-      // ones, and `searched_at` is what "newest first" then orders by.
+      // Repeats update dates and searched_at, moving the row to the top.
       await manager.query(
         `INSERT INTO recent_search (
            id, account_id, fingerprint, origin_station_id,
@@ -101,10 +77,7 @@ export class RecentSearchesRepository {
         ],
       );
 
-      // `id DESC` is in the ranking on purpose: two rows can share a
-      // `searched_at` to the microsecond, and without a total order the trim
-      // would be free to keep either one -- which is a test that passes until
-      // it does not.
+      // Break searched_at ties with id so trimming and listing share a total order.
       await manager.query(
         `DELETE FROM recent_search
          WHERE id IN (
@@ -124,16 +97,8 @@ export class RecentSearchesRepository {
   }
 
   /**
-   * The traveller's last five, newest first.
-   *
-   * Inner joins on `is_active` are the drop rule: an entry whose station has
-   * been deactivated disappears rather than being returned as a search that
-   * can never answer. It is a join rather than a filter in the service because
-   * the station is also where the names come from -- one statement either way.
-   *
-   * `LIMIT` is applied even though the trim keeps the table at five: the cap is
-   * the contract, and a row that slipped past a failed trim must not become a
-   * sixth entry on a traveller's screen.
+   * Return at most five, newest first, even if a trim failed.
+   * Join active stations for names and omit entries whose station was deactivated.
    */
   async list(accountId: string): Promise<RecentSearchRow[]> {
     const raw = await this.dataSource.query<RawRow[]>(
@@ -186,13 +151,7 @@ export class RecentSearchesRepository {
   }
 }
 
-/**
- * A `date` column as the 'YYYY-MM-DD' it is.
- *
- * The query casts to text, so this only trims; the slice is there because a
- * driver that ever returns a timestamp-shaped string must not leak a time into
- * a value that has none.
- */
+/** Return only YYYY-MM-DD; driver timestamp-shaped strings must not leak time. */
 function civilDateOf(value: string | null): string | null {
   return value === null ? null : value.slice(0, 10);
 }

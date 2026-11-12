@@ -41,26 +41,16 @@ export class TimetablePublishRepository {
   }
 
   /**
-   * The caller's transaction as an `EntityManager`, for the collaborators
-   * that take one -- `TimetableVersionService`'s reads and `TripsService`'s.
-   *
-   * Unwrapping a `TransactionContext` belongs to an adapter and not to a
-   * service (see `unit-of-work.port.ts`), so it happens here rather than in
-   * `TimetablePublishService`. That also keeps the service's unit specs
-   * honest: `entityManagerOf` only accepts a context minted by the real unit
-   * of work, so a service that unwrapped for itself could not be tested
-   * without a database at all.
+   * Only adapters unwrap real TransactionContext instances; keeping this out of
+   * services allows in-memory unit-of-work tests.
    */
   managerOf(ctx: TransactionContext): EntityManager {
     return entityManagerOf(ctx);
   }
 
   /**
-   * The catalogue's own answer about the ids this request named, in three
-   * statements that do not grow with the route's length.
-   *
-   * `trainType` is loaded with the train because `TripPublished` carries it
-   * and `createDatedTrip` reads it off the timetable's train.
+   * Batch requested references without per-stop queries; load trainType for
+   * TripPublished and generation.
    */
   async resolveReferences(params: {
     trainNumber: number | null;
@@ -120,14 +110,7 @@ export class TimetablePublishRepository {
     };
   }
 
-  /**
-   * Every published row of one train, in one query.
-   *
-   * One query, deliberately: `TimetableVersionService.effectiveOn` issues a
-   * query per call, so anything that resolves more than one date reads the
-   * rows once here and compares them in memory with the pure
-   * `pickEffectiveTimetable`.
-   */
+  /** Read published versions once; resolve multiple dates in memory. */
   async publishedVersionsOf(
     trainId: string,
     manager?: EntityManager,
@@ -154,17 +137,9 @@ export class TimetablePublishRepository {
   }
 
   /**
-   * The train's dated trips inside one civil-date range, **whatever their
-   * status**.
-   *
-   * Withdrawn rows are included deliberately. `uq_dated_trip_train_date`
-   * means a withdrawn trip still owns its (train, service_date), so a diff
-   * that could not see it would class that date as "needs a new trip" and
-   * then hand it to `createDatedTrip`, whose own lookup has no status filter
-   * -- it would find the withdrawn row and return it untouched. The date
-   * would be counted as created and stay withdrawn, with no `TripPublished`
-   * for inventory to recreate seats from, and the generation timer takes the
-   * same path so nothing would ever repair it.
+   * Include all statuses: withdrawn rows still own the unique train/date pair.
+   * Treating them as missing would count a creation but leave the row withdrawn,
+   * without TripPublished to recreate inventory seats.
    */
   async tripsBetween(
     trainId: string,
@@ -202,7 +177,7 @@ export class TimetablePublishRepository {
     return byTrip;
   }
 
-  /** The new version row. Insert it only after its predecessor is bounded. */
+  /** Bound the predecessor before inserting the new version. */
   async insertVersion(
     ctx: TransactionContext,
     version: {
@@ -219,8 +194,7 @@ export class TimetablePublishRepository {
       train: version.train,
       runningDays: version.runningDays,
       effectiveFrom: version.effectiveFrom,
-      // Unbounded: this is now the live version, and the next publish bounds
-      // it rather than this one guessing when it will end.
+      // Leave the live version unbounded; the next publication sets its end.
       effectiveUntil: null,
       version: version.versionNumber,
       status: 'published',
@@ -252,12 +226,9 @@ export class TimetablePublishRepository {
   }
 
   /**
-   * One fare row per (class, origin, destination) at this version's effective
-   * instant, which is what `uq_fare_effective_version` is keyed on. A
-   * republish on the same day with a corrected amount updates the row rather
-   * than colliding with it; a republish on a later day adds a new row and
-   * leaves the old price readable for a trip that was generated under it --
-   * `resolveFareAmount` picks the newest price that had already taken effect.
+   * Key fare versions by train, class, pair, and effective instant.
+   * Same-day corrections update; later dates append so earlier trips retain prices.
+   * Resolve the newest price already in effect.
    */
   async upsertFares(
     ctx: TransactionContext,
@@ -295,11 +266,8 @@ export class TimetablePublishRepository {
   }
 
   /**
-   * Moves a dated trip onto the new version without changing its id.
-   *
-   * Stops are deleted and reinserted rather than patched: a stop the new
-   * version drops has to disappear, and a position that moved must not leave
-   * two rows claiming it (`uq_trip_stop_position`).
+   * Keep the trip ID; replace stops so dropped stations disappear and moved
+   * positions do not conflict with uq_trip_stop_position.
    */
   async repoint(
     ctx: TransactionContext,
@@ -325,8 +293,7 @@ export class TimetablePublishRepository {
       lock: { mode: 'pessimistic_write' },
     });
 
-    // Gone between the diff and here -- nothing to re-point, and inventing a
-    // row would resurrect a trip somebody withdrew on purpose.
+    // Do not recreate a trip removed after the diff was computed.
     if (!trip) return null;
 
     trip.timetable = params.timetable;

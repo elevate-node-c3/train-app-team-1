@@ -55,8 +55,7 @@ describe('toRpcException', () => {
     );
   });
 
-  // The CARRY item from Task 8/9: `CatalogSearchError` has no field for the
-  // wait, so this is the one place left to put it into the envelope.
+  // Add dependency retry delays here; CatalogSearchError has no retry field.
   it('maps DEPENDENCY_UNAVAILABLE to UNAVAILABLE and sets retryAfterSeconds', () => {
     const error = new CatalogSearchError(ErrorCode.DEPENDENCY_UNAVAILABLE, [
       {

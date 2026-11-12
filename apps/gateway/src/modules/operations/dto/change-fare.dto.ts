@@ -1,6 +1,6 @@
 import { IsISO8601, IsInt, IsString, IsUUID, Min } from 'class-validator';
 
-/** Shape only; whether `effectiveFrom` is future enough (BR-51) is catalog's rule. */
+/** Catalog checks effectiveFrom; the gateway checks only the request shape. */
 export class ChangeFareDto {
   @IsString()
   trainNumber!: string;
@@ -18,7 +18,7 @@ export class ChangeFareDto {
   @Min(0)
   amountPiastres!: number;
 
-  /** ISO instant; "now or later" is catalog's rule. */
+  /** ISO timestamp; catalog requires now or later. */
   @IsISO8601()
   effectiveFrom!: string;
 }

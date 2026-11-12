@@ -28,10 +28,8 @@ function timetable(overrides: Partial<TimetableEntity>): TimetableEntity {
 }
 
 /**
- * v1 is left *unbounded* on purpose. That is the shape the generator used to
- * get wrong: two published rows both claiming D+2 onwards, with the
- * (train, service_date) unique constraint ready to swallow the second write as
- * "already exists" instead of surfacing it.
+ * Leave v1 unbounded to test overlapping owners: train/date uniqueness could
+ * otherwise hide duplicate generation as already-existing trips.
  */
 function twoVersions(
   overrides: Partial<TimetableEntity> = {},
@@ -93,8 +91,7 @@ describe('trip generation across versions', () => {
     await service.generateTripsForDateRange(WINDOW_START, WINDOW_END);
 
     expect(tripsOn(trips, '2026-06-23')).toHaveLength(1);
-    // And from the right version. A count alone would pass a generator that
-    // returned v1 for every date past the cutover.
+    // Assert version ownership, not counts alone, across the cutover.
     expect(tripOn(trips, '2026-06-23').version).toBe(2);
     // Six civil days, six trips: no date is produced twice, and none is lost.
     expect(trips).toHaveLength(6);
@@ -102,13 +99,9 @@ describe('trip generation across versions', () => {
   });
 
   /**
-   * Two rows a `(effective_from, version)` comparison cannot tell apart.
-   *
-   * This is impossible data -- `uq_timetable_train_version` forbids it -- but
-   * the guard must not depend on that to produce one trip per date, or
-   * "exactly once" is a property of the constraints rather than of the
-   * generator, and `createDatedTrip`'s unique-violation recovery would hide
-   * the second write as "already exists".
+   * Deliberately violate train/version uniqueness to prove the guard identifies
+   * one row independently of constraints. Unique-violation recovery must not hide
+   * double generation when rows share effectiveFrom/version.
    */
   it('generates once from two published rows it cannot tell apart by version', async () => {
     const { service, trips } = makeService([
@@ -143,9 +136,8 @@ describe('trip generation across versions', () => {
     expect(tripOn(trips, '2026-06-22').timetableId).toBe('tt-v2');
   });
 
-  // The reason the effective version is resolved from the range alone and not
-  // from the running days: once v2 owns a date, a date v2 does not run on has
-  // no trip. The superseded version must not quietly fill it in.
+  // Date ownership comes from effective ranges, not running days.
+  // If the new version skips that date, the old version must not fill it.
   it('leaves a date the new version does not run on empty', async () => {
     const { service, trips } = makeService(
       twoVersions({ runningDays: [Weekday.Friday] }),
@@ -162,8 +154,7 @@ describe('trip generation across versions', () => {
     ]);
   });
 
-  // A withdrawn predecessor is not a live version, so the row the publish
-  // superseded cannot claim a date back.
+  // Withdrawn predecessors cannot reclaim dates from their successors.
   it('generates from the live version when the predecessor was bounded', async () => {
     const { service, trips } = makeService([
       timetable({

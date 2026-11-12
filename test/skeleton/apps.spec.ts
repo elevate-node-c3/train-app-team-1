@@ -19,10 +19,8 @@ const SERVICES = [
   'notification',
 ] as const;
 
-// Vite cannot statically analyze a dynamic import with two interpolations
-// (`../../apps/${service}/src/${service}.module.ts`) — it throws "Unknown
-// variable dynamic import" for every case. A static map of the same seven
-// modules tests the same behavior (each module compiles standalone).
+// Vite cannot analyze two interpolations in one import path.
+// Use a static map to test each module on its own.
 const MODULES: Record<(typeof SERVICES)[number], Record<string, unknown>> = {
   catalog: catalogModule,
   gateway: gatewayModule,
@@ -48,11 +46,8 @@ describe('service apps', () => {
     expect(nestCli.sourceRoot).toBe('apps/gateway/src');
   });
 
-  // `postman/` and the README document `GET /<service>` on every app and `GET /`
-  // on the gateway. These used to come from a three-file feature module per
-  // app; they are now one controller on the root module, and this is what keeps
-  // the documented surface from moving. 'path' and 'controllers' are the
-  // metadata keys Nest's own decorators write.
+  // Pin the documented GET /<service> routes and the gateway's GET /.
+  // `path` and `controllers` are Nest metadata keys.
   it.each(SERVICES)('%s serves its documented identity route', (service) => {
     const pascal = service[0].toUpperCase() + service.slice(1);
     const moduleClass = MODULES[service][`${pascal}Module`] as object;
@@ -78,9 +73,7 @@ describe('service apps', () => {
     async (service) => {
       const pascal = service[0].toUpperCase() + service.slice(1);
       const mod = MODULES[service];
-      // The map is `Record<string, unknown>` because a namespace object says
-      // nothing about its exports; the assertion below is what proves the
-      // module class is actually there.
+      // Namespace imports do not guarantee a module class export.
       const moduleClass = mod[`${pascal}Module`] as Type<unknown> | undefined;
       expect(moduleClass).toBeDefined();
       await expect(

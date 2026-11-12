@@ -12,15 +12,9 @@ describe('shared libs', () => {
     expect(libs.sort()).toEqual([...LIBS].sort());
   });
 
-  // Values carry a leading './' because TypeScript 6.0's config validation
-  // (TS5090) requires `paths` entries to be explicitly relative once `baseUrl`
-  // is unset — resolution is still relative to this tsconfig's own directory,
-  // just spelled out syntactically.
-  //
-  // The bare alias names index.ts rather than the directory: `nodenext` has no
-  // directory/index resolution, so a directory target resolves under Vite (and
-  // therefore passes the next test) while failing every `nest build`. See
-  // lib-imports.spec.ts, which builds for real.
+  // Without baseUrl, TypeScript 6 requires './' paths (TS5090).
+  // `nodenext` needs index.ts targets; Vite also accepts directories.
+  // lib-imports.spec.ts checks the real build.
   it.each(LIBS)('declares both tsconfig paths for @app/%s', (lib) => {
     expect(tsconfig.compilerOptions.paths[`@app/${lib}`]).toEqual([
       `./libs/${lib}/src/index.ts`,
@@ -36,8 +30,7 @@ describe('shared libs', () => {
       import('@app/messaging'),
       import('@app/common'),
     ]);
-    // `@app/contracts` is types and constants only, so a runtime value from it
-    // rather than a Nest module is what proves the alias resolved.
+    // Contracts exports constants, not a Nest module.
     expect(contracts.EVENT_TYPES).toBeDefined();
     expect(messaging.MessagingModule).toBeDefined();
     expect(common.CommonModule).toBeDefined();

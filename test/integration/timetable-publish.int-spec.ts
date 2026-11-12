@@ -35,20 +35,10 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * Publishing a timetable version, against real Postgres.
- *
- * The property this file exists for is the one no double can prove: the
- * version row, its stops, the fares, the BR-52 audit entry, the
- * `TimetablePublished` outbox event and the idempotency key commit **together
- * or not at all**. That is a fact about `TypeOrmUnitOfWork` opening one real
- * transaction and about every collaborator honouring the `ctx` it is handed --
- * `entityManagerOf` only accepts a context the real unit of work minted, so an
- * in-memory stand-in could not exercise this path at all.
- *
- * Everything the service collaborates with here is the real class over the
- * Compose database, including `TripsService`, so the dated trips the publish
- * causes are really inserted. Only the gRPC seam is stubbed: whether inventory
- * answers is not what this file is about.
+ * Version, stops, fares, audit, outbox and idempotency key must commit together.
+ * entityManagerOf requires a real TypeOrmUnitOfWork context; all collaborators
+ * honor that transaction. Real TripsService inserts dated trips in Compose's
+ * Postgres; only inventory's gRPC response is stubbed.
  */
 
 const OPERATOR = '33333333-3333-4333-8333-333333333333';
@@ -70,10 +60,9 @@ const IDS = {
 const TRAIN_NUMBER = '911';
 
 /**
- * Hides a stored key from the *first* `find`, which is the concurrent-publish
- * race: the replay check runs before the winner commits, so the loser only
- * learns about the key when its own `record` hits the primary key -- inside
- * the transaction, after everything else has already been written.
+ * Hide the key on the first find to model a replay check before a concurrent
+ * commit. The final record then hits the real primary key after the other
+ * writes, exercising rollback.
  */
 class RacingRequestRepository extends OperationsRequestRepository {
   private hidden: string | null = null;
@@ -96,10 +85,10 @@ class RacingRequestRepository extends OperationsRequestRepository {
 describe('publishing a timetable version', () => {
   let source: DataSource;
   let service: TimetablePublishService;
-  /** The seeding path, for the one test that proves it still works. */
+  /** Separate seeding publish path. */
   let timetables: TimetablesService;
   let requests: RacingRequestRepository;
-  /** Cairo today, so every date below is relative to a real clock. */
+  /** Current Cairo civil date for relative fixture dates. */
   let today: string;
   let effectiveFrom: string;
 
@@ -124,7 +113,7 @@ describe('publishing a timetable version', () => {
 
     requests = new RacingRequestRepository(source);
 
-    // Nothing here is about gRPC: every trip answers "no seats in use".
+    // Stub inventory with no sold or held seats.
     const seatUsage = {
       seatUsageForTrips: async (tripIds: string[]) =>
         new Map(
@@ -157,8 +146,7 @@ describe('publishing a timetable version', () => {
   });
 
   beforeEach(async () => {
-    // operations_audit is append-only, so TRUNCATE rather than DELETE: the
-    // row-level trigger would reject the latter.
+    // TRUNCATE bypasses the append-only audit trigger that rejects DELETE.
     await source.query(
       `TRUNCATE TABLE ${CATALOG_TABLES.join(', ')}, operations_audit, operations_request, outbox_event CASCADE`,
     );
@@ -275,11 +263,10 @@ describe('publishing a timetable version', () => {
       expect(await countOf('operations_request')).toBe(1);
       expect(await outboxTypes()).toContain(EVENT_TYPES.timetablePublished);
 
-      // The counts the operator was given are the rows the apply pass made.
+      // Reported creation counts must match actual rows.
       expect(await countOf('dated_trip')).toBe(result.created);
       expect(await outboxTypes()).toContain(EVENT_TYPES.tripPublished);
 
-      // And the audit entry is attributable, with no predecessor to compare to.
       const [entry] = (await source.query(
         'SELECT * FROM operations_audit',
       )) as Record<string, unknown>[];
@@ -315,8 +302,7 @@ describe('publishing a timetable version', () => {
       )) as { until: string }[];
       expect(predecessor.until).toBe(addCivilDays(later, -1));
 
-      // Re-pointed in place: the same trip ids, now on version 2, and never
-      // withdrawn.
+      // Reuse trip IDs when moving them to version 2; do not withdraw them.
       const tripsAfter = (await source.query(
         'SELECT id, timetable_version FROM dated_trip WHERE service_date >= $1',
         [later],
@@ -329,9 +315,8 @@ describe('publishing a timetable version', () => {
       expect(await outboxTypes()).not.toContain(EVENT_TYPES.tripWithdrawn);
     });
 
-    // CARRY 2: `supersede` leaves a same-day predecessor to the exclusion
-    // constraint, which raises a raw 23P01 that nothing else in this codebase
-    // catches. Only real Postgres raises it.
+    // Same-day predecessors trigger Postgres exclusion error 23P01.
+    // Map it to a conflict without leaving partial writes.
     it('turns the exclusion constraint into a conflict, not a 500', async () => {
       await service.publish(request(), 'same-day-1', OPERATOR);
 
@@ -356,7 +341,6 @@ describe('publishing a timetable version', () => {
         ],
       });
 
-      // Refused, and the refusal left nothing of the second attempt behind.
       expect(await countOf('timetable')).toBe(1);
       expect(await countOf('operations_audit')).toBe(1);
       expect(await countOf('operations_request')).toBe(1);
@@ -364,12 +348,9 @@ describe('publishing a timetable version', () => {
   });
 
   /**
-   * The divergence a mismatch would open: `validateFareRules` takes its
-   * travel-class set from the submitted coaches, while `createDatedTrip`
-   * validates against the train's real `train_coach` rows and throws an error
-   * step 7 swallows. Against real Postgres this is the whole bug: a published
-   * version, an audit entry, an event, a key, a response saying 29 trips, and
-   * `dated_trip` empty.
+   * validateFareRules uses submitted coach classes, but createDatedTrip uses
+   * train_coach rows. Generation can swallow a mismatch error and leave a
+   * published version with no dated trips; reject mismatches before writing.
    */
   describe('the submitted composition', () => {
     it('refuses a mismatch before writing anything', async () => {
@@ -398,7 +379,6 @@ describe('publishing a timetable version', () => {
         ]),
       });
 
-      // Nothing written, and no published version that generates nothing.
       expect(await countOf('timetable')).toBe(0);
       expect(await countOf('timetable_stop')).toBe(0);
       expect(await countOf('fare')).toBe(0);
@@ -412,17 +392,13 @@ describe('publishing a timetable version', () => {
       const result = await service.publish(request(), 'match-key', OPERATOR);
 
       expect(result.created).toBeGreaterThan(0);
-      // The outcome the refusal above protects: the reported count is the
-      // number of rows that exist.
       expect(await countOf('dated_trip')).toBe(result.created);
     });
   });
 
   /**
-   * A withdrawn trip still owns its (train, service_date) under
-   * `uq_dated_trip_train_date`, and `createDatedTrip`'s own lookup has no
-   * status filter -- so only a real database shows that a date whose trip was
-   * withdrawn is not a date with no trip.
+   * uq_dated_trip_train_date reserves (train, service_date) even when withdrawn.
+   * createDatedTrip also looks up trips without a status filter; reuse that row.
    */
   describe('a date whose trip was withdrawn', () => {
     it('is resurrected on republish, keeping its trip id, and announced again', async () => {
@@ -430,7 +406,6 @@ describe('publishing a timetable version', () => {
       const weekday = new Date(`${effectiveFrom}T00:00:00.000Z`).getUTCDay();
       const withoutThatDay = everyDay.filter((day) => day !== weekday);
 
-      // Runs daily, then stops running on one weekday.
       await service.publish(
         request({ runningDays: everyDay }),
         'daily-key',
@@ -456,7 +431,6 @@ describe('publishing a timetable version', () => {
         (type) => type === EVENT_TYPES.tripPublished,
       ).length;
 
-      // Put the weekday back.
       const restored = await service.publish(
         request({
           runningDays: everyDay,
@@ -466,8 +440,7 @@ describe('publishing a timetable version', () => {
         OPERATOR,
       );
 
-      // Counted as `changed`, because the rows and their trip ids already
-      // existed; `created` would promise a new trip id.
+      // Resurrected trips count as changed, not created, because their IDs already exist.
       expect(restored.created).toBe(0);
       expect(restored.changed).toBeGreaterThan(0);
 
@@ -476,12 +449,10 @@ describe('publishing a timetable version', () => {
           'SELECT id, status, timetable_version FROM dated_trip WHERE id = $1',
           [row.id],
         )) as { id: string; status: string; timetable_version: number }[];
-        // The same row, published again, on the newest version.
         expect(after.status).toBe('published');
         expect(after.timetable_version).toBe(restored.version);
       }
 
-      // No duplicate row appeared for any of those dates.
       const [{ count }] = (await source.query(
         `SELECT count(*)::int AS count FROM dated_trip
            WHERE service_date = ANY($1::date[])`,
@@ -489,7 +460,7 @@ describe('publishing a timetable version', () => {
       )) as { count: number }[];
       expect(count).toBe(withdrawnRows.length);
 
-      // And inventory was told, or it never recreates the seats it destroyed.
+      // Republish events let inventory recreate seats for resurrected trips.
       const publishedAfter = (await outboxTypes()).filter(
         (type) => type === EVENT_TYPES.tripPublished,
       ).length;
@@ -497,19 +468,11 @@ describe('publishing a timetable version', () => {
     });
   });
 
-  /**
-   * The file's reason for existing. A publish whose transaction rejects must
-   * leave no version row, no audit entry, no outbox event and no idempotency
-   * key -- and the only way to show that is to make a write inside the real
-   * transaction fail after the others have already run.
-   */
   describe('a publish that rolls back', () => {
     it('leaves no version row, no audit entry, no outbox event and no key', async () => {
-      // A key already committed by a concurrent publish, hidden from this
-      // attempt's replay check. Its `record` is the last write in the
-      // transaction, so the version row, its stops, the fares, the audit
-      // entry and the outbox event have all been written by the time it
-      // fails.
+      // Hide a concurrently committed key from the replay check. Its record is
+      // the last write, so the constraint failure must roll back version, stops,
+      // fares, audit and outbox writes.
       await source.query(
         `INSERT INTO operations_request (idempotency_key, fingerprint, response_json)
            VALUES ($1, $2, $3::jsonb)`,
@@ -532,20 +495,19 @@ describe('publishing a timetable version', () => {
       expect(await countOf('fare')).toBe(0);
       expect(await countOf('operations_audit')).toBe(0);
       expect(await outboxTypes()).toEqual([]);
-      // The pre-existing key is untouched -- nothing overwrote it.
+      // Keep the winner's key and fingerprint.
       const [stored] = (await source.query(
         'SELECT fingerprint FROM operations_request',
       )) as { fingerprint: string }[];
       expect(stored.fingerprint).toBe('some-other-fingerprint');
       expect(await countOf('operations_request')).toBe(1);
-      // And no trip was generated, because step 7 never ran.
+      // A failed commit must not start trip generation.
       expect(await countOf('dated_trip')).toBe(0);
     });
 
     it('leaves nothing behind when the audit insert itself fails', async () => {
-      // `actor_account_id` is a uuid column, so a malformed actor fails the
-      // audit insert -- after the version row, its stops and the fares have
-      // been written in the same transaction.
+      // A malformed actor fails the UUID audit column after the version, stops
+      // and fares have been written.
       await expect(
         service.publish(request(), 'bad-actor-key', 'not-a-uuid'),
       ).rejects.toThrow();
@@ -573,11 +535,7 @@ describe('publishing a timetable version', () => {
     });
   });
 
-  /**
-   * Step 5 of the task: the seeding path and the operator path are different
-   * things. The rule the seed must not break is this one, and it is a
-   * database fact rather than a habit.
-   */
+  /** Seed and operator publishes must share the database's no-overlap constraint. */
   describe('the seeding publish path, after versioning', () => {
     it('still publishes the seeded timetable, to exactly one published row', async () => {
       const timetableId = randomUUID();
@@ -588,8 +546,7 @@ describe('publishing a timetable version', () => {
       expect(published.status).toBe('published');
       expect(await publishedRowsOfTrain()).toBe(1);
       expect(await outboxTypes()).toContain(EVENT_TYPES.timetablePublished);
-      // And no audit entry: BR-52 records operator actions, and seeding is
-      // not one -- there is no actor account to attribute it to.
+      // Seeding has no actor to record in a BR-52 audit entry.
       expect(await countOf('operations_audit')).toBe(0);
     });
 
@@ -599,8 +556,6 @@ describe('publishing a timetable version', () => {
       expect(result.version).toBe(1);
       expect(await publishedRowsOfTrain()).toBe(1);
 
-      // The rule the seed must not break: one published version per train per
-      // effective range, enforced by the database rather than remembered.
       await expect(
         source.query(
           `INSERT INTO timetable (id, train_id, running_days, effective_from, version, status)
@@ -622,9 +577,8 @@ describe('publishing a timetable version', () => {
 });
 
 /**
- * A prepared draft, the way `catalog.seed.ts` leaves one before calling
- * `TimetablesService.publishTimetable`: the row, its stops and its fares all
- * already exist, and only the status has to flip.
+ * Match catalog.seed.ts: a draft, its stops and fares already exist;
+ * publishing only changes status.
  */
 async function seedDraftTimetable(
   source: DataSource,
@@ -651,8 +605,7 @@ async function seedDraftTimetable(
     );
   }
 
-  // Already in effect, so a stop's departure on the first running day
-  // resolves a price.
+  // Make the fare effective before the first running day's departure.
   const fareFrom = new Date(Date.now() - 86_400_000);
 
   for (const [origin, destination, amount] of [
@@ -676,7 +629,7 @@ async function seedDraftTimetable(
   }
 }
 
-/** The smallest catalogue a publish can be made against. */
+/** Minimal catalog fixture for publishing. */
 async function seedCatalogue(source: DataSource): Promise<void> {
   await source.query(
     `INSERT INTO governorate (id, name_ar, name_en, sort_order) VALUES ($1, 'القاهرة', 'Cairo', 1)`,

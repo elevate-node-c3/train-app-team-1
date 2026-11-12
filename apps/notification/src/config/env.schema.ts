@@ -15,14 +15,8 @@ function parseDelays(value: string): number[] {
 }
 
 /**
- * Notification owns 25 000 of the budget's 25 500ms — the attempts and the
- * delays — and they interact, so this is a computation rather than a bound.
- * It runs on the *configured* handler timeout, so a longer timeout cannot
- * quietly push the worst case past the target while the delays stay unchanged.
- *
- * The relay's interval is identity's variable and is never present here;
- * reading it off this environment only ever found `undefined`. Identity bounds
- * its own share with `MAX_RELAY_POLL_INTERVAL_MS`.
+ * Check delivery attempts and delays using the configured handler timeout.
+ * Notification gets 25,000ms; identity separately caps the relay's 500ms.
  */
 const retryDelays = Joi.string()
   .pattern(/^\d+(,\d+)*$/)

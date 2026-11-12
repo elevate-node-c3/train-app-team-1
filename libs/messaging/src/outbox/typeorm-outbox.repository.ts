@@ -13,9 +13,8 @@ import {
 } from './outbox.sql.js';
 
 /**
- * The outbox adapter. Every method takes a `TransactionContext`: `append` joins
- * the sign-up transaction, and the relay's claim/publish/mark sequence joins
- * one relay transaction so the row lock is held until the confirm resolves.
+ * Reuse the caller's transaction for every write.
+ * Relay claim, publish, and mark share the lock until broker confirmation.
  */
 @Injectable()
 export class TypeOrmOutboxRepository implements OutboxPort {
@@ -65,7 +64,7 @@ export class TypeOrmOutboxRepository implements OutboxPort {
     ]);
   }
 
-  /** Used by the readiness probe's tests and by schema checks. */
+  /** Database configuration status for readiness and schema checks. */
   get dataSourceConfigured(): boolean {
     return this.initializer.isConfigured;
   }

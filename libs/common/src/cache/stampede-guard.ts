@@ -39,21 +39,13 @@ export interface StampedeLock {
   acquired: boolean;
 }
 
-/**
- * Distributed lease coordinator across multiple catalog instances (§2.3 rule 3).
- *
- * Winner gets the lock and executes the database rebuild.
- * Losers await the cached result rather than hammering Postgres.
- */
+/** The lease owner rebuilds; other instances wait for the cached result. */
 @Injectable()
 export class StampedeGuard {
   private readonly logger = new Logger(StampedeGuard.name);
   private readonly inFlightPromises = new Map<string, Promise<unknown>>();
 
-  /**
-   * Deduplicates concurrent calls within the same Node process so that only one
-   * call per key acquires the distributed lock.
-   */
+  /** Shares one in-flight call per key within this process. */
   async coalesceInProcess<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const existing = this.inFlightPromises.get(key);
     if (existing) {
@@ -68,9 +60,7 @@ export class StampedeGuard {
     return promise;
   }
 
-  /**
-   * Attempts to acquire a short-lived distributed lease in Redis.
-   */
+  /** Acquires a Redis lease with a millisecond TTL. */
   async acquireLock(
     client: Redis,
     lockKey: string,
@@ -92,14 +82,12 @@ export class StampedeGuard {
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      // Degrade gracefully: if lock cannot be acquired due to Redis error, treat as acquired to allow DB query
+      // On Redis errors, allow the database rebuild without a lease.
       return { lockKey, workerId, acquired: true };
     }
   }
 
-  /**
-   * Releases the distributed lease only if held by this worker.
-   */
+  /** Releases the lease only if this worker still owns it. */
   async releaseLock(client: Redis, lock: StampedeLock): Promise<void> {
     if (!lock.acquired) return;
     try {
@@ -115,9 +103,6 @@ export class StampedeGuard {
     }
   }
 
-  /**
-   * Checks whether the lock is still held by someone.
-   */
   async isLocked(client: Redis, lockKey: string): Promise<boolean> {
     try {
       const exists = await withLockCommandTimeout(client.exists(lockKey));

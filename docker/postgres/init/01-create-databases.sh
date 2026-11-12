@@ -1,20 +1,12 @@
 #!/bin/sh
-# One login role and one database per service, each role owning its own
-# database and able to open no other.
-#
-# Runs exactly once, against an empty data directory. Adding a service here
-# means `docker compose down -v` before the new database exists.
-#
-# This is a .sh rather than a .sql because each service's password comes from
-# the environment and .sql cannot interpolate it. The usual hazard with a shell
-# script in this directory is a CRLF line ending breaking the shebang;
-# .gitattributes pins *.sh to LF.
+# Each service owns one database and cannot open others.
+# Runs on first start only. Adding a service needs a local data reset:
+# `docker compose down -v` deletes the existing data.
+# Use a shell for environment passwords; keep LF line endings.
 
 set -eu
 
-# Identifiers are interpolated by psql as quoted identifiers (:"service") and
-# the password as a quoted literal (:'password'), so neither is pasted into SQL
-# text by the shell.
+# Let psql quote names and passwords to avoid SQL injection.
 create_service_database() {
   service="$1"
   password="$2"

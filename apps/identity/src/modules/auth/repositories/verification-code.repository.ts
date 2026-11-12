@@ -4,10 +4,7 @@ import type { TransactionContext } from '@app/common/persistence/unit-of-work.po
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import { VerificationCodeEntity } from '../entities/verification-code.entity.js';
 
-/**
- * Only the hash and salt cross this boundary. The plaintext code reaches the
- * outbox inside the event payload and is never persisted by identity.
- */
+/** Store only hashes and salts here; plaintext belongs in the outbox event. */
 @Injectable()
 export class VerificationCodeRepository {
   async save(

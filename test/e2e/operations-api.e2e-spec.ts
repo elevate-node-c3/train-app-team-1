@@ -31,16 +31,9 @@ import {
 } from './support/search-stack.js';
 
 /**
- * TA-20's operator flow, through the whole stack.
- *
- * The e2e tier is the only place that can prove the gateway's operator role,
- * the REST-to-gRPC hop, catalog's publish/fare transaction, the outbox
- * invalidation that makes a new fare visible to search, and BR-52's audit
- * trail all agree with each other.
- *
- * The rules that need a controlled clock and a real Postgres transaction are
- * proven at the unit and integration tiers. What is checked here is the wiring
- * an operator actually touches.
+ * Exercise operator authorization, REST-to-gRPC wiring, publish/fare transactions,
+ * outbox cache invalidation and the audit trail through the real stack (BR-52).
+ * Controlled-clock and rollback rules remain at unit and integration tiers.
  */
 
 const OPERATIONS = '/api/v1/operations';
@@ -114,10 +107,7 @@ let fixture: E2eSearchFixture;
 let operator: OperatorSession;
 let travellerToken: string;
 
-/**
- * The same slice search needs, plus inventory: a publish asks inventory
- * whether any affected trip has sold or held seats before it writes anything.
- */
+/** Include inventory: publishing checks affected trips for sold or held seats. */
 function startOperationsStack(): void {
   compose('down', '-v', '--remove-orphans');
   composeUpBuild([...SEARCH_STACK, 'inventory']);
@@ -261,8 +251,8 @@ beforeAll(async () => {
   await waitForServiceReady('notification');
   await waitForConsumer(EMAIL_QUEUE);
 
-  // The operator account is identity's standalone seed; the fixture supplies
-  // the network and the timetable-less trains 916/917 this file publishes.
+  // Identity's seed supplies the operator; the fixture supplies the network
+  // and timetable-less trains 916/917 for publishing.
   seedStaff();
   fixture = await seedSearchE2e();
 
@@ -292,8 +282,7 @@ describe('The operator flow, edge to catalog', () => {
     expect(published.created).toBeGreaterThan(0);
     expect(published.version).toBe(1);
 
-    // Search is served from catalog's generated dated trips, not from the
-    // publish response: the trip has to be reachable by a traveller.
+    // Search must read generated dated trips, not the publish response.
     await waitFor(
       'train 916 to appear in search after the publish',
       async () => {
@@ -313,10 +302,8 @@ describe('The operator flow, edge to catalog', () => {
     const before = await tripOf(SEARCH_FIXTURE_TRAIN_NUMBERS.operations);
     expect(before.fare).toEqual({ amountMinor: 15_000, currency: 'EGP' });
 
-    // "Now or later": a value computed at request time is already past by the
-    // time catalog validates it, so the change takes effect a few seconds out.
-    // Search resolves the fare against its own clock, not the travel date, so
-    // the poll below waits for that instant rather than for the next trip.
+    // Use a slightly future effective time so validation does not see it as past.
+    // Search uses its own clock, not the travel date; wait until the fare is in force.
     const fareEffectiveFrom = new Date(Date.now() + 5_000).toISOString();
     const change = await call<ChangeFareResult>(`${OPERATIONS}/fares`, {
       method: 'POST',
@@ -338,9 +325,8 @@ describe('The operator flow, edge to catalog', () => {
     expect(changed.newAmountPiastres).toBe(17_500);
     expect(changed.effectiveFrom).toBe(fareEffectiveFrom);
 
-    // The fare is deliberately future-dated, so it is not in force yet. Wait
-    // for its instant before the first search at the new route version; a
-    // search before then would cache the old amount under that version.
+    // Wait for the future fare to take effect before searching the new route version,
+    // or the old fare could be cached under that version.
     await waitFor(
       'the fare to reach its effective instant',
       () => Date.now() >= Date.parse(fareEffectiveFrom) + 500,
@@ -348,9 +334,8 @@ describe('The operator flow, edge to catalog', () => {
       250,
     );
 
-    // The new row is written synchronously, but search's cache is invalidated
-    // by the outbox relay. Poll the traveller-visible answer, which is the one
-    // the story promises.
+    // Fare writes are synchronous, but outbox invalidation is asynchronous.
+    // Poll the traveller-visible fare.
     await waitFor(
       'the new fare to become visible to search',
       async () =>
@@ -381,8 +366,7 @@ describe('The operator flow, edge to catalog', () => {
     expect(publishedEntry?.trainId).toBe(SEARCH_FIXTURE_IDS.trains.operations);
     expect(fareEntry?.trainId).toBe(SEARCH_FIXTURE_IDS.trains.operations);
 
-    // The gateway always mints its own correlation ID; the audit must carry
-    // the one each response was stamped with, not a fresh value.
+    // Audit entries must use the gateway's response correlation ID, not a new one.
     expect(publishedEntry?.correlationId).toBe(publish.correlationId);
     expect(fareEntry?.correlationId).toBe(change.correlationId);
     expect(publishedEntry?.correlationId).not.toBe(fareEntry?.correlationId);
@@ -449,8 +433,7 @@ describe('The operator flow, edge to catalog', () => {
     expect(retry.status, JSON.stringify(retry.body.error)).toBe(201);
     expect(retry.body.data).toEqual(first.body.data);
 
-    // A replay returns the first answer. The trail must still hold one
-    // publish for this train, not two.
+    // Replay returns the first response without adding a second audit entry.
     const audit = await call<AuditPage>(
       `${OPERATIONS}/audit?trainId=${SEARCH_FIXTURE_IDS.trains.operationsRetry}&limit=20`,
       { method: 'GET', token: operator.token },

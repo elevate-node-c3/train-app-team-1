@@ -11,15 +11,8 @@ import { sortTrips } from './trip-search-sort.js';
 import type { CachedStaticTrip } from './trip-search-cache.js';
 
 /**
- * Turning a day's eligible trips into the list a traveller sees.
- *
- * Both legs of a round trip end the same way -- narrow, drop what cannot be
- * sold, order, map -- and they have to, because "filters apply to each list
- * separately" means separately *applied*, not differently defined. Sharing the
- * code is what keeps the return list from quietly sorting or filtering by
- * another rule than the outbound one.
- *
- * Pure: the seats are passed in, already fetched in one batched call.
+ * Share filtering, sellability, sorting, and mapping rules between both legs.
+ * Apply each leg's filters separately with already-batched seat counts; no queries here.
  */
 
 export interface TripListInput {
@@ -31,9 +24,8 @@ export interface TripListInput {
   filters?: SearchFilters;
   sort?: SearchSort;
   /**
-   * Called for each trip dropped for having no fare. A sellable trip without a
-   * price is a data gap someone should fix rather than a normal state, and the
-   * caller owns the logger.
+   * Notify the caller for each unpriced trip dropped; missing prices are data gaps
+   * that the caller should log.
    */
   onUnpriced?: (trip: CachedStaticTrip) => void;
 }
@@ -41,18 +33,14 @@ export interface TripListInput {
 export interface TripList {
   trips: TripResult[];
   /**
-   * How many survived the filters, before the unpriced ones were dropped.
-   *
-   * The caller needs it to tell "the filters emptied this list" from "the day
-   * had nothing to begin with" -- two empty results that ask the traveller to
-   * change different things (BR-57).
+   * Count filter survivors before unpriced trips are dropped, so callers can
+   * distinguish filter-empty results from an empty day.
    */
   filteredCount: number;
 }
 
 export function buildTripList(input: TripListInput): TripList {
-  // The availability call the response already needs answers the sold-out
-  // filter too, so applying it adds no query.
+  // Reuse batched seat counts for sold-out filtering; no extra query.
   const soldOutTripIds = new Set(
     input.eligible
       .filter((trip) => (input.seats.get(trip.tripId) ?? 0) === 0)
@@ -75,7 +63,6 @@ export function buildTripList(input: TripListInput): TripList {
   };
 }
 
-/** One static trip on the wire, for the class the traveller asked for. */
 export function toTripResult(
   trip: CachedStaticTrip,
   travelClassId: string,
@@ -102,10 +89,10 @@ export function toTripResult(
     durationMinutes: trip.durationMinutes,
     intermediateStops: trip.intermediateStops,
     availableSeats,
-    // Returned and marked, never hidden (BR-16).
+    // Return sold-out trips and mark them; never hide them.
     soldOut: availableSeats === 0,
     fare: {
-      // Non-null by the time a trip reaches here; buildTripList dropped the rest.
+      // buildTripList must remove unpriced trips before mapping.
       amountMinor: trip.farePiastres ?? 0,
       currency: FARE_CURRENCY,
     },

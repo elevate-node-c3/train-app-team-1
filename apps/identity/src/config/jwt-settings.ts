@@ -6,11 +6,7 @@ export interface JwtSigningSettings {
   privateKeyPem: string;
 }
 
-/**
- * The key is deployment input, never a shared-library default. A missing
- * variable and a missing file both name the variable to fix. Read lazily from
- * `onModuleInit` so compiling the module never requires a key.
- */
+/** Load the deployment's signing key in onModuleInit; there is no default key. */
 export function jwtSigningSettingsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): JwtSigningSettings {

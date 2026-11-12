@@ -11,12 +11,8 @@ import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.
 import { renderVerificationEmail } from '../verification-email.template.js';
 
 /**
- * The consumer-side business rule for `identity.verification-code.issued`.
- *
- * It sends before recording anything as handled: the consumer's claim is
- * released only after both the SMTP side effect and its local bookkeeping are
- * done. A crash between them redelivers the event and risks a duplicate email,
- * which is the deliberate trade in ADR-0003.
+ * Send and record delivery before marking the event handled.
+ * A crash after SMTP acceptance may cause a duplicate on retry.
  */
 @Injectable()
 export class VerificationCodeIssuedConsumer implements EventHandlerPort {
@@ -38,9 +34,7 @@ export class VerificationCodeIssuedConsumer implements EventHandlerPort {
     };
     const recipient = maskEmail(payload.email);
 
-    // A dead code is worse than silence: the user acts on it, the API rejects
-    // it, and the channel loses credibility. Check at handling time, not at
-    // publish time, because the queue may have waited (ADR-0003).
+    // Check expiry here; the event may have waited in the queue.
     if (new Date(payload.expiresAt).getTime() <= Date.now()) {
       await this.deliveries.record({
         ...delivery,
@@ -76,12 +70,11 @@ export class VerificationCodeIssuedConsumer implements EventHandlerPort {
       this.logger.error(
         `Verification email to ${recipient} failed: ${message} (event ${envelope.id})`,
       );
-      // Transient by default: the consumer releases the claim and retries.
+      // Let the consumer release the claim and retry.
       throw error;
     }
 
-    // Taken after sendMail resolves, i.e. after the SMTP server accepted the
-    // message. This is the end of BR-03's measurement.
+    // Measure delivery only after SMTP accepts the email.
     const acceptedAt = new Date();
     const latencyMs = acceptedAt.getTime() - delivery.issuedAt.getTime();
     await this.deliveries.record({

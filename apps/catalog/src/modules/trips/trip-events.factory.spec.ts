@@ -102,8 +102,7 @@ describe('Trip events', () => {
       // Positions, so a segment "stop i to stop j" means the same on both sides.
       expect(event.payload.stops[0].position).toBe(1);
 
-      // Seat numbers and the adjacency they imply: same side of a row is side
-      // by side, which is what SEAT-2 groups on.
+      // Adjacent seats share a row and aisle side.
       const [row] = event.payload.coaches[0].coachLayout.rows;
       expect(row.leftSeats).toEqual(['1', '2']);
       expect(row.rightSeats).toEqual(['3']);

@@ -24,10 +24,7 @@ interface InventoryGrpcService {
   ): Observable<SeatUsageForTripsResponse>;
 }
 
-/**
- * Silence is never zero: every failure becomes this, so a publish refuses
- * instead of guessing (TA-20).
- */
+/** Failures are never zero usage; refuse publication instead of guessing. */
 export class SeatUsageUnavailableError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -39,10 +36,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Refuses a malformed count or stations list; defaulting an absent count to
- * zero is the failure this prevents.
- */
+/** Reject malformed counts or station lists; absent counts are not zero. */
 function validatedUsage(usage: TripSeatUsage): TripSeatUsage {
   if (
     typeof usage?.tripId !== 'string' ||
@@ -66,7 +60,6 @@ function usagesOf(response: SeatUsageForTripsResponse): TripSeatUsage[] {
   return response.usages.map(validatedUsage);
 }
 
-/** Catalog's seam into whether a dated trip can be safely rewritten. */
 @Injectable()
 export class InventorySeatUsageClient implements OnModuleInit {
   private readonly logger = new Logger(InventorySeatUsageClient.name);
@@ -83,8 +76,8 @@ export class InventorySeatUsageClient implements OnModuleInit {
   }
 
   /**
-   * Keyed by trip id. Never returns zeros it does not have: any failure or a
-   * missing trip id becomes `SeatUsageUnavailableError`, with no retry.
+   * Any failure or missing trip ID raises SeatUsageUnavailableError, without retry.
+   * Never substitute zero usage for an unanswered trip.
    */
   async seatUsageForTrips(
     tripIds: string[],
@@ -95,9 +88,8 @@ export class InventorySeatUsageClient implements OnModuleInit {
     try {
       const response = await withTimeout(
         firstValueFrom(
-          // Deadline and withTimeout are not redundant: gRPC enforces one, and
-          // withTimeout covers a channel that never emits it. Without the
-          // deadline a timed-out call keeps running against inventory.
+          // Keep both: gRPC's deadline cancels remote work; withTimeout covers
+          // channels that never emit, even a deadline error.
           this.service.seatUsageForTrips({ tripIds }, new Metadata(), {
             deadline: Date.now() + timeoutMs,
           }),
@@ -116,8 +108,7 @@ export class InventorySeatUsageClient implements OnModuleInit {
 
     const byTripId = new Map(usages.map((usage) => [usage.tripId, usage]));
 
-    // A gap means a broken or wrong-version inventory, but a partial answer is
-    // not a zero, so it still refuses.
+    // Reject partial answers; missing trips are not zero usage.
     const missing = tripIds.filter((tripId) => !byTripId.has(tripId));
     if (missing.length > 0) {
       throw new SeatUsageUnavailableError(
