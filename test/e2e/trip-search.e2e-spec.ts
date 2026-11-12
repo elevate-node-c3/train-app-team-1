@@ -979,6 +979,9 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
     });
 
     it('keeps at most five, newest first', async () => {
+      const cappedToken = await travellerAccessToken();
+      // Quotas are IP-scoped, even for a new account. Expire the prior windows.
+      await new Promise<void>((resolve) => setTimeout(resolve, 61_000));
       // Six distinct destinations from one origin, in order, so the newest is
       // known. More than five on purpose: the cap is the assertion.
       for (const to of [
@@ -989,26 +992,26 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
         fixture.stations.assiut,
         fixture.stations.aswan,
       ]) {
-        const { status, body } = await runSearch({
-          from: fixture.stations.alexandria,
-          to,
-        });
+        const { status, body } = await runSearch(
+          { from: fixture.stations.alexandria, to },
+          cappedToken,
+        );
         expect(status, JSON.stringify(body.error)).toBe(200);
         await waitFor(
           `recent Alexandria-to-${to} search to be persisted`,
           async () => {
-            const { recentSearches: entries } = await listFor(token);
+            const { recentSearches: entries } = await listFor(cappedToken);
             return (
               entries[0]?.origin.id === fixture.stations.alexandria &&
               entries[0]?.destination.id === to
             );
           },
           10_000,
-          100,
+          2_500,
         );
       }
 
-      const { recentSearches: entries } = await listFor(token);
+      const { recentSearches: entries } = await listFor(cappedToken);
 
       expect(entries).toHaveLength(5);
       expect(entries[0].destination.id).toBe(fixture.stations.aswan);
@@ -1018,7 +1021,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
           (entry) => entry.destination.id === fixture.stations.tanta,
         ),
       ).toBe(false);
-    });
+    }, 300_000);
 
     /** §2.3 rule 6: never visible to another account. */
     it('is invisible to a different traveller', async () => {
