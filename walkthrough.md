@@ -1,6 +1,6 @@
-# Platform Skeleton & Authentication Verification Walkthrough
+# Platform Skeleton, Authentication & Operations Verification Walkthrough
 
-This document records the verification evidence for the **Platform Skeleton** and the **Authentication (AUTH-1/AUTH-2/AUTH-3)** stories: seven microservices (`gateway`, `catalog`, `identity`, `inventory`, `booking`, `payment`, `notification`) booting, reporting their health, speaking one unified language of errors and responses, and enforcing a complete account and session lifecycle at the gateway.
+This document records the verification evidence for the **Platform Skeleton**, **Authentication (AUTH-1/AUTH-2/AUTH-3)** and **Operations API (TA-20)** stories: seven microservices (`gateway`, `catalog`, `identity`, `inventory`, `booking`, `payment`, `notification`) booting, reporting their health, speaking one unified language of errors and responses, enforcing a complete account and session lifecycle at the gateway, and letting an operator publish a timetable, change a fare and read the audit trail.
 
 ---
 
@@ -323,6 +323,69 @@ The same suite without the file filter runs all five e2e specs:
 
 ---
 
+### Demo 8: Happy Path — Operator Publishes, Changes a Fare and Reads the Audit (e2e)
+
+**Command:**
+```bash
+npm run test:e2e -- test/e2e/operations-api.e2e-spec.ts
+```
+
+**Output (2026-11-12):**
+```text
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  15:40:24
+   Duration  38.57s
+```
+
+The spec starts the search slice plus inventory, seeds the operator through identity's standalone seed, and drives every request through the gateway:
+
+1. **Operator sign-in and first publish:** `operator@train.local` signs in and receives an access token with the `operator` role. `POST /api/v1/operations/timetables` publishes fixture train 916 on Ramsis (Cairo) -> Alexandria, daily from today, with one first-class coach and a 15,000-piastre fare. The response is `201` with `created > 0` and `version: 1`.
+2. **The published trip is on sale:** a traveller search for Ramsis -> Alexandria three days out finds train 916 at 15,000 piastres. This proves the publish wrote real dated trips and stops, not just a timetable row.
+3. **Fare change:** `POST /api/v1/operations/fares` adds a 17,500-piastre first-class row effective five seconds out. The response reports `previousAmountPiastres: 15000` and echoes the effective instant. After that instant, the same search reports 17,500. The wait is deliberate: search resolves the fare against *now*, so asking before `effectiveFrom` correctly answers with the old amount; the outbox's route-version invalidation has already happened, and the new fare is visible as soon as it is in force.
+4. **Audit trail:** `GET /api/v1/operations/audit?trainId=<train 916>` returns both actions. Each entry names the operator account and the correlation id the gateway stamped on that write response; the two ids differ, so the entries are not sharing an ambient request by accident.
+5. **Traveller refusal:** the same three routes with a verified traveller token all return `403 FORBIDDEN`.
+6. **Idempotent publish:** a fresh publish for train 917 is sent twice with one `Idempotency-Key`. Both calls return `201` with the identical body, and the audit holds exactly one `timetable.published` entry for that train. A replay does not write a second version.
+
+The unit suite and lint pass at the same tree:
+
+```text
+ Test Files  104 passed (104)
+      Tests  1141 passed | 1 skipped (1142)
+```
+
+```text
+oxlint --type-aware apps/ libs/ test/
+# no errors (pre-existing warnings only)
+```
+
+The only TypeScript errors are the four pre-existing ones in
+`scripts/demo-cache-story.ts` and
+`test/integration/cache-developer-demo.int-spec.ts`; the operations files add
+none.
+
+#### Postman
+
+The **Operations (Gateway)** folder in
+`postman/train-app-platform.postman_collection.json` mirrors the same flow with
+runnable requests:
+
+1. `docker compose up -d`
+2. `docker compose run --build --rm seeder`
+3. Import the collection and `train-app-local` environment, then run
+   **Operator Sign In** -> **Publish Timetable (Train 916)** ->
+   **Search Published Route** -> **Change First Class Fare** -> **Search Again**
+   -> **Read Operations Audit** -> **Publish Retried with Same Key**.
+
+The fare request sets its effective instant two seconds ahead and **Search
+Again** waits for it before asking. The publish request stores its
+`Idempotency-Key`, so the final request replays the same body and returns the
+same timetable id and version. Run against a freshly seeded database: the
+version rule rightly refuses a second publish for the same train and effective
+date.
+
+---
+
 ## 4. Verification Check-off Matrix
 
 | Requirement | Implementation Component | Status |
@@ -345,5 +408,9 @@ The same suite without the file filter runs all five e2e specs:
 | Prompt, durable session revocation | Outbox event, `SessionRevokedConsumer`, Redis + memory revocation stores | Verified |
 | Password recovery without enumeration (BR-09) | `PasswordsService`, account-level revocation marker | Verified |
 | Auth lifecycle and staff isolation against the real stack | `test/e2e/auth.e2e-spec.ts` (4 tests) | Verified |
-| Staff seed outside migrations | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot Compose service | Verified |
-| 100% Passing automated tests | Vitest unit & regression suites (471 passed, 1 skipped) | Verified |
+| Staff seed outside migrations | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot `seeder` Compose service | Verified |
+| Operator-only timetable, fare and audit routes | Gateway `modules/operations` and catalog `modules/operations` over gRPC | Verified |
+| Required idempotency on both writes | Gateway `Idempotency-Key` guard and catalog `operations_request` replay store | Verified |
+| Operator flow, refusal and replay against the real stack | `test/e2e/operations-api.e2e-spec.ts` (3 tests) | Verified |
+| Runnable operator flow for reviewers | `postman/train-app-platform.postman_collection.json` -> **Operations (Gateway)** | Added |
+| 100% Passing automated tests | Vitest unit & regression suites (1141 passed, 1 skipped) | Verified |

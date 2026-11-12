@@ -11,7 +11,7 @@ const SERVICES = [
   'notification',
 ] as const;
 const INFRA = ['postgres', 'redis', 'rabbitmq', 'mailpit'] as const;
-const ONE_SHOT = ['identity-seed'] as const;
+const ONE_SHOT = ['seeder'] as const;
 
 // `merge: true` is required, not cosmetic: the `yaml` package leaves `<<` as a
 // literal key under the YAML 1.2 core schema, while Docker Compose resolves
@@ -98,19 +98,20 @@ describe('compose infrastructure', () => {
 });
 
 describe('compose services', () => {
-  it('defines all seven services, the staff seed and no extras', () => {
+  it('defines all seven services, the seeder and no extras', () => {
     const defined = Object.keys(compose.services).filter(
       (n) => !INFRA.includes(n as any) && !ONE_SHOT.includes(n as any),
     );
     expect(defined.sort()).toEqual([...SERVICES].sort());
   });
 
-  it('runs the staff seed as a one-shot after identity starts', () => {
-    const seed = compose.services['identity-seed'];
-    expect(seed.build.args.APP).toBe('identity');
-    expect(seed.restart).toBe('no');
-    expect(seed.command).toContain('staff-accounts.seed.js');
-    expect(seed.depends_on.identity.condition).toBe('service_started');
+  it('keeps the seeder as an opt-in one-shot', () => {
+    const seed = compose.services.seeder;
+    // A profile keeps it out of `compose up`; `compose run --rm seeder` is the
+    // only way it starts, and its image merges identity's and catalog's seeds.
+    expect(seed.profiles).toEqual(['seed']);
+    expect(seed.build.target).toBe('seeder');
+    expect(seed.restart ?? 'no').toBe('no');
     expect(seed.environment.OPERATOR_SEED_PASSWORD).toBeDefined();
     expect(seed.environment.CONDUCTOR_SEED_PASSWORD).toBeDefined();
   });

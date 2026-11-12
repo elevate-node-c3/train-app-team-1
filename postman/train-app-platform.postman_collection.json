@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "c1f7b8a2-94d3-4f90-a7d1-e6a8d7a4e921",
-    "name": "Train App - Platform Skeleton, Health, Auth & Search",
-    "description": "Postman collection covering health, readiness, liveness, unified envelope testing, the AUTH-1/AUTH-2/AUTH-3 flows, and TA-17 one-way trip search across all 7 services (gateway, catalog, identity, inventory, booking, payment, notification).",
+    "name": "Train App - Platform Skeleton, Health, Auth, Search & Operations",
+    "description": "Postman collection covering health, readiness, liveness, unified envelope testing, the AUTH-1/AUTH-2/AUTH-3 flows, TA-17/TA-18 trip search, and the TA-20 operator-only timetable, fare and audit routes across all 7 services.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1961,6 +1961,554 @@
             },
             "description": "The last five searches of the signed-in traveller, newest first (BR-21). There is no account parameter and there will not be one: the traveller comes from the token, so signing in as somebody else shows their list, not this one.\n\nRun a few searches above first."
           }
+        }
+      ]
+    },
+    {
+      "name": "Operations (Gateway)",
+      "description": "TA-20 operator-only writes: `POST /api/v1/operations/timetables`, `POST /api/v1/operations/fares` and `GET /api/v1/operations/audit`.\n\nRequires the catalog search fixture, whose network now includes train 916 with a first-class coach and no timetable, plus identity's seeded operator. From a clean database:\n\n```\ndocker compose up -d\ndocker compose run --rm seeder\n```\n\nRun **Operator Sign In** first; it replaces `{{accessToken}}` with the operator's token and records the account id from the JWT. Every write needs an `Idempotency-Key`. The publish request stores its key, so **Publish Retried with Same Key** can replay it and return the same `timetableId` and version.\n\nThe route is Ramsis (Cairo) to Alexandria. Search resolves the fare against the current instant, so **Search Again** waits for the fare's `effectiveFrom` before asking; otherwise the old amount is the correct answer.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Dates stay relative to today so the collection does not go stale.",
+              "const pad = (n) => String(n).padStart(2, \"0\");",
+              "const asCivilDate = (date) =>",
+              "    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;",
+              "const cairoNow = new Date(",
+              "    new Date().toLocaleString(\"en-US\", { timeZone: \"Africa/Cairo\" }),",
+              ");",
+              "",
+              "if (!pm.environment.get(\"searchDepartureDate\")) {",
+              "    const departure = new Date(cairoNow);",
+              "    departure.setDate(departure.getDate() + 3);",
+              "    pm.environment.set(\"searchDepartureDate\", asCivilDate(departure));",
+              "}",
+              "",
+              "if (!pm.environment.get(\"operationsEffectiveFrom\")) {",
+              "    pm.environment.set(\"operationsEffectiveFrom\", asCivilDate(cairoNow));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Operator Sign In",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The seeded operator is signed in\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.data.verificationRequired).to.be.false;",
+                  "    pm.expect(json.data.tokens).to.be.an(\"object\");",
+                  "    const token = json.data.tokens.accessToken;",
+                  "    pm.environment.set(\"accessToken\", token);",
+                  "    pm.environment.set(\"refreshToken\", json.data.tokens.refreshToken);",
+                  "",
+                  "    const payload = token.split(\".\")[1]",
+                  "        .replace(/-/g, \"+\")",
+                  "        .replace(/_/g, \"/\");",
+                  "    const padded = payload + \"=\".repeat((4 - (payload.length % 4)) % 4);",
+                  "    const claims = JSON.parse(atob(padded));",
+                  "    pm.expect(claims.roles).to.include(\"operator\");",
+                  "    pm.environment.set(\"operationsActorAccountId\", claims.sub);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{operatorEmail}}\",\n  \"password\": \"{{operatorPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/sign-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "sign-in"
+              ]
+            },
+            "description": "Uses identity's seeded operator. The gateway returns no account id on sign-in, so the test decodes `sub` from the access token.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Timetable (Train 916)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A new key makes this a new request; the retry below reuses it.",
+                  "pm.environment.set(\"operationsPublishKey\", \"postman-publish-\" + Date.now());",
+                  "pm.environment.set(\"operationsBeforeFare\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"The first publish creates trips and version 1\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.created).to.be.above(0);",
+                  "    pm.expect(data.version).to.eql(1);",
+                  "    pm.environment.set(\"operationsTimetableId\", data.timetableId);",
+                  "});",
+                  "",
+                  "pm.environment.set(",
+                  "    \"operationsPublishCorrelationId\",",
+                  "    pm.response.headers.get(\"x-correlation-id\"),",
+                  ");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{operationsPublishKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainNumber\": \"{{operationsTrainNumber}}\",\n  \"runningDays\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6\n  ],\n  \"effectiveFrom\": \"{{operationsEffectiveFrom}}\",\n  \"stops\": [\n    {\n      \"stationId\": \"{{searchTo}}\",\n      \"position\": 1,\n      \"dayOffset\": 0,\n      \"departureTime\": \"09:00\"\n    },\n    {\n      \"stationId\": \"{{searchFrom}}\",\n      \"position\": 2,\n      \"dayOffset\": 0,\n      \"arrivalTime\": \"12:00\"\n    }\n  ],\n  \"coaches\": [\n    {\n      \"position\": 1,\n      \"coachNumber\": 1,\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"coachLayoutId\": \"00000006-0000-4000-8000-000000000001\"\n    }\n  ],\n  \"fares\": [\n    {\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"originStationId\": \"{{searchTo}}\",\n      \"destinationStationId\": \"{{searchFrom}}\",\n      \"amountPiastres\": 15000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/timetables",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "timetables"
+              ]
+            },
+            "description": "Publishes a first timetable for fixture train 916 on Ramsis -> Alexandria, daily from today. The train already exists with one first-class coach; only the timetable is new. The gateway requires an operator token and `Idempotency-Key`."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Published Route",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Train 916 is on sale at the published fare\", function () {",
+                  "    const trips = pm.response.json().data.trips;",
+                  "    const number = Number(pm.environment.get(\"operationsTrainNumber\"));",
+                  "    const trip = trips.find((candidate) => candidate.trainNumber === number);",
+                  "    pm.expect(trip).to.be.an(\"object\");",
+                  "    pm.expect(trip.fare.amountMinor).to.eql(15000);",
+                  "    pm.environment.set(\"operationsBeforeFare\", trip.fare.amountMinor);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchTo}}&to={{searchFrom}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&trainNumber={{operationsTrainNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchTo}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                },
+                {
+                  "key": "trainNumber",
+                  "value": "{{operationsTrainNumber}}"
+                }
+              ]
+            },
+            "description": "Ramsis -> Alexandria, three days out, first class. `searchTo` is Cairo Ramsis and `searchFrom` is Alexandria in the shared fixture."
+          },
+          "response": []
+        },
+        {
+          "name": "Change First Class Fare",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh key makes a manual rerun a new change, not a replay.",
+                  "pm.environment.set(\"operationsFareKey\", \"postman-fare-\" + Date.now());",
+                  "// Catalog refuses a strictly past instant, so allow for the round trip.",
+                  "pm.environment.set(",
+                  "    \"operationsFareEffectiveFrom\",",
+                  "    new Date(Date.now() + 2000).toISOString(),",
+                  ");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"The new row supersedes the published amount\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.previousAmountPiastres).to.eql(",
+                  "        Number(pm.environment.get(\"operationsBeforeFare\")),",
+                  "    );",
+                  "    pm.expect(data.newAmountPiastres).to.eql(17500);",
+                  "    pm.environment.set(\"operationsFareId\", data.fareId);",
+                  "});",
+                  "",
+                  "pm.environment.set(",
+                  "    \"operationsFareCorrelationId\",",
+                  "    pm.response.headers.get(\"x-correlation-id\"),",
+                  ");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{operationsFareKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainNumber\": \"{{operationsTrainNumber}}\",\n  \"travelClassId\": \"{{searchTravelClassId}}\",\n  \"originStationId\": \"{{searchTo}}\",\n  \"destinationStationId\": \"{{searchFrom}}\",\n  \"amountPiastres\": 17500,\n  \"effectiveFrom\": \"{{operationsFareEffectiveFrom}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/fares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "fares"
+              ]
+            },
+            "description": "Writes a new first-class row two seconds out. The old row is kept, so a hold already made keeps its price. Catalog refuses a past instant (BR-51)."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Again",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Wait for the effective instant before asking. Search resolves the",
+                  "// fare against now, and a read before it would cache the old amount.",
+                  "const effective = Date.parse(",
+                  "    pm.environment.get(\"operationsFareEffectiveFrom\"),",
+                  ");",
+                  "const waitUntil = effective + 500 - Date.now();",
+                  "if (waitUntil > 0) {",
+                  "    const end = Date.now() + waitUntil;",
+                  "    while (Date.now() < end) {}",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Travellers now see the changed fare\", function () {",
+                  "    const trips = pm.response.json().data.trips;",
+                  "    const number = Number(pm.environment.get(\"operationsTrainNumber\"));",
+                  "    const trip = trips.find((candidate) => candidate.trainNumber === number);",
+                  "    pm.expect(trip).to.be.an(\"object\");",
+                  "    pm.expect(trip.fare.amountMinor).to.eql(17500);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/search?from={{searchTo}}&to={{searchFrom}}&departureDate={{searchDepartureDate}}&travelClassId={{searchTravelClassId}}&trainNumber={{operationsTrainNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{searchTo}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{searchFrom}}"
+                },
+                {
+                  "key": "departureDate",
+                  "value": "{{searchDepartureDate}}"
+                },
+                {
+                  "key": "travelClassId",
+                  "value": "{{searchTravelClassId}}"
+                },
+                {
+                  "key": "trainNumber",
+                  "value": "{{operationsTrainNumber}}"
+                }
+              ]
+            },
+            "description": "The same search as before. The outbox relay has invalidated the route and the changed row is in force, so the fare is 17,500 piastres."
+          },
+          "response": []
+        },
+        {
+          "name": "Read Operations Audit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Both actions are on the trail for train 916\", function () {",
+                  "    const entries = pm.response.json().data.entries;",
+                  "    const actions = entries.map((entry) => entry.action);",
+                  "    pm.expect(actions).to.include(\"timetable.published\");",
+                  "    pm.expect(actions).to.include(\"fare.changed\");",
+                  "});",
+                  "",
+                  "pm.test(\"Each entry names the operator and its request\", function () {",
+                  "    const entries = pm.response.json().data.entries;",
+                  "    const actor = pm.environment.get(\"operationsActorAccountId\");",
+                  "    const published = entries.find((entry) => entry.action === \"timetable.published\");",
+                  "    const changed = entries.find((entry) => entry.action === \"fare.changed\");",
+                  "    pm.expect(published.actorAccountId).to.eql(actor);",
+                  "    pm.expect(changed.actorAccountId).to.eql(actor);",
+                  "    pm.expect(published.correlationId).to.eql(",
+                  "        pm.environment.get(\"operationsPublishCorrelationId\"),",
+                  "    );",
+                  "    pm.expect(changed.correlationId).to.eql(",
+                  "        pm.environment.get(\"operationsFareCorrelationId\"),",
+                  "    );",
+                  "    pm.expect(published.correlationId).to.not.eql(changed.correlationId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/audit?trainId={{operationsTrainId}}&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "trainId",
+                  "value": "{{operationsTrainId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Newest first. Filtering by train keeps the assertion on the two actions this run wrote; the correlation ids are the ones the gateway stamped on the write responses."
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Retried with Same Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"The replay returns the first answer, not a new version\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.timetableId).to.eql(",
+                  "        pm.environment.get(\"operationsTimetableId\"),",
+                  "    );",
+                  "    pm.expect(data.version).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{operationsPublishKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trainNumber\": \"{{operationsTrainNumber}}\",\n  \"runningDays\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6\n  ],\n  \"effectiveFrom\": \"{{operationsEffectiveFrom}}\",\n  \"stops\": [\n    {\n      \"stationId\": \"{{searchTo}}\",\n      \"position\": 1,\n      \"dayOffset\": 0,\n      \"departureTime\": \"09:00\"\n    },\n    {\n      \"stationId\": \"{{searchFrom}}\",\n      \"position\": 2,\n      \"dayOffset\": 0,\n      \"arrivalTime\": \"12:00\"\n    }\n  ],\n  \"coaches\": [\n    {\n      \"position\": 1,\n      \"coachNumber\": 1,\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"coachLayoutId\": \"00000006-0000-4000-8000-000000000001\"\n    }\n  ],\n  \"fares\": [\n    {\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"originStationId\": \"{{searchTo}}\",\n      \"destinationStationId\": \"{{searchFrom}}\",\n      \"amountPiastres\": 15000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/timetables",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "operations",
+                "timetables"
+              ]
+            },
+            "description": "Replays the exact publish body under the same `Idempotency-Key`. The response is byte-for-byte the stored first answer and no second timetable version is written."
+          },
+          "response": []
         }
       ]
     },
