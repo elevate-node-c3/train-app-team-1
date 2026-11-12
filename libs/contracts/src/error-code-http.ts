@@ -11,6 +11,7 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.UNAUTHORIZED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.RESOURCE_NOT_FOUND]: 404,
+  [ErrorCode.CONFLICT]: 409,
   [ErrorCode.EMAIL_ALREADY_REGISTERED]: 409,
   [ErrorCode.EMAIL_NOT_VERIFIED]: 409,
   [ErrorCode.VERIFICATION_REQUIRED]: 409,
