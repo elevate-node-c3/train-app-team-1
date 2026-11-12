@@ -55,9 +55,8 @@ export class TripStopsService {
         {
           field: 'tripId',
           rejectedValue: request.tripId,
-          issue: 'is not a trip that stops at these stations in this order',
-          action:
-            'Pick a trip from the search results and open its stops again',
+          issueKey: 'ISSUE_TRIP_DOES_NOT_SERVE_PAIR',
+          actionKey: 'ACTION_PICK_TRIP_FROM_RESULTS',
         },
       ]);
     }

@@ -163,10 +163,7 @@ describe('the return search service', () => {
         rows: [returnRow('2026-06-25T06:00:00Z')],
       });
 
-      await service.search(
-        request({ outboundOriginStationId: FIRST }),
-        NOW,
-      );
+      await service.search(request({ outboundOriginStationId: FIRST }), NOW);
 
       expect(repository.findCandidates).toHaveBeenCalledWith(
         expect.objectContaining({ destinationStationId: RAMSIS }),
@@ -215,9 +212,7 @@ describe('the return search service', () => {
     // know how long this station takes to cross, so it invents nothing.
     it('excludes a trip departing at the exact arrival instant', async () => {
       const { service } = makeService({
-        rows: [
-          returnRow(OUTBOUND_SEGMENT.destinationArrivalAt.toISOString()),
-        ],
+        rows: [returnRow(OUTBOUND_SEGMENT.destinationArrivalAt.toISOString())],
       });
 
       const response = await service.search(request(), NOW);
@@ -327,6 +322,10 @@ describe('the return search service', () => {
       expect(error.details.map((detail) => detail.field)).toEqual([
         'outboundTripId',
       ]);
+      expect(error.details[0]).toMatchObject({
+        issueKey: 'ISSUE_OUTBOUND_TRIP_ID_MALFORMED',
+        actionKey: 'ACTION_SEARCH_AGAIN_FOR_OUTBOUND',
+      });
       expect(repository.findPassengerSegment).not.toHaveBeenCalled();
     });
 
@@ -340,7 +339,11 @@ describe('the return search service', () => {
         .catch((caught: unknown) => caught)) as CatalogSearchError;
 
       expect(error.details[0].field).toBe('returnDate');
-      expect(error.details[0].action).toContain('2026-06-20');
+      expect(error.details[0]).toMatchObject({
+        issueKey: 'ISSUE_RETURN_BEFORE_DEPARTURE',
+        actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+        params: { departureDate: '2026-06-20' },
+      });
       expect(repository.findCandidates).not.toHaveBeenCalled();
     });
 
@@ -365,7 +368,14 @@ describe('the return search service', () => {
         .catch((caught: unknown) => caught)) as CatalogSearchError;
 
       expect(error.details[0].field).toBe('returnDate');
-      expect(error.details[0].action).toContain('2026-07-14');
+      expect(error.details[0]).toMatchObject({
+        issueKey: 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
+        actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+        params: {
+          firstBookableDate: '2026-06-15',
+          lastBookableDate: '2026-07-14',
+        },
+      });
     });
 
     it('refuses a malformed filter', async () => {

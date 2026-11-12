@@ -155,8 +155,9 @@ describe('the trip-stops service', () => {
     expect(refusal.details[0]).toMatchObject({
       field: 'tripId',
       rejectedValue: TRIP,
+      issueKey: 'ISSUE_TRIP_DOES_NOT_SERVE_PAIR',
+      actionKey: 'ACTION_PICK_TRIP_FROM_RESULTS',
     });
-    expect(refusal.details[0].action).not.toBe('');
     expect(cache.set).not.toHaveBeenCalled();
   });
 

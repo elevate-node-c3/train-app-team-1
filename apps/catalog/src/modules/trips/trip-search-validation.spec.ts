@@ -36,22 +36,29 @@ describe('validating the search request shape', () => {
     // BR-57: a refusal that does not say what to change is the failure this
     // rule exists to prevent.
     const details = validateSearchShape(
-      validRequest({ originStationId: 'not-a-uuid', departureDate: 'nonsense' }),
+      validRequest({
+        originStationId: 'not-a-uuid',
+        departureDate: 'nonsense',
+      }),
       NOW,
     );
 
     expect(details.length).toBeGreaterThan(0);
     for (const detail of details) {
       expect(detail.field).not.toBe('');
-      expect(detail.issue).not.toBe('');
-      expect(detail.action).not.toBe('');
+      expect(detail.issueKey).toMatch(/^ISSUE_/);
+      expect(detail.actionKey).toMatch(/^ACTION_/);
+      expect(detail).not.toHaveProperty('issue');
+      expect(detail).not.toHaveProperty('action');
     }
   });
 
   describe('the stations', () => {
     it('refuses a missing or malformed station id', () => {
       expect(
-        fieldsOf(validateSearchShape(validRequest({ originStationId: '' }), NOW)),
+        fieldsOf(
+          validateSearchShape(validRequest({ originStationId: '' }), NOW),
+        ),
       ).toContain('from');
       expect(
         fieldsOf(
@@ -72,15 +79,35 @@ describe('validating the search request shape', () => {
       );
 
       expect(fieldsOf(details)).toEqual(['to']);
-      expect(details[0].rejectedValue).toBe(CAIRO);
+      expect(details[0]).toEqual({
+        field: 'to',
+        rejectedValue: CAIRO,
+        issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+        actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+      });
     });
   });
 
   describe('the departure date', () => {
+    it.each([
+      ['20-06-2026', 'ISSUE_CIVIL_DATE_FORMAT'],
+      ['2026-02-30', 'ISSUE_NOT_A_CALENDAR_DATE'],
+    ])('keeps the distinct reason for %s', (departureDate, issueKey) => {
+      expect(
+        validateSearchShape(validRequest({ departureDate }), NOW)[0],
+      ).toMatchObject({
+        issueKey,
+        actionKey: 'ACTION_PICK_DATE_FROM_CALENDAR',
+      });
+    });
+
     it('refuses a date that is not YYYY-MM-DD', () => {
       expect(
         fieldsOf(
-          validateSearchShape(validRequest({ departureDate: '20-06-2026' }), NOW),
+          validateSearchShape(
+            validRequest({ departureDate: '20-06-2026' }),
+            NOW,
+          ),
         ),
       ).toEqual(['departureDate']);
     });
@@ -123,9 +150,29 @@ describe('validating the search request shape', () => {
     it('refuses yesterday', () => {
       expect(
         fieldsOf(
-          validateSearchShape(validRequest({ departureDate: '2026-06-14' }), NOW),
+          validateSearchShape(
+            validRequest({ departureDate: '2026-06-14' }),
+            NOW,
+          ),
         ),
       ).toEqual(['departureDate']);
+    });
+
+    it('preserves the past-date reason and the complete booking window as params', () => {
+      expect(
+        validateSearchShape(validRequest({ departureDate: '2026-06-14' }), NOW),
+      ).toEqual([
+        {
+          field: 'departureDate',
+          rejectedValue: '2026-06-14',
+          issueKey: 'ISSUE_DATE_IN_THE_PAST',
+          actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+          params: {
+            firstBookableDate: '2026-06-15',
+            lastBookableDate: '2026-07-14',
+          },
+        },
+      ]);
     });
 
     it('refuses a date past the window and states the last bookable one', () => {
@@ -136,7 +183,14 @@ describe('validating the search request shape', () => {
 
       expect(fieldsOf(details)).toEqual(['departureDate']);
       // The traveller needs the date to pick instead, not just a rejection.
-      expect(details[0].action).toContain('2026-07-14');
+      expect(details[0]).toMatchObject({
+        issueKey: 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
+        actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+        params: {
+          firstBookableDate: '2026-06-15',
+          lastBookableDate: '2026-07-14',
+        },
+      });
     });
 
     it('accepts both ends of the window', () => {
@@ -226,7 +280,11 @@ describe('validating the search request shape', () => {
 
       expect(fieldsOf(details)).toEqual(['returnDate']);
       // The action carries the date to pick instead, not just the complaint.
-      expect(details[0].action).toContain('2026-06-20');
+      expect(details[0]).toMatchObject({
+        issueKey: 'ISSUE_RETURN_BEFORE_DEPARTURE',
+        actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+        params: { departureDate: '2026-06-20' },
+      });
     });
 
     it('refuses a return date past the booking window', () => {
@@ -236,7 +294,14 @@ describe('validating the search request shape', () => {
       );
 
       expect(fieldsOf(details)).toEqual(['returnDate']);
-      expect(details[0].action).toContain('2026-07-14');
+      expect(details[0]).toMatchObject({
+        issueKey: 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
+        actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+        params: {
+          firstBookableDate: '2026-06-15',
+          lastBookableDate: '2026-07-14',
+        },
+      });
     });
 
     it('refuses a malformed return date', () => {
@@ -265,7 +330,14 @@ describe('validating a return date (BR-20)', () => {
     const details = validateReturnDate('2026-06-10', '2026-06-01', NOW);
 
     expect(fieldsOf(details)).toEqual(['returnDate']);
-    expect(details[0].issue).toContain('past');
+    expect(details[0]).toMatchObject({
+      issueKey: 'ISSUE_DATE_IN_THE_PAST',
+      actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+      params: {
+        firstBookableDate: '2026-06-15',
+        lastBookableDate: '2026-07-14',
+      },
+    });
   });
 
   // The second leg calls this with the chosen trip's own departure date, which
@@ -327,7 +399,10 @@ describe('validating the search request against the catalogue', () => {
     });
 
     expect(fieldsOf(details)).toEqual(['from']);
-    expect(details[0].issue).toContain('active');
+    expect(details[0]).toMatchObject({
+      issueKey: 'ISSUE_STATION_NOT_ACTIVE',
+      actionKey: 'ACTION_PICK_ANOTHER_STATION',
+    });
   });
 
   it('refuses an unknown seat class', () => {

@@ -5,7 +5,7 @@ import {
   civilDateTimeOf,
   type SearchReturnTripsRequest,
   type SearchReturnTripsResponse,
-  type ValidationErrorDetail,
+  type ValidationIssueRef,
 } from '@app/contracts';
 
 import { CatalogReferenceRepository } from './catalog-reference.repository.js';
@@ -16,10 +16,7 @@ import { buildTripList } from './trip-result.js';
 import { TripSearchRepository } from './trip-search.repository.js';
 import { emptyReasonFor } from './trip-search-empty-reason.js';
 import { filterOptionsFor, validateFilters } from './trip-search-filters.js';
-import {
-  isUuid,
-  validateReturnDate,
-} from './trip-search-validation.js';
+import { isUuid, validateReturnDate } from './trip-search-validation.js';
 import { applyDynamicEligibility } from './trip-sellability.js';
 import type { PassengerSegmentRow } from './trip-search.types.js';
 
@@ -151,7 +148,7 @@ export class TripReturnSearchService {
 
   /** Shape first, so an obvious refusal costs no queries. */
   private refuseMalformed(request: SearchReturnTripsRequest): void {
-    const details: ValidationErrorDetail[] = [];
+    const details: ValidationIssueRef[] = [];
 
     for (const [field, value] of [
       ['outboundTripId', request.outboundTripId],
@@ -164,8 +161,11 @@ export class TripReturnSearchService {
       details.push({
         field,
         rejectedValue: value,
-        issue: 'is not a valid identifier',
-        action: 'Choose the outbound trip from the search results again',
+        issueKey:
+          field === 'outboundTripId'
+            ? 'ISSUE_OUTBOUND_TRIP_ID_MALFORMED'
+            : 'ISSUE_MUST_BE_UUID',
+        actionKey: 'ACTION_SEARCH_AGAIN_FOR_OUTBOUND',
       });
     }
 
@@ -200,8 +200,8 @@ export class TripReturnSearchService {
         {
           field: 'outboundTripId',
           rejectedValue: request.outboundTripId,
-          issue: 'is no longer an available trip between those stations',
-          action: 'Search again and choose an outbound trip',
+          issueKey: 'ISSUE_OUTBOUND_TRIP_GONE',
+          actionKey: 'ACTION_SEARCH_AGAIN_FOR_OUTBOUND',
         },
       ]);
     }
@@ -227,14 +227,14 @@ export class TripReturnSearchService {
       trainNumber: null,
     });
 
-    const details: ValidationErrorDetail[] = [];
+    const details: ValidationIssueRef[] = [];
 
     if (!facts.travelClassExists) {
       details.push({
         field: 'travelClassId',
         rejectedValue: request.travelClassId,
-        issue: 'is not an offered seat class',
-        action: 'Choose a seat class from the list',
+        issueKey: 'ISSUE_SEAT_CLASS_NOT_OFFERED',
+        actionKey: 'ACTION_PICK_SEAT_CLASS_FROM_LIST',
       });
     }
 
@@ -248,8 +248,8 @@ export class TripReturnSearchService {
         details.push({
           field,
           rejectedValue: stationId,
-          issue: 'is not an active station',
-          action: 'Search again with another station',
+          issueKey: 'ISSUE_STATION_NOT_ACTIVE',
+          actionKey: 'ACTION_SEARCH_AGAIN_WITH_ANOTHER_STATION',
         });
       }
     }

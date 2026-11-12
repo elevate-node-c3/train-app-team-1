@@ -3,7 +3,7 @@ import {
   type FilterOptions,
   type SearchFilters,
   type TrainTypeOption,
-  type ValidationErrorDetail,
+  type ValidationIssueRef,
 } from '@app/contracts';
 
 import { isUuid } from './trip-search-validation.js';
@@ -45,10 +45,10 @@ export interface FilterableTrip {
  */
 export function validateFilters(
   filters: SearchFilters | undefined,
-): ValidationErrorDetail[] {
+): ValidationIssueRef[] {
   if (filters === undefined) return [];
 
-  const details: ValidationErrorDetail[] = [];
+  const details: ValidationIssueRef[] = [];
 
   if (filters.trainTypeIds !== undefined) {
     for (const id of filters.trainTypeIds) {
@@ -57,8 +57,8 @@ export function validateFilters(
       details.push({
         field: 'trainTypeIds',
         rejectedValue: id,
-        issue: 'is not a known train-type identifier',
-        action: 'Choose a train type from the list',
+        issueKey: 'ISSUE_TRAIN_TYPE_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_TRAIN_TYPE_FROM_LIST',
       });
     }
   }
@@ -78,8 +78,8 @@ export function validateFilters(
     details.push({
       field,
       rejectedValue: minutes,
-      issue: 'is not a time of day',
-      action: 'Pick a time between 00:00 and 23:59',
+      issueKey: 'ISSUE_NOT_A_TIME_OF_DAY',
+      actionKey: 'ACTION_PICK_TIME_IN_DAY',
     });
   }
 
@@ -103,8 +103,8 @@ export function validateFilters(
     details.push({
       field: 'departBeforeMinutes',
       rejectedValue: before,
-      issue: 'is not after the earliest departure time',
-      action: 'Pick a later time, or leave it empty',
+      issueKey: 'ISSUE_WINDOW_ENDS_BEFORE_IT_STARTS',
+      actionKey: 'ACTION_PICK_LATER_TIME_OR_CLEAR',
     });
   }
 
@@ -118,8 +118,8 @@ export function validateFilters(
       details.push({
         field: 'maxFareMinor',
         rejectedValue: maxFareMinor,
-        issue: 'is not a fare amount in piastres',
-        action: 'Enter an amount in piastres, or clear it to see every price',
+        issueKey: 'ISSUE_NOT_A_FARE_AMOUNT',
+        actionKey: 'ACTION_FIX_OR_CLEAR_MAX_FARE',
       });
     }
   }
@@ -131,8 +131,8 @@ export function validateFilters(
     details.push({
       field: 'excludeSoldOut',
       rejectedValue: filters.excludeSoldOut,
-      issue: 'is not a yes-or-no choice',
-      action: 'Choose whether to hide sold-out trips',
+      issueKey: 'ISSUE_MUST_BE_YES_OR_NO',
+      actionKey: 'ACTION_CHOOSE_SOLD_OUT_PREFERENCE',
     });
   }
 

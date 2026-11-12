@@ -196,7 +196,14 @@ describe('the search service', () => {
         .catch((caught: unknown) => caught)) as CatalogSearchError;
 
       // The traveller needs the date to pick instead, not only a rejection.
-      expect(error.details[0].action).toContain('2026-07-14');
+      expect(error.details[0]).toMatchObject({
+        issueKey: 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
+        actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+        params: {
+          firstBookableDate: '2026-06-15',
+          lastBookableDate: '2026-07-14',
+        },
+      });
     });
 
     it('refuses an inactive station without touching the database', async () => {
