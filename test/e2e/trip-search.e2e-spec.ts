@@ -759,29 +759,42 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       expect(data.emptyResult?.message).toContain('return date');
     });
 
-    it('refuses an outbound trip that does not exist', async () => {
-      const { status, body } = await searchReturnTrips(
-        {
-          outboundTripId: '00000000-0000-4000-8000-000000000000',
-          outboundFrom: fixture.stations.alexandria,
-          outboundTo: fixture.stations.ramsis,
-          returnDate: fixture.returnDate,
-          travelClassId: fixture.travelClasses.first,
-        },
-        { token },
-      );
+    it.each(DETAIL_LANGUAGE_HEADERS)(
+      'localizes a missing-outbound-trip 404 for %s',
+      async (acceptLanguage) => {
+        const { status, body } = await searchReturnTrips(
+          {
+            outboundTripId: '00000000-0000-4000-8000-000000000000',
+            outboundFrom: fixture.stations.alexandria,
+            outboundTo: fixture.stations.ramsis,
+            returnDate: fixture.returnDate,
+            travelClassId: fixture.travelClasses.first,
+          },
+          { token, acceptLanguage },
+        );
 
-      expect(status).toBe(404);
-      /**
-       * The code, not the field details. `HttpExceptionFilter` lifts catalog's
-       * field details into `error.details` only for a 400 -- a platform
-       * decision, not this story's -- so a 404 carries the code and its
-       * localized sentence. That is enough here: the request names exactly one
-       * trip, so there is no ambiguity about which field to change.
-       */
-      expect(body.error?.code).toBe('RESOURCE_NOT_FOUND');
-      expect(body.error?.message.length).toBeGreaterThan(0);
-    });
+        expect(status).toBe(404);
+        expect(body.error?.code).toBe('RESOURCE_NOT_FOUND');
+        expect(body.error?.message.length).toBeGreaterThan(0);
+        expect(body.error?.details).toEqual([
+          {
+            field: 'outboundTripId',
+            rejectedValue: '00000000-0000-4000-8000-000000000000',
+            issue:
+              acceptLanguage?.startsWith('en') === true
+                ? 'This trip is no longer available between those stations.'
+                : 'هذه الرحلة لم تعد متاحة بين هاتين المحطتين.',
+            action:
+              acceptLanguage?.startsWith('en') === true
+                ? 'Search again and choose an outbound trip.'
+                : 'ابحث مرة أخرى واختر رحلة ذهاب.',
+          },
+        ]);
+        expect(JSON.stringify(body.error?.details)).not.toMatch(
+          /issueKey|actionKey|params|\{\{|undefined/,
+        );
+      },
+    );
 
     it('refuses an anonymous request', async () => {
       const { status } = await searchReturnTrips({
@@ -976,7 +989,23 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
         fixture.stations.assiut,
         fixture.stations.aswan,
       ]) {
-        await runSearch({ from: fixture.stations.alexandria, to });
+        const { status, body } = await runSearch({
+          from: fixture.stations.alexandria,
+          to,
+        });
+        expect(status, JSON.stringify(body.error)).toBe(200);
+        await waitFor(
+          `recent Alexandria-to-${to} search to be persisted`,
+          async () => {
+            const { recentSearches: entries } = await listFor(token);
+            return (
+              entries[0]?.origin.id === fixture.stations.alexandria &&
+              entries[0]?.destination.id === to
+            );
+          },
+          10_000,
+          100,
+        );
       }
 
       const { recentSearches: entries } = await listFor(token);

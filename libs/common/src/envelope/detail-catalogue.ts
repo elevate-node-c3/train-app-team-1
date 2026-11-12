@@ -120,8 +120,8 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     en: 'Train types must be a comma-separated list of identifiers.',
   },
   ISSUE_CLOCK_TIME_FORMAT: {
-    ar: 'يجب كتابة هذا الوقت على صورة HH:mm.',
-    en: 'This time must be written as HH:mm.',
+    ar: 'هذا الوقت يجب أن يكون صالحاً من 00:00 إلى 23:59، على صورة HH:mm.',
+    en: 'This time must be a valid time of day from 00:00 to 23:59, written as HH:mm.',
   },
   ISSUE_FARE_NOT_A_NUMBER: {
     ar: 'الأجرة يجب أن تكون عدداً صحيحاً من القروش.',

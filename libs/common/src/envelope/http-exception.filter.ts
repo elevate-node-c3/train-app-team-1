@@ -116,6 +116,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
           }
           break;
       }
+
+      // Business refusals carry public refs; ordinary server errors stay log-only.
+      if (
+        status === HttpStatus.NOT_FOUND ||
+        status === HttpStatus.CONFLICT ||
+        (status === HttpStatus.SERVICE_UNAVAILABLE &&
+          code === ErrorCode.DEPENDENCY_UNAVAILABLE)
+      ) {
+        details = this.extractValidationDetails(response, lang, false);
+      }
     } else {
       // Non-HttpException: Always 500, never leak stack trace or internal message to client
       status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -149,6 +159,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private extractValidationDetails(
     response: unknown,
     lang: SupportedLanguage,
+    allowBareMessages = true,
   ): ValidationErrorDetail[] | undefined {
     if (!response || typeof response !== 'object') {
       return undefined;
@@ -165,8 +176,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // If message is an array of strings produced by ValidationPipe
     if (Array.isArray(messages)) {
-      return messages.map((msgItem) => {
+      return messages.flatMap<ValidationErrorDetail>((msgItem) => {
         if (typeof msgItem === 'string') {
+          if (!allowBareMessages) return [];
           // Attempt to extract property name from validation string (e.g. "email must be an email")
           const firstWord = msgItem.split(' ')[0] || 'field';
           return {
@@ -178,13 +190,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
         if (typeof msgItem === 'object' && msgItem !== null) {
           const itemObj = msgItem as Record<string, unknown>;
-          const field =
-            typeof itemObj.property === 'string'
-              ? itemObj.property
-              : typeof itemObj.field === 'string'
-                ? itemObj.field
-                : 'field';
-          if (typeof itemObj.issueKey === 'string') {
+          if (
+            typeof itemObj.field === 'string' &&
+            typeof itemObj.issueKey === 'string'
+          ) {
             const params =
               itemObj.params !== null &&
               typeof itemObj.params === 'object' &&
@@ -202,7 +211,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
                 : ACTION_DEFAULT_KEY;
             const action = resolveDetailText(actionKey, lang, params);
             return {
-              field,
+              field: itemObj.field,
               rejectedValue: itemObj.rejectedValue,
               // Version skew must not expose an unfilled template to a caller.
               issue: issue.includes('{{')
@@ -211,41 +220,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
               action: action.includes('{{') ? defaultAction : action,
             };
           }
-          const issue =
-            typeof itemObj.constraints === 'object' &&
-            itemObj.constraints !== null
-              ? Object.values(
-                  itemObj.constraints as Record<string, string>,
-                ).join(', ')
-              : typeof itemObj.issue === 'string'
-                ? itemObj.issue
-                : typeof itemObj.message === 'string'
-                  ? itemObj.message
-                  : 'Validation failed';
-          const action =
-            typeof itemObj.action === 'string' && itemObj.action.length > 0
-              ? itemObj.action
-              : defaultAction;
-          return {
-            field,
-            rejectedValue:
-              'rejectedValue' in itemObj
-                ? itemObj.rejectedValue
-                : itemObj.value,
-            issue,
-            action,
-          };
         }
-        return {
-          field: 'field',
-          rejectedValue: undefined,
-          issue: String(msgItem),
-          action: defaultAction,
-        };
+        return [];
       });
     }
 
-    if (typeof messages === 'string') {
+    if (allowBareMessages && typeof messages === 'string') {
       return [
         {
           field: 'payload',
