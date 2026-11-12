@@ -4,6 +4,7 @@ import { DataSource, In, LessThanOrEqual } from 'typeorm';
 
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
+import { uuidShapedOnly } from '@app/common/validation/uuid.js';
 
 import { FareEntity } from '../fares/entities/fare.entity.js';
 import { StationEntity } from '../stations/entities/station.entity.js';
@@ -13,17 +14,6 @@ import { TrainEntity } from '../trains/entities/train.entity.js';
 import { TravelClassEntity } from '../trains/entities/travel-class.entity.js';
 import { pickEffectiveTimetable } from './timetable-version.service.js';
 import type { FareChangeReferences } from './fare-change.types.js';
-
-/**
- * A UUID column rejects a malformed id with `22P02`, so filter to UUID shape
- * first or a typo becomes a 500 instead of an unknown-reference refusal.
- */
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function uuidsOnly(ids: string[]): string[] {
-  return [...new Set(ids.filter((id) => UUID_PATTERN.test(id)))];
-}
 
 /** Every read and write a fare change needs, and nothing else (TA-20). */
 @Injectable()
@@ -48,14 +38,18 @@ export class FareChangeRepository {
             .getRepository(TrainEntity)
             .findOne({ where: { trainNumber: params.trainNumber } });
 
-    const classIds = uuidsOnly([params.travelClassId]);
+    /**
+     * A UUID column rejects a malformed id with `22P02`, so filter to UUID shape
+     * first or a typo becomes a 500 instead of an unknown-reference refusal.
+     */
+    const classIds = uuidShapedOnly([params.travelClassId]);
     const travelClass = classIds.length
       ? await manager
           .getRepository(TravelClassEntity)
           .findOne({ where: { id: classIds[0] } })
       : null;
 
-    const stationIds = uuidsOnly(params.stationIds);
+    const stationIds = uuidShapedOnly(params.stationIds);
     const stations = stationIds.length
       ? await manager.getRepository(StationEntity).find({
           where: { id: In(stationIds) },

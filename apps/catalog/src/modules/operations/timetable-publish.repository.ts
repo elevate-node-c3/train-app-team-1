@@ -8,6 +8,7 @@ import type {
 } from '@app/contracts';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
+import { uuidShapedOnly } from '@app/common/validation/uuid.js';
 
 import { FareEntity } from '../fares/entities/fare.entity.js';
 import { CoachLayoutEntity } from '../trains/entities/coach-layout.entity.js';
@@ -19,19 +20,6 @@ import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entit
 import { DatedTripEntity } from '../trips/entities/dated-trip.entity.js';
 import { TripStopEntity } from '../trips/entities/trip-stop.entity.js';
 import type { PublishReferences } from './timetable-publish.types.js';
-
-/**
- * A uuid column rejects a malformed value with `22P02` rather than "no such
- * row", so an id an operator mistyped would come back as a 500 instead of the
- * unknown-station refusal it is. Filtering to uuid shape first turns every
- * malformed id into "not in the known set", which is the honest answer.
- */
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function uuidsOnly(ids: string[]): string[] {
-  return [...new Set(ids.filter((id) => UUID_PATTERN.test(id)))];
-}
 
 /**
  * Every read and write a timetable publish needs, and nothing else.
@@ -90,7 +78,13 @@ export class TimetablePublishRepository {
             relations: { trainType: true },
           });
 
-    const stationIds = uuidsOnly(params.stationIds);
+    /**
+     * A uuid column rejects a malformed value with `22P02` rather than "no such
+     * row", so an id an operator mistyped would come back as a 500 instead of the
+     * unknown-station refusal it is. Filtering to uuid shape first turns every
+     * malformed id into "not in the known set", which is the honest answer.
+     */
+    const stationIds = uuidShapedOnly(params.stationIds);
     const stations = stationIds.length
       ? await manager.getRepository(StationEntity).find({
           where: { id: In(stationIds) },
@@ -98,14 +92,14 @@ export class TimetablePublishRepository {
         })
       : [];
 
-    const layoutIds = uuidsOnly(params.coachLayoutIds);
+    const layoutIds = uuidShapedOnly(params.coachLayoutIds);
     const layouts = layoutIds.length
       ? await manager
           .getRepository(CoachLayoutEntity)
           .find({ where: { id: In(layoutIds) } })
       : [];
 
-    const classIds = uuidsOnly(params.travelClassIds);
+    const classIds = uuidShapedOnly(params.travelClassIds);
     const classes = classIds.length
       ? await manager
           .getRepository(TravelClassEntity)
