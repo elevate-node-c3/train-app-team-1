@@ -29,6 +29,7 @@ import { FareChangeRepository } from './fare-change.repository.js';
 import { FareChangeService } from './fare-change.service.js';
 import { OperationsAuditRepository } from './operations-audit.repository.js';
 import { OperationsAuditService } from './operations-audit.service.js';
+import { OperationsGrpcController } from './operations.grpc.controller.js';
 import { OperationsRequestRepository } from './operations-request.repository.js';
 import { TimetablePublishRepository } from './timetable-publish.repository.js';
 import { TimetablePublishService } from './timetable-publish.service.js';
@@ -99,6 +100,7 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
       },
     ]),
   ],
+  controllers: [OperationsGrpcController],
   providers: [
     InventorySeatUsageClient,
     TimetableVersionService,
