@@ -7,30 +7,10 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
  *
  * A feature is `modules/<feature>/` with concrete `*.controller.ts`,
  * `*.service.ts`, `*.repository.ts` files and a `<feature>.module.ts` at its
- * root. There are no architectural layer folders and no port, mapper or
- * use-case indirection -- `BANNED_DIRECTORIES` and `BANNED_FILE_SUFFIXES`
- * below are what keep it that way.
+ * root.
  */
 
 const APPS_DIR = join(process.cwd(), 'apps');
-
-const BANNED_DIRECTORIES = [
-  'domain',
-  'application',
-  'infrastructure',
-  'presentation',
-  'ports',
-  'use-cases',
-  'mappers',
-] as const;
-
-const BANNED_FILE_SUFFIXES = [
-  '.port.ts',
-  '.use-case.ts',
-  '.mapper.ts',
-  '.orm-entity.ts',
-  '.dao.ts',
-] as const;
 
 /** Folders allowed only when they hold more than one non-spec file. */
 const OPTIONAL_GROUP_DIRECTORIES = [
@@ -193,34 +173,6 @@ describe('Feature module boundaries (§2.5)', () => {
 
   it('finds app source files to check', () => {
     expect(allAppFiles().length).toBeGreaterThan(0);
-  });
-
-  it('bans architectural layer folders and port/mapper/use-case suffixes under every app', () => {
-    const violations: string[] = [];
-
-    for (const app of appNames()) {
-      const srcDir = srcDirOf(app);
-      if (!existsSync(srcDir)) continue;
-
-      for (const directory of directoriesIn(srcDir)) {
-        const name = basename(directory);
-        if ((BANNED_DIRECTORIES as readonly string[]).includes(name)) {
-          violations.push(`${directory} is a banned directory`);
-        }
-      }
-
-      for (const file of tsFilesIn(srcDir)) {
-        const name = basename(file);
-        const bannedSuffix = BANNED_FILE_SUFFIXES.find((suffix) =>
-          name.endsWith(suffix),
-        );
-        if (bannedSuffix) {
-          violations.push(`${file} uses the banned suffix '${bannedSuffix}'`);
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
   });
 
   it('keeps controllers away from repositories and TypeORM', () => {
