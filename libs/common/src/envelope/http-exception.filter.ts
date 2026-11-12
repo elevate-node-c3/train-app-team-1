@@ -18,6 +18,12 @@ import {
   resolveMessage,
   SupportedLanguage,
 } from './catalogue.js';
+import {
+  ACTION_DEFAULT_KEY,
+  DETAIL_CATALOGUE,
+  ISSUE_FALLBACK_KEY,
+  resolveDetailText,
+} from './detail-catalogue.js';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -155,10 +161,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return undefined;
     }
 
-    const defaultAction =
-      lang === 'en'
-        ? 'Please provide a valid value according to the specified constraints and try again'
-        : 'يرجى تقديم قيمة صالحة وفقاً للشروط المحددة والمحاولة مرة أخرى';
+    const defaultAction = resolveDetailText(ACTION_DEFAULT_KEY, lang);
 
     // If message is an array of strings produced by ValidationPipe
     if (Array.isArray(messages)) {
@@ -181,6 +184,33 @@ export class HttpExceptionFilter implements ExceptionFilter {
               : typeof itemObj.field === 'string'
                 ? itemObj.field
                 : 'field';
+          if (typeof itemObj.issueKey === 'string') {
+            const params =
+              itemObj.params !== null &&
+              typeof itemObj.params === 'object' &&
+              !Array.isArray(itemObj.params) &&
+              Object.values(itemObj.params).every(
+                (value) => typeof value === 'string',
+              )
+                ? (itemObj.params as Record<string, string>)
+                : undefined;
+            const issue = resolveDetailText(itemObj.issueKey, lang, params);
+            const actionKey =
+              typeof itemObj.actionKey === 'string' &&
+              Object.hasOwn(DETAIL_CATALOGUE, itemObj.actionKey)
+                ? itemObj.actionKey
+                : ACTION_DEFAULT_KEY;
+            const action = resolveDetailText(actionKey, lang, params);
+            return {
+              field,
+              rejectedValue: itemObj.rejectedValue,
+              // Version skew must not expose an unfilled template to a caller.
+              issue: issue.includes('{{')
+                ? resolveDetailText(ISSUE_FALLBACK_KEY, lang)
+                : issue,
+              action: action.includes('{{') ? defaultAction : action,
+            };
+          }
           const issue =
             typeof itemObj.constraints === 'object' &&
             itemObj.constraints !== null
