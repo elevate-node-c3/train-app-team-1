@@ -67,6 +67,23 @@ export class TimetablesService {
     });
   }
 
+  /**
+   * The **seeding** path: flips a timetable somebody already prepared as a
+   * draft to published. Its one caller is `database/seeds/catalog.seed.ts`.
+   *
+   * `TimetablePublishService.publish` is the **operator** path, and the two
+   * are not interchangeable. This one writes no audit entry, which is right:
+   * BR-52 records operator actions, and seeding is not one -- there is no
+   * actor account to attribute it to. It also takes a timetable id rather
+   * than a timetable, because the row and its stops already exist.
+   *
+   * The one rule it must not break: since migration 1793300000006,
+   * `excl_timetable_published_overlap` allows exactly one *published* version
+   * per train per effective range. A seed that prepared two drafts for one
+   * train with overlapping ranges and published both would be refused by the
+   * database on the second call. Seed one published version per train, and
+   * let the operator path add the next one.
+   */
   async publishTimetable(timetableId: string): Promise<TimetableEntity> {
     // Validate whole, then write. Generation runs after the commit, so a fare
     // gap found there would otherwise leave a published timetable with no trips.
