@@ -8,6 +8,7 @@ import { CreateRecentSearch1793300000003 } from './1793300000003-create-recent-s
 import { CreateCatalogOutbox1793300000004 } from './1793300000004-create-catalog-outbox.js';
 import { CreateCatalogProcessedEvent1793300000005 } from './1793300000005-create-catalog-processed-event.js';
 import { AddTimetableVersionConstraints1793300000006 } from './1793300000006-add-timetable-version-constraints.js';
+import { CreateOperationsAudit1793300000007 } from './1793300000007-create-operations-audit.js';
 
 // Run order. Two migrations must never share a timestamp: TypeORM keys them by name.
 export const migrations: (new () => MigrationInterface)[] = [
@@ -19,4 +20,5 @@ export const migrations: (new () => MigrationInterface)[] = [
   CreateCatalogOutbox1793300000004,
   CreateCatalogProcessedEvent1793300000005,
   AddTimetableVersionConstraints1793300000006,
+  CreateOperationsAudit1793300000007,
 ];
