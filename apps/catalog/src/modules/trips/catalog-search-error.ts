@@ -1,4 +1,4 @@
-import type { ErrorCode, ValidationErrorDetail } from '@app/contracts';
+import type { ErrorCode, ValidationIssueRef } from '@app/contracts';
 
 /**
  * A refused search.
@@ -17,7 +17,7 @@ import type { ErrorCode, ValidationErrorDetail } from '@app/contracts';
 export class CatalogSearchError extends Error {
   constructor(
     readonly code: ErrorCode,
-    readonly details: ValidationErrorDetail[],
+    readonly details: ValidationIssueRef[],
     message?: string,
   ) {
     super(message ?? code);

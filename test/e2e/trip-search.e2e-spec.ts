@@ -42,6 +42,11 @@ import {
  */
 
 const TRIPS = '/api/v1/trips/search';
+const DETAIL_LANGUAGE_HEADERS = [
+  undefined,
+  'ar-EG,en;q=0.9',
+  'en-GB,en;q=0.9',
+] as const;
 
 interface SearchBody {
   dateStrip: { date: string; selected: boolean; isToday: boolean }[];
@@ -51,7 +56,12 @@ interface SearchBody {
     trainType: { en: string; ar: string };
     departure: {
       stationId: string;
-      at: { localDate: string; localTime: string; utcOffset: string; timeZone: string };
+      at: {
+        localDate: string;
+        localTime: string;
+        utcOffset: string;
+        timeZone: string;
+      };
     };
     arrival: { at: { localDate: string; localTime: string } };
     durationMinutes: number;
@@ -60,12 +70,20 @@ interface SearchBody {
     soldOut: boolean;
     fare: { amountMinor: number; currency: string };
   }[];
-  bookingWindow: { firstBookableDate: string; lastBookableDate: string; totalDays: number };
+  bookingWindow: {
+    firstBookableDate: string;
+    lastBookableDate: string;
+    totalDays: number;
+  };
   evaluatedAt: { timeZone: string };
   emptyResult?: { reason: string; message: string };
   /** TA-18: what the day offers, before the request's own filters. */
   filterOptions: {
-    trainTypes: { id: string; name: { en: string; ar: string }; tripCount: number }[];
+    trainTypes: {
+      id: string;
+      name: { en: string; ar: string };
+      tripCount: number;
+    }[];
     minFareMinor: number;
     maxFareMinor: number;
   };
@@ -235,41 +253,105 @@ describe('One-way search, edge to catalog', () => {
   });
 
   describe('refusals name the field to change', () => {
-    it('refuses the same station twice, naming To', async () => {
-      const { status, body } = await search({
-        to: fixture.stations.alexandria,
-      });
+    it.each(DETAIL_LANGUAGE_HEADERS)(
+      'localizes a same-station DTO refusal for %s, naming To',
+      async (acceptLanguage) => {
+        const { status, body } = await search(
+          { to: fixture.stations.alexandria },
+          { acceptLanguage },
+        );
 
-      expect(status).toBe(400);
-      const details = body.error?.details ?? [];
-      expect(details.map((detail) => detail.field)).toContain('to');
-    });
+        expect(status).toBe(400);
+        const english = acceptLanguage?.startsWith('en') === true;
+        expect(body.error?.details).toEqual([
+          {
+            field: 'to',
+            rejectedValue: fixture.stations.alexandria,
+            issue: english
+              ? 'The destination is the same as the origin.'
+              : 'محطة الوصول هي نفس محطة المغادرة.',
+            action: english
+              ? 'Pick a different destination station.'
+              : 'اختر محطة وصول مختلفة.',
+          },
+        ]);
+      },
+    );
 
-    it('refuses an unknown station', async () => {
-      const { status } = await search({
-        to: '99999999-9999-4999-8999-999999999999',
-      });
+    it.each(DETAIL_LANGUAGE_HEADERS)(
+      'localizes an unknown-station catalog refusal for %s',
+      async (acceptLanguage) => {
+        const stationId = '99999999-9999-4999-8999-999999999999';
+        const { status, body } = await search(
+          { to: stationId },
+          { acceptLanguage },
+        );
 
-      expect(status).toBe(400);
-    });
+        expect(status).toBe(400);
+        const english = acceptLanguage?.startsWith('en') === true;
+        expect(body.error?.details).toEqual([
+          {
+            field: 'to',
+            rejectedValue: stationId,
+            issue: english
+              ? 'This station is not in the network.'
+              : 'هذه المحطة غير موجودة في الشبكة.',
+            action: english
+              ? 'Pick a station from the station list.'
+              : 'اختر محطة من قائمة المحطات.',
+          },
+        ]);
+      },
+    );
 
-    it('refuses a date past the booking window', async () => {
-      const { status, body } = await search({
-        departureDate: fixture.pastWindowDate,
-      });
+    it.each(DETAIL_LANGUAGE_HEADERS)(
+      'localizes the full booking window for %s without leaking refs or templates',
+      async (acceptLanguage) => {
+        const available = await search();
+        const { firstBookableDate, lastBookableDate } = (
+          available.body.data as SearchBody
+        ).bookingWindow;
+        const { status, body } = await search(
+          { departureDate: fixture.pastWindowDate },
+          { acceptLanguage },
+        );
 
-      expect(status).toBe(400);
-      const details = body.error?.details ?? [];
-      const date = details.find((detail) => detail.field === 'departureDate');
-      // The traveller needs the date to pick instead, not only a rejection.
-      expect(date?.action).toContain('-');
-    });
+        expect(status).toBe(400);
+        const english = acceptLanguage?.startsWith('en') === true;
+        expect(body.error?.details).toEqual([
+          {
+            field: 'departureDate',
+            rejectedValue: fixture.pastWindowDate,
+            issue: english
+              ? 'This date is beyond the dates currently open for booking.'
+              : 'هذا التاريخ خارج الفترة المتاحة للحجز حالياً.',
+            action: english
+              ? `Pick a date between ${firstBookableDate} and ${lastBookableDate}.`
+              : `اختر تاريخاً بين ${firstBookableDate} و${lastBookableDate}.`,
+          },
+        ]);
+        expect(JSON.stringify(body.error?.details)).not.toMatch(
+          /ISSUE_|ACTION_|\{\{|undefined/,
+        );
+      },
+    );
 
-    it('refuses a malformed date before reaching catalog', async () => {
-      const { status } = await search({ departureDate: '20-06-2026' });
+    it.each(DETAIL_LANGUAGE_HEADERS)(
+      'localizes a malformed-date DTO refusal for %s before reaching catalog',
+      async (acceptLanguage) => {
+        const { status, body } = await search(
+          { departureDate: '20-06-2026' },
+          { acceptLanguage },
+        );
 
-      expect(status).toBe(400);
-    });
+        expect(status).toBe(400);
+        expect(body.error?.details?.[0].issue).toBe(
+          acceptLanguage?.startsWith('en') === true
+            ? 'This date must be written as YYYY-MM-DD.'
+            : 'يجب كتابة هذا التاريخ على صورة YYYY-MM-DD.',
+        );
+      },
+    );
 
     it('refuses an unknown query parameter', async () => {
       // A typo in a parameter name is a 400, not a silently ignored filter.
@@ -903,7 +985,9 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       expect(entries[0].destination.id).toBe(fixture.stations.aswan);
       // The oldest of the six is gone.
       expect(
-        entries.some((entry) => entry.destination.id === fixture.stations.tanta),
+        entries.some(
+          (entry) => entry.destination.id === fixture.stations.tanta,
+        ),
       ).toBe(false);
     });
 

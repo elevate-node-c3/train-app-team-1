@@ -1,7 +1,7 @@
 import { isRfcUuid } from '@app/common/validation/uuid.js';
 import type {
   SearchOneWayTripsRequest,
-  ValidationErrorDetail,
+  ValidationIssueRef,
 } from '@app/contracts';
 import {
   bookingWindowFor,
@@ -61,8 +61,8 @@ function isRealCivilDate(value: string): boolean {
 export function validateSearchShape(
   request: SearchOneWayTripsRequest,
   now: Date,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   for (const [field, value] of [
     ['from', request.originStationId],
@@ -72,8 +72,8 @@ export function validateSearchShape(
       details.push({
         field,
         rejectedValue: value,
-        issue: 'is not a known station identifier',
-        action: 'Pick a station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_STATION_FROM_LIST',
       });
     }
   }
@@ -87,8 +87,8 @@ export function validateSearchShape(
     details.push({
       field: 'to',
       rejectedValue: request.destinationStationId,
-      issue: 'is the same station as From',
-      action: 'Pick a different destination station',
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+      actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
     });
   }
 
@@ -98,8 +98,8 @@ export function validateSearchShape(
       rejectedValue: request.travelClassId,
       // Not defaulted: every result's seats and fare are for one class, so
       // there is no class the server could pick on the traveller's behalf.
-      issue: 'is required, and must be one of the offered seat classes',
-      action: 'Choose a seat class',
+      issueKey: 'ISSUE_SEAT_CLASS_REQUIRED',
+      actionKey: 'ACTION_PICK_SEAT_CLASS',
     });
   }
 
@@ -125,8 +125,8 @@ export function validateSearchShape(
       details.push({
         field: 'trainNumber',
         rejectedValue: trainNumber,
-        issue: 'is not a train number',
-        action: 'Enter a train number, or clear it to see every train',
+        issueKey: 'ISSUE_TRAIN_NUMBER_NOT_KNOWN',
+        actionKey: 'ACTION_FIX_OR_CLEAR_TRAIN_NUMBER',
       });
     }
   }
@@ -137,14 +137,16 @@ export function validateSearchShape(
 function validateDepartureDate(
   departureDate: string,
   now: Date,
-): ValidationErrorDetail[] {
+): ValidationIssueRef[] {
   if (!isRealCivilDate(departureDate ?? '')) {
     return [
       {
         field: 'departureDate',
         rejectedValue: departureDate,
-        issue: 'is not a calendar date in YYYY-MM-DD form',
-        action: 'Pick a date from the calendar',
+        issueKey: CIVIL_DATE_PATTERN.test(departureDate ?? '')
+          ? 'ISSUE_NOT_A_CALENDAR_DATE'
+          : 'ISSUE_CIVIL_DATE_FORMAT',
+        actionKey: 'ACTION_PICK_DATE_FROM_CALENDAR',
       },
     ];
   }
@@ -158,12 +160,13 @@ function validateDepartureDate(
     {
       field: 'departureDate',
       rejectedValue: departureDate,
-      issue: inThePast
-        ? 'is in the past'
-        : 'is beyond the dates currently open for booking',
+      issueKey: inThePast
+        ? 'ISSUE_DATE_IN_THE_PAST'
+        : 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
       // The last bookable date belongs in the action: a traveller needs the
       // date to pick instead, not only the news that this one is wrong.
-      action: `Pick a date between ${firstBookableDate} and ${lastBookableDate}`,
+      actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+      params: { firstBookableDate, lastBookableDate },
     },
   ];
 }
@@ -186,14 +189,16 @@ export function validateReturnDate(
   returnDate: string,
   departureDate: string,
   now: Date,
-): ValidationErrorDetail[] {
+): ValidationIssueRef[] {
   if (!isRealCivilDate(returnDate ?? '')) {
     return [
       {
         field: 'returnDate',
         rejectedValue: returnDate,
-        issue: 'is not a calendar date in YYYY-MM-DD form',
-        action: 'Pick a return date from the calendar',
+        issueKey: CIVIL_DATE_PATTERN.test(returnDate ?? '')
+          ? 'ISSUE_NOT_A_CALENDAR_DATE'
+          : 'ISSUE_CIVIL_DATE_FORMAT',
+        actionKey: 'ACTION_PICK_RETURN_DATE_FROM_CALENDAR',
       },
     ];
   }
@@ -205,8 +210,9 @@ export function validateReturnDate(
       {
         field: 'returnDate',
         rejectedValue: returnDate,
-        issue: 'is before the departure date',
-        action: `Pick a return date on or after ${departureDate}`,
+        issueKey: 'ISSUE_RETURN_BEFORE_DEPARTURE',
+        actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+        params: { departureDate },
       },
     ];
   }
@@ -219,11 +225,12 @@ export function validateReturnDate(
     {
       field: 'returnDate',
       rejectedValue: returnDate,
-      issue:
+      issueKey:
         returnDate < cairoToday(now)
-          ? 'is in the past'
-          : 'is beyond the dates currently open for booking',
-      action: `Pick a date between ${firstBookableDate} and ${lastBookableDate}`,
+          ? 'ISSUE_DATE_IN_THE_PAST'
+          : 'ISSUE_DATE_BEYOND_BOOKING_WINDOW',
+      actionKey: 'ACTION_PICK_DATE_IN_BOOKING_WINDOW',
+      params: { firstBookableDate, lastBookableDate },
     },
   ];
 }
@@ -236,8 +243,8 @@ export function validateReturnDate(
 export function validateSearchReferences(
   request: SearchOneWayTripsRequest,
   facts: SearchReferenceFacts,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   for (const [field, stationId] of [
     ['from', request.originStationId],
@@ -247,8 +254,8 @@ export function validateSearchReferences(
       details.push({
         field,
         rejectedValue: stationId,
-        issue: 'is not a station in the network',
-        action: 'Pick a station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_STATION_FROM_LIST',
       });
       continue;
     }
@@ -260,8 +267,8 @@ export function validateSearchReferences(
       details.push({
         field,
         rejectedValue: stationId,
-        issue: 'is not an active station',
-        action: 'Pick another station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_ACTIVE',
+        actionKey: 'ACTION_PICK_ANOTHER_STATION',
       });
     }
   }
@@ -270,8 +277,8 @@ export function validateSearchReferences(
     details.push({
       field: 'travelClassId',
       rejectedValue: request.travelClassId,
-      issue: 'is not an offered seat class',
-      action: 'Choose a seat class from the list',
+      issueKey: 'ISSUE_SEAT_CLASS_NOT_OFFERED',
+      actionKey: 'ACTION_PICK_SEAT_CLASS_FROM_LIST',
     });
   }
 
@@ -279,8 +286,8 @@ export function validateSearchReferences(
     details.push({
       field: 'trainNumber',
       rejectedValue: request.trainNumber,
-      issue: 'is not a train number in service',
-      action: 'Check the number, or clear it to see every train',
+      issueKey: 'ISSUE_TRAIN_NUMBER_NOT_IN_SERVICE',
+      actionKey: 'ACTION_FIX_OR_CLEAR_TRAIN_NUMBER',
     });
   }
 

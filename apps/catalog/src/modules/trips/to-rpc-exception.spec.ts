@@ -62,8 +62,9 @@ describe('toRpcException', () => {
       {
         field: 'trainNumber',
         rejectedValue: '101',
-        issue: 'inventory could not answer',
-        action: 'Retry the publish with the same Idempotency-Key in about 5 seconds',
+        issueKey: 'ISSUE_SEAT_USAGE_UNAVAILABLE',
+        actionKey: 'ACTION_RETRY_PUBLISH',
+        params: { retryAfterSeconds: '5' },
       },
     ]);
 
@@ -75,6 +76,7 @@ describe('toRpcException', () => {
     const decoded = detailOf(exception);
     expect(decoded.code).toBe(ErrorCode.DEPENDENCY_UNAVAILABLE);
     expect(decoded.retryAfterSeconds).toBe(5);
+    expect(decoded.details).toEqual(error.details);
   });
 
   it('does not set retryAfterSeconds for a code that is not retryable', () => {

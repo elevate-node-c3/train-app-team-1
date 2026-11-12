@@ -59,8 +59,10 @@ describe('validating the search filters', () => {
     expect(details.length).toBeGreaterThan(0);
     for (const detail of details) {
       expect(detail.field).not.toBe('');
-      expect(detail.issue).not.toBe('');
-      expect(detail.action).not.toBe('');
+      expect(detail.issueKey).toMatch(/^ISSUE_/);
+      expect(detail.actionKey).toMatch(/^ACTION_/);
+      expect(detail).not.toHaveProperty('issue');
+      expect(detail).not.toHaveProperty('action');
     }
   });
 

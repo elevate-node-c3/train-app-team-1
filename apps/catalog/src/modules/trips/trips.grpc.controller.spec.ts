@@ -3,6 +3,7 @@ import {
   type SearchOneWayTripsResponse,
   type SearchReturnTripsResponse,
   type TripStopsResponse,
+  type ValidationIssueRef,
 } from '@app/contracts';
 import { CALLER_ACCOUNT_ID_KEY } from '@app/common';
 import { RpcException } from '@nestjs/microservices';
@@ -111,8 +112,8 @@ describe('the search gRPC controller', () => {
       {
         field: 'to',
         rejectedValue: 'x',
-        issue: 'is the same station as From',
-        action: 'Pick a different destination station',
+        issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+        actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
       },
     ]);
 
@@ -140,12 +141,14 @@ describe('the search gRPC controller', () => {
       const payload = error.getError() as { details: string };
       const decoded = JSON.parse(payload.details) as {
         code: string;
-        details: { field: string; action: string }[];
+        details: ValidationIssueRef[];
       };
 
       expect(decoded.code).toBe(ErrorCode.VALIDATION_ERROR);
       expect(decoded.details[0].field).toBe('to');
-      expect(decoded.details[0].action).not.toBe('');
+      expect(decoded.details).toEqual(refusal.details);
+      expect(decoded.details[0]).not.toHaveProperty('issue');
+      expect(decoded.details[0]).not.toHaveProperty('action');
     });
   });
 
@@ -188,9 +191,8 @@ describe('the search gRPC controller', () => {
         {
           field: 'tripId',
           rejectedValue: stopsRequest.tripId,
-          issue: 'is not a trip that stops at these stations in this order',
-          action:
-            'Pick a trip from the search results and open its stops again',
+          issueKey: 'ISSUE_TRIP_DOES_NOT_SERVE_PAIR',
+          actionKey: 'ACTION_PICK_TRIP_FROM_RESULTS',
         },
       ]);
       const stops = vi.fn().mockRejectedValue(refusal);
@@ -242,8 +244,8 @@ describe('the search gRPC controller', () => {
         {
           field: 'outboundTripId',
           rejectedValue: returnRequest.outboundTripId,
-          issue: 'is no longer an available trip between those stations',
-          action: 'Search again and choose an outbound trip',
+          issueKey: 'ISSUE_OUTBOUND_TRIP_GONE',
+          actionKey: 'ACTION_SEARCH_AGAIN_FOR_OUTBOUND',
         },
       ]);
       const search = vi.fn().mockRejectedValue(refusal);

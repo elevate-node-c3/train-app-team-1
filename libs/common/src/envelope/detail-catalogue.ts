@@ -147,6 +147,138 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'اختر تاريخ عودة في {{departureDate}} أو بعده.',
     en: 'Pick a return date on or after {{departureDate}}.',
   },
+  ISSUE_STATION_NOT_KNOWN: {
+    ar: 'هذه المحطة غير موجودة في الشبكة.',
+    en: 'This station is not in the network.',
+  },
+  ISSUE_STATION_NOT_ACTIVE: {
+    ar: 'هذه المحطة ليست في الخدمة.',
+    en: 'This station is not in service.',
+  },
+  ISSUE_SEAT_CLASS_REQUIRED: {
+    ar: 'تحديد درجة المقعد مطلوب.',
+    en: 'A seat class is required.',
+  },
+  ISSUE_SEAT_CLASS_NOT_OFFERED: {
+    ar: 'درجة المقعد هذه غير متاحة.',
+    en: 'This seat class is not offered.',
+  },
+  ISSUE_TRAIN_NUMBER_NOT_KNOWN: {
+    ar: 'هذا ليس رقم قطار.',
+    en: 'This is not a train number.',
+  },
+  ISSUE_TRAIN_NUMBER_NOT_IN_SERVICE: {
+    ar: 'لا يوجد قطار في الخدمة بهذا الرقم.',
+    en: 'No train in service carries this number.',
+  },
+  ISSUE_NOT_A_CALENDAR_DATE: {
+    ar: 'هذا التاريخ ليس يوماً صالحاً في التقويم.',
+    en: 'This date is not a real calendar day.',
+  },
+  ISSUE_DATE_IN_THE_PAST: {
+    ar: 'هذا التاريخ قد مضى.',
+    en: 'This date is in the past.',
+  },
+  ISSUE_DATE_BEYOND_BOOKING_WINDOW: {
+    ar: 'هذا التاريخ خارج الفترة المتاحة للحجز حالياً.',
+    en: 'This date is beyond the dates currently open for booking.',
+  },
+  ISSUE_RETURN_BEFORE_DEPARTURE: {
+    ar: 'تاريخ العودة يقع قبل تاريخ المغادرة.',
+    en: 'The return date falls before the departure date.',
+  },
+  ISSUE_TRAIN_TYPE_NOT_KNOWN: {
+    ar: 'نوع القطار هذا غير موجود.',
+    en: 'This train type does not exist.',
+  },
+  ISSUE_NOT_A_TIME_OF_DAY: {
+    ar: 'هذا ليس وقتاً من اليوم.',
+    en: 'This is not a time of day.',
+  },
+  ISSUE_WINDOW_ENDS_BEFORE_IT_STARTS: {
+    ar: 'هذا الوقت ليس بعد أبكر وقت للمغادرة.',
+    en: 'This time is not after the earliest departure time.',
+  },
+  ISSUE_NOT_A_FARE_AMOUNT: {
+    ar: 'هذا ليس مبلغ أجرة بالقروش.',
+    en: 'This is not a fare amount in piastres.',
+  },
+  ISSUE_OUTBOUND_TRIP_ID_MALFORMED: {
+    ar: 'معرف رحلة الذهاب هذا غير صالح.',
+    en: 'This outbound trip identifier is not valid.',
+  },
+  ISSUE_OUTBOUND_TRIP_GONE: {
+    ar: 'هذه الرحلة لم تعد متاحة بين هاتين المحطتين.',
+    en: 'This trip is no longer available between those stations.',
+  },
+  ISSUE_TRIP_DOES_NOT_SERVE_PAIR: {
+    ar: 'هذه الرحلة لا تتوقف في هاتين المحطتين بهذا الترتيب.',
+    en: 'This trip does not stop at these stations in this order.',
+  },
+  ACTION_PICK_STATION_FROM_LIST: {
+    ar: 'اختر محطة من قائمة المحطات.',
+    en: 'Pick a station from the station list.',
+  },
+  ACTION_PICK_ANOTHER_STATION: {
+    ar: 'اختر محطة أخرى من قائمة المحطات.',
+    en: 'Pick another station from the station list.',
+  },
+  ACTION_PICK_SEAT_CLASS: {
+    ar: 'اختر درجة المقعد.',
+    en: 'Choose a seat class.',
+  },
+  ACTION_PICK_SEAT_CLASS_FROM_LIST: {
+    ar: 'اختر درجة المقعد من القائمة.',
+    en: 'Choose a seat class from the list.',
+  },
+  ACTION_FIX_OR_CLEAR_TRAIN_NUMBER: {
+    ar: 'صحح رقم القطار، أو امسحه لعرض كل القطارات.',
+    en: 'Correct the train number, or clear it to see every train.',
+  },
+  ACTION_PICK_DATE_FROM_CALENDAR: {
+    ar: 'اختر تاريخاً من التقويم.',
+    en: 'Pick a date from the calendar.',
+  },
+  ACTION_PICK_RETURN_DATE_FROM_CALENDAR: {
+    ar: 'اختر تاريخ العودة من التقويم.',
+    en: 'Pick a return date from the calendar.',
+  },
+  ACTION_PICK_DATE_IN_BOOKING_WINDOW: {
+    ar: 'اختر تاريخاً بين {{firstBookableDate}} و{{lastBookableDate}}.',
+    en: 'Pick a date between {{firstBookableDate}} and {{lastBookableDate}}.',
+  },
+  ACTION_PICK_TRAIN_TYPE_FROM_LIST: {
+    ar: 'اختر نوع القطار من القائمة.',
+    en: 'Choose a train type from the list.',
+  },
+  ACTION_PICK_TIME_IN_DAY: {
+    ar: 'اختر وقتاً بين 00:00 و23:59.',
+    en: 'Pick a time between 00:00 and 23:59.',
+  },
+  ACTION_PICK_LATER_TIME_OR_CLEAR: {
+    ar: 'اختر وقتاً لاحقاً، أو اتركه فارغاً.',
+    en: 'Pick a later time, or leave it empty.',
+  },
+  ACTION_FIX_OR_CLEAR_MAX_FARE: {
+    ar: 'أدخل مبلغاً بالقروش، أو امسحه لعرض كل الأسعار.',
+    en: 'Enter an amount in piastres, or clear it to see every price.',
+  },
+  ACTION_CHOOSE_SOLD_OUT_PREFERENCE: {
+    ar: 'حدد ما إذا كنت تريد إخفاء الرحلات المكتملة.',
+    en: 'Choose whether to hide sold-out trips.',
+  },
+  ACTION_SEARCH_AGAIN_FOR_OUTBOUND: {
+    ar: 'ابحث مرة أخرى واختر رحلة ذهاب.',
+    en: 'Search again and choose an outbound trip.',
+  },
+  ACTION_SEARCH_AGAIN_WITH_ANOTHER_STATION: {
+    ar: 'ابحث مرة أخرى بمحطة أخرى.',
+    en: 'Search again with another station.',
+  },
+  ACTION_PICK_TRIP_FROM_RESULTS: {
+    ar: 'اختر رحلة من نتائج البحث وافتح محطات توقفها مرة أخرى.',
+    en: 'Pick a trip from the search results and open its stops again.',
+  },
 };
 
 export function resolveDetailText(
