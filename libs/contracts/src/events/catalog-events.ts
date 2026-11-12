@@ -23,6 +23,11 @@ export interface FareChangedPayloadV1 {
   effectiveFrom?: string;
 }
 
+export type FareChangedEvent = EventEnvelope<
+  typeof FARE_CHANGED_EVENT_TYPE,
+  FareChangedPayloadV1
+>;
+
 /** Stations are required: CAT-5 invalidates by them and cannot look them up. */
 export interface TimetablePublishedPayloadV1 {
   timetableId: string;
