@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
-import { resolveStopTimes, type FareIndex } from '../trips/trip-generation.types.js';
 import {
+  resolveStopTimes,
+  type FareIndex,
+} from '../trips/trip-generation.types.js';
+import {
+  validateCapacityIssues,
   validateFareFloor,
   validateFareRules,
   validateNoDuplicateStations,
+  validateStopsChronology,
   validateStopsStructure,
   validateTimetableCandidate,
   type TimetableCandidate,
@@ -150,15 +155,30 @@ function candidateWithShortestSegmentFare(amount: number): TimetableCandidate {
   const fares: FareIndex = new Map([
     [
       `${FIRST_CLASS}|${a}|${b}`,
-      [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: amount }],
+      [
+        {
+          effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+          amountPiastres: amount,
+        },
+      ],
     ],
     [
       `${FIRST_CLASS}|${b}|${c}`,
-      [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: amount + 10 }],
+      [
+        {
+          effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+          amountPiastres: amount + 10,
+        },
+      ],
     ],
     [
       `${FIRST_CLASS}|${a}|${c}`,
-      [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: amount + 20 }],
+      [
+        {
+          effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+          amountPiastres: amount + 20,
+        },
+      ],
     ],
   ]);
 
@@ -191,7 +211,10 @@ function candidateWithEveryProblem(): TimetableCandidate {
     coaches: [repeatingLayoutCoach, coach(SECOND_CLASS, { coachNumber: 2 })],
     // SECOND_CLASS has no fares; FIRST_CLASS is partial and underpriced.
     fares: (() => {
-      const index = coveringFares([a, b, ...stops.slice(2).map((s) => s.stationId)], [FIRST_CLASS]);
+      const index = coveringFares(
+        [a, b, ...stops.slice(2).map((s) => s.stationId)],
+        [FIRST_CLASS],
+      );
       index.set(`${FIRST_CLASS}|${a}|${b}`, [
         { effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 1 },
       ]);
@@ -242,15 +265,24 @@ describe('validateTimetableCandidate', () => {
     );
   });
 
-  it('refuses fewer than two stops', () => {
-    const candidate = validCandidate();
-    const details = validateTimetableCandidate({
-      ...candidate,
-      stops: [candidate.stops[0]],
-    });
+  it.each([0, 1])(
+    'refuses a %i-stop route with the same key in both route validators',
+    (count) => {
+      const candidate = validCandidate();
+      const details = validateTimetableCandidate({
+        ...candidate,
+        stops: candidate.stops.slice(0, count),
+      });
 
-    expect(details.some((d) => d.field === 'stops')).toBe(true);
-  });
+      const routeIssue = {
+        field: 'stops',
+        rejectedValue: count,
+        issueKey: 'ISSUE_ROUTE_NEEDS_TWO_STOPS',
+        actionKey: 'ACTION_ADD_STOPS_TO_TWO',
+      };
+      expect(details).toEqual([routeIssue, routeIssue]);
+    },
+  );
 
   it('refuses the same station twice', () => {
     const candidate = validCandidate(3);
@@ -259,11 +291,13 @@ describe('validateTimetableCandidate', () => {
 
     const details = validateTimetableCandidate({ ...candidate, stops });
 
-    expect(
-      details.some(
-        (d) => d.field === 'stops[2].stationId' && d.issue.includes('same station'),
-      ),
-    ).toBe(true);
+    expect(details).toContainEqual({
+      field: 'stops[2].stationId',
+      rejectedValue: stops[0].stationId,
+      issueKey: 'ISSUE_STATION_REPEATED_ON_ROUTE',
+      actionKey: 'ACTION_REMOVE_REPEATED_STATION',
+      params: { firstStopIndex: '0' },
+    });
   });
 
   it('refuses times that do not increase along the route', () => {
@@ -274,64 +308,120 @@ describe('validateTimetableCandidate', () => {
 
     const details = validateTimetableCandidate({ ...candidate, stops });
 
-    expect(
-      details.some((d) => /chronological order|Departure cannot be before arrival/.test(d.issue)),
-    ).toBe(true);
+    const { arrivalAt } = resolveStopTimes(
+      candidate.effectiveFrom,
+      stops[2].dayOffset,
+      stops[2].arrivalTime,
+      stops[2].departureTime,
+    );
+    expect(details).toContainEqual({
+      field: 'stops[2].arrivalTime',
+      rejectedValue: arrivalAt!.toISOString(),
+      issueKey: 'ISSUE_STOP_TIMES_OUT_OF_ORDER',
+      actionKey: 'ACTION_FIX_STOP_TIME_ORDER',
+    });
   });
 
   it('refuses an unknown station', () => {
     const candidate = candidateWith({ unknownStationAt: 0 });
     const details = validateTimetableCandidate(candidate);
 
-    expect(
-      details.some(
-        (d) => d.field === 'stops[0].stationId' && d.issue.includes('not a known station'),
-      ),
-    ).toBe(true);
+    expect(details).toContainEqual({
+      field: 'stops[0].stationId',
+      rejectedValue: 'unknown-station-does-not-exist',
+      issueKey: 'ISSUE_STATION_NOT_KNOWN',
+      actionKey: 'ACTION_PICK_STATION_FROM_LIST',
+    });
   });
 
   it('refuses an unknown coach layout', () => {
     const candidate = validCandidate();
     const details = validateTimetableCandidate({
       ...candidate,
-      coaches: [coach(FIRST_CLASS, { coachLayoutId: 'not-in-the-layout-list' })],
+      coaches: [
+        coach(FIRST_CLASS, { coachLayoutId: 'not-in-the-layout-list' }),
+      ],
       fares: coveringFares(
         candidate.stops.map((s) => s.stationId),
         [FIRST_CLASS],
       ),
     });
 
-    expect(
-      details.some(
-        (d) => d.field === 'coaches[0].coachLayoutId' && d.issue.includes('not a known coach layout'),
-      ),
-    ).toBe(true);
-  });
-
-  it('refuses a missing fare for an in-order pair and class (CAT-2)', () => {
-    const candidate = validCandidate(3);
-    const fares = new Map(candidate.fares);
-    const [a, , c] = candidate.stops.map((stop) => stop.stationId);
-    fares.delete(`${FIRST_CLASS}|${a}|${c}`);
-
-    const details = validateTimetableCandidate({
-      ...candidate,
-      coaches: [coach(FIRST_CLASS)],
-      fares,
+    expect(details).toContainEqual({
+      field: 'coaches[0].coachLayoutId',
+      rejectedValue: 'not-in-the-layout-list',
+      issueKey: 'ISSUE_COACH_LAYOUT_NOT_KNOWN',
+      actionKey: 'ACTION_PICK_COACH_LAYOUT_FROM_LIST',
     });
-
-    expect(details.some((d) => d.field.startsWith('fares[') && d.issue.includes('missing or invalid fare'))).toBe(
-      true,
-    );
   });
+
+  it.each([null, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'refuses a missing or invalid (%s) fare for an in-order pair and class (CAT-2)',
+    (amountPiastres) => {
+      const candidate = validCandidate(3);
+      const fares = new Map(candidate.fares);
+      const [a, , c] = candidate.stops.map((stop) => stop.stationId);
+      if (amountPiastres === null) {
+        fares.delete(`${FIRST_CLASS}|${a}|${c}`);
+      } else {
+        fares.set(`${FIRST_CLASS}|${a}|${c}`, [
+          { effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres },
+        ]);
+      }
+
+      const details = validateTimetableCandidate({
+        ...candidate,
+        coaches: [coach(FIRST_CLASS)],
+        fares,
+      });
+
+      expect(details).toEqual([
+        {
+          field: `fares[${FIRST_CLASS}:${a}->${c}]`,
+          rejectedValue: null,
+          issueKey: 'ISSUE_FARE_MISSING_FOR_PAIR',
+          actionKey: 'ACTION_ADD_FARE_FOR_PAIR',
+          params: {
+            travelClassId: FIRST_CLASS,
+            originStationId: a,
+            destinationStationId: c,
+          },
+        },
+      ]);
+    },
+  );
 
   it('refuses a longer segment priced below one it contains (CAT-2)', () => {
     const stops = makeStops(3);
     const [a, b, c] = stops.map((stop) => stop.stationId);
     const fares: FareIndex = new Map([
-      [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 13000 }]],
-      [`${FIRST_CLASS}|${a}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 12000 }]],
-      [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 7000 }]],
+      [
+        `${FIRST_CLASS}|${a}|${b}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 13000,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${a}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 12000,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${b}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 7000,
+          },
+        ],
+      ],
     ]);
 
     const details = validateTimetableCandidate({
@@ -343,27 +433,56 @@ describe('validateTimetableCandidate', () => {
       effectiveFrom: '2026-06-20',
     });
 
-    expect(details.some((d) => d.issue.includes('is less than the segment it contains'))).toBe(true);
+    expect(details).toEqual([
+      {
+        field: `fares[${FIRST_CLASS}:${a}->${c}]`,
+        rejectedValue: 12000,
+        issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR',
+        actionKey: 'ACTION_RAISE_FARE_FOR_PAIR',
+        params: {
+          travelClassId: FIRST_CLASS,
+          outerOriginIndex: '0',
+          outerDestinationIndex: '2',
+          innerOriginIndex: '0',
+          innerDestinationIndex: '1',
+          outerFarePiastres: '12000',
+          innerFarePiastres: '13000',
+        },
+      },
+    ]);
   });
 
-  it('refuses a fare whose total with the fee is below the Stripe minimum (§6.3)', () => {
+  it('refuses a fare below the Stripe minimum with the shared payment keys (§6.3)', () => {
     process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '15';
 
-    const details = validateTimetableCandidate(candidateWithShortestSegmentFare(10));
+    const candidate = candidateWithShortestSegmentFare(10);
+    const details = validateTimetableCandidate(candidate);
+    const [a, b] = candidate.stops.map((stop) => stop.stationId);
 
-    expect(details).toHaveLength(1);
-    expect(details[0].field).toMatch(/^fares\[/);
-    expect(details[0].issue).toContain('below the minimum chargeable amount');
+    expect(details).toEqual([
+      {
+        field: `fares[${FIRST_CLASS}:${a}->${b}]`,
+        rejectedValue: 10,
+        issueKey: 'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+        actionKey: 'ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM',
+      },
+    ]);
   });
 
-  it('gives every problem an actionable field, rejectedValue, issue and action', () => {
+  it('gives every problem a field, rejectedValue and language-free issue/action keys', () => {
     const details = validateTimetableCandidate(candidateWithEveryProblem());
 
     expect(details.length).toBeGreaterThan(0);
     for (const detail of details) {
       expect(detail.field).not.toHaveLength(0);
-      expect(detail.issue).not.toHaveLength(0);
-      expect(detail.action).not.toHaveLength(0);
+      expect(detail).toHaveProperty('rejectedValue');
+      expect(detail.issueKey).toMatch(/^ISSUE_[A-Z0-9_]+$/);
+      expect(detail.actionKey).toMatch(/^ACTION_[A-Z0-9_]+$/);
+      expect(detail).not.toHaveProperty('issue');
+      expect(detail).not.toHaveProperty('action');
+      for (const value of Object.values(detail.params ?? {})) {
+        expect(value).toEqual(expect.any(String));
+      }
     }
   });
 });
@@ -389,7 +508,10 @@ describe('generation safety: duplicate-station and the Stripe floor stay publish
     const stops = makeStops(3);
     stops[2] = { ...stops[2], stationId: stops[0].stationId };
 
-    const details = validateStopsStructure(stops, new Set(stops.map((s) => s.stationId)));
+    const details = validateStopsStructure(
+      stops,
+      new Set(stops.map((s) => s.stationId)),
+    );
 
     expect(details).toEqual([]);
   });
@@ -400,22 +522,59 @@ describe('generation safety: duplicate-station and the Stripe floor stay publish
 
     const details = validateNoDuplicateStations(stops);
 
-    expect(details.some((d) => d.field === 'stops[2].stationId')).toBe(true);
+    expect(details).toEqual([
+      {
+        field: 'stops[2].stationId',
+        rejectedValue: stops[0].stationId,
+        issueKey: 'ISSUE_STATION_REPEATED_ON_ROUTE',
+        actionKey: 'ACTION_REMOVE_REPEATED_STATION',
+        params: { firstStopIndex: '0' },
+      },
+    ]);
   });
 
   it('validateFareRules is unaffected by STRIPE_MINIMUM_CHARGE_PIASTRES being set', () => {
     const stops = makeStops(3);
     const resolved = stops.map((stop) => ({
       stationId: stop.stationId,
-      ...resolveStopTimes('2026-06-20', stop.dayOffset, stop.arrivalTime, stop.departureTime),
+      ...resolveStopTimes(
+        '2026-06-20',
+        stop.dayOffset,
+        stop.arrivalTime,
+        stop.departureTime,
+      ),
     }));
     const [a, b, c] = stops.map((s) => s.stationId);
 
     // Prices pass `validateFareRules`; only the floor check would reject them.
     const fares: FareIndex = new Map([
-      [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 2 }]],
-      [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 3 }]],
-      [`${FIRST_CLASS}|${a}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 5 }]],
+      [
+        `${FIRST_CLASS}|${a}|${b}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 2,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${b}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 3,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${a}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 5,
+          },
+        ],
+      ],
     ]);
 
     process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000000';
@@ -429,21 +588,63 @@ describe('generation safety: duplicate-station and the Stripe floor stay publish
     const stops = makeStops(3);
     const resolved = stops.map((stop) => ({
       stationId: stop.stationId,
-      ...resolveStopTimes('2026-06-20', stop.dayOffset, stop.arrivalTime, stop.departureTime),
+      ...resolveStopTimes(
+        '2026-06-20',
+        stop.dayOffset,
+        stop.arrivalTime,
+        stop.departureTime,
+      ),
     }));
     const [a, b, c] = stops.map((s) => s.stationId);
 
     const fares: FareIndex = new Map([
-      [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 2 }]],
-      [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 3 }]],
-      [`${FIRST_CLASS}|${a}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 5 }]],
+      [
+        `${FIRST_CLASS}|${a}|${b}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 2,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${b}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 3,
+          },
+        ],
+      ],
+      [
+        `${FIRST_CLASS}|${a}|${c}`,
+        [
+          {
+            effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+            amountPiastres: 5,
+          },
+        ],
+      ],
     ]);
 
     process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000000';
 
-    expect(validateFareRules([coach(FIRST_CLASS)], resolved, fares)).toEqual([]);
-    const floorDetails = validateFareFloor([coach(FIRST_CLASS)], resolved, fares);
-    expect(floorDetails.some((d) => d.issue.includes('below the minimum chargeable amount'))).toBe(true);
+    expect(validateFareRules([coach(FIRST_CLASS)], resolved, fares)).toEqual(
+      [],
+    );
+    const floorDetails = validateFareFloor(
+      [coach(FIRST_CLASS)],
+      resolved,
+      fares,
+    );
+    expect(floorDetails).toEqual([
+      {
+        field: `fares[${FIRST_CLASS}:${a}->${b}]`,
+        rejectedValue: 2,
+        issueKey: 'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+        actionKey: 'ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM',
+      },
+    ]);
   });
 
   it('validateTimetableCandidate still refuses both a repeated station and a below-floor fare', () => {
@@ -455,7 +656,289 @@ describe('generation safety: duplicate-station and the Stripe floor stay publish
 
     const details = validateTimetableCandidate({ ...candidate, stops });
 
-    expect(details.some((d) => d.issue.includes('same station'))).toBe(true);
-    expect(details.some((d) => d.issue.includes('below the minimum chargeable amount'))).toBe(true);
+    expect(details.map((d) => d.issueKey)).toEqual(
+      expect.arrayContaining([
+        'ISSUE_STATION_REPEATED_ON_ROUTE',
+        'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+      ]),
+    );
   });
+});
+
+describe('validateStopsStructure refs', () => {
+  it('keeps the four endpoint rules and their rejected values distinct', () => {
+    const stops = makeStops(3);
+    stops[0] = { ...stops[0], arrivalTime: '00:00', departureTime: null };
+    stops[2] = { ...stops[2], arrivalTime: null, departureTime: '00:45' };
+
+    expect(validateStopsStructure(stops, new Set(STATION_IDS))).toEqual([
+      {
+        field: 'stops[0].arrivalTime',
+        rejectedValue: '00:00',
+        issueKey: 'ISSUE_FIRST_STOP_HAS_ARRIVAL',
+        actionKey: 'ACTION_CLEAR_ARRIVAL_ON_FIRST_STOP',
+      },
+      {
+        field: 'stops[0].departureTime',
+        rejectedValue: null,
+        issueKey: 'ISSUE_FIRST_STOP_LACKS_DEPARTURE',
+        actionKey: 'ACTION_SET_DEPARTURE_ON_FIRST_STOP',
+      },
+      {
+        field: 'stops[2].arrivalTime',
+        rejectedValue: null,
+        issueKey: 'ISSUE_LAST_STOP_LACKS_ARRIVAL',
+        actionKey: 'ACTION_SET_ARRIVAL_ON_LAST_STOP',
+      },
+      {
+        field: 'stops[2].departureTime',
+        rejectedValue: '00:45',
+        issueKey: 'ISSUE_LAST_STOP_HAS_DEPARTURE',
+        actionKey: 'ACTION_CLEAR_DEPARTURE_ON_LAST_STOP',
+      },
+    ]);
+  });
+
+  it('distinguishes missing arrival and departure actions on an intermediate stop', () => {
+    const stops = makeStops(3);
+    stops[1] = { ...stops[1], arrivalTime: null, departureTime: null };
+
+    expect(validateStopsStructure(stops, new Set(STATION_IDS))).toEqual([
+      {
+        field: 'stops[1].arrivalTime',
+        rejectedValue: null,
+        issueKey: 'ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE',
+        actionKey: 'ACTION_SET_ARRIVAL_ON_STOP',
+      },
+      {
+        field: 'stops[1].departureTime',
+        rejectedValue: null,
+        issueKey: 'ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE',
+        actionKey: 'ACTION_SET_DEPARTURE_ON_STOP',
+      },
+    ]);
+  });
+
+  it('keeps position and day-offset ordering rules distinct', () => {
+    const stops = makeStops(3);
+    stops[1] = { ...stops[1], position: stops[0].position, dayOffset: -1 };
+
+    expect(validateStopsStructure(stops, new Set(STATION_IDS))).toEqual([
+      {
+        field: 'stops[1].position',
+        rejectedValue: 1,
+        issueKey: 'ISSUE_STOP_POSITIONS_OUT_OF_ORDER',
+        actionKey: 'ACTION_RENUMBER_STOP_POSITIONS',
+      },
+      {
+        field: 'stops[1].dayOffset',
+        rejectedValue: -1,
+        issueKey: 'ISSUE_DAY_OFFSET_GOES_BACKWARDS',
+        actionKey: 'ACTION_FIX_DAY_OFFSET',
+      },
+    ]);
+  });
+});
+
+describe('validateNoDuplicateStations refs', () => {
+  it('keeps the original zero-based first index for every later repetition', () => {
+    const stops = makeStops(5);
+    stops[3] = { ...stops[3], stationId: stops[1].stationId };
+    stops[4] = { ...stops[4], stationId: stops[1].stationId };
+
+    expect(validateNoDuplicateStations(stops)).toEqual([
+      {
+        field: 'stops[3].stationId',
+        rejectedValue: stops[1].stationId,
+        issueKey: 'ISSUE_STATION_REPEATED_ON_ROUTE',
+        actionKey: 'ACTION_REMOVE_REPEATED_STATION',
+        params: { firstStopIndex: '1' },
+      },
+      {
+        field: 'stops[4].stationId',
+        rejectedValue: stops[1].stationId,
+        issueKey: 'ISSUE_STATION_REPEATED_ON_ROUTE',
+        actionKey: 'ACTION_REMOVE_REPEATED_STATION',
+        params: { firstStopIndex: '1' },
+      },
+    ]);
+  });
+});
+
+describe('validateStopsChronology refs', () => {
+  it('keeps the ISO rejected value when departure precedes arrival', () => {
+    const stops = [
+      {
+        stationId: STATION_IDS[0],
+        arrivalAt: new Date('2026-06-20T12:00:00Z'),
+        departureAt: new Date('2026-06-20T11:59:00Z'),
+      },
+    ];
+
+    expect(validateStopsChronology(stops)).toEqual([
+      {
+        field: 'stops[0].departureTime',
+        rejectedValue: '2026-06-20T11:59:00.000Z',
+        issueKey: 'ISSUE_DEPARTURE_BEFORE_ARRIVAL',
+        actionKey: 'ACTION_FIX_DEPARTURE_AFTER_ARRIVAL',
+      },
+    ]);
+  });
+
+  it.each(['arrivalAt', 'departureAt'] as const)(
+    'keeps the arrival rejected value when a connecting %s is missing',
+    (missingTime) => {
+      const stops = makeStops(2).map((stop) => ({
+        stationId: stop.stationId,
+        ...resolveStopTimes(
+          '2026-06-20',
+          stop.dayOffset,
+          stop.arrivalTime,
+          stop.departureTime,
+        ),
+      }));
+      if (missingTime === 'arrivalAt') {
+        stops[1].arrivalAt = null;
+      } else {
+        stops[0].departureAt = null;
+      }
+
+      expect(validateStopsChronology(stops)).toEqual([
+        {
+          field: 'stops[1].arrivalTime',
+          rejectedValue: stops[1].arrivalAt,
+          issueKey: 'ISSUE_STOP_TIMES_INVALID',
+          actionKey: 'ACTION_SET_TIMES_ON_EVERY_INTERMEDIATE_STOP',
+        },
+      ]);
+    },
+  );
+});
+
+describe('validateFareRules refs', () => {
+  it('reports missing travel classes before checking stops or fares', () => {
+    expect(validateFareRules([], [], new Map())).toEqual([
+      {
+        field: 'coaches',
+        rejectedValue: 0,
+        issueKey: 'ISSUE_TRAIN_HAS_NO_TRAVEL_CLASSES',
+        actionKey: 'ACTION_ADD_COACH_WITH_TRAVEL_CLASS',
+      },
+    ]);
+  });
+
+  it('reports the missing origin departure without attempting its fares', () => {
+    const stops = makeStops(2).map((stop) => ({
+      stationId: stop.stationId,
+      ...resolveStopTimes(
+        '2026-06-20',
+        stop.dayOffset,
+        stop.arrivalTime,
+        stop.departureTime,
+      ),
+    }));
+    stops[0].departureAt = null;
+
+    expect(validateFareRules([coach(FIRST_CLASS)], stops, new Map())).toEqual([
+      {
+        field: 'stops[0].departureTime',
+        rejectedValue: null,
+        issueKey: 'ISSUE_ORIGIN_STOP_LACKS_DEPARTURE',
+        actionKey: 'ACTION_SET_DEPARTURE_ON_STOP',
+      },
+    ]);
+  });
+
+  it('preserves both contained pairs with zero-based indices and string fare amounts', () => {
+    const draftStops = makeStops(4);
+    const stationIds = draftStops.map((stop) => stop.stationId);
+    const stops = draftStops.map((stop) => ({
+      stationId: stop.stationId,
+      ...resolveStopTimes(
+        '2026-06-20',
+        stop.dayOffset,
+        stop.arrivalTime,
+        stop.departureTime,
+      ),
+    }));
+    const fares = coveringFares(stationIds, [FIRST_CLASS]);
+    fares.set(`${FIRST_CLASS}|${stationIds[1]}|${stationIds[3]}`, [
+      { effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 900 },
+    ]);
+
+    expect(validateFareRules([coach(FIRST_CLASS)], stops, fares)).toEqual([
+      {
+        field: `fares[${FIRST_CLASS}:${stationIds[1]}->${stationIds[3]}]`,
+        rejectedValue: 900,
+        issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR',
+        actionKey: 'ACTION_RAISE_FARE_FOR_PAIR',
+        params: {
+          travelClassId: FIRST_CLASS,
+          outerOriginIndex: '1',
+          outerDestinationIndex: '3',
+          innerOriginIndex: '1',
+          innerDestinationIndex: '2',
+          outerFarePiastres: '900',
+          innerFarePiastres: '1000',
+        },
+      },
+      {
+        field: `fares[${FIRST_CLASS}:${stationIds[1]}->${stationIds[3]}]`,
+        rejectedValue: 900,
+        issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR',
+        actionKey: 'ACTION_RAISE_FARE_FOR_PAIR',
+        params: {
+          travelClassId: FIRST_CLASS,
+          outerOriginIndex: '1',
+          outerDestinationIndex: '3',
+          innerOriginIndex: '2',
+          innerDestinationIndex: '3',
+          outerFarePiastres: '900',
+          innerFarePiastres: '1000',
+        },
+      },
+    ]);
+  });
+});
+
+describe('validateCapacityIssues refs', () => {
+  it('keeps the coach number and sorted distinct repeated seat labels', () => {
+    const coaches = [
+      coach(FIRST_CLASS, {
+        coachNumber: 7,
+        rows: [
+          { rowNumber: 1, leftSeats: ['10', '2'], rightSeats: ['2', '10'] },
+          { rowNumber: 2, leftSeats: ['10', '2'], rightSeats: [] },
+        ],
+      }),
+    ];
+
+    expect(validateCapacityIssues(coaches, new Set([LAYOUT_ID]))).toEqual([
+      {
+        field: 'coaches[0].coachLayout.rows',
+        rejectedValue: ['10', '2'],
+        issueKey: 'ISSUE_COACH_SEATS_REPEATED',
+        actionKey: 'ACTION_USE_UNIQUE_COACH_SEATS',
+        params: { coachNumber: '7', seatNumbers: '10, 2' },
+      },
+    ]);
+  });
+
+  it.each([0, 1])(
+    'reports no seats for %i empty coaches without changing the rejected count',
+    (count) => {
+      const coaches = Array.from({ length: count }, () =>
+        coach(FIRST_CLASS, { rows: [] }),
+      );
+
+      expect(validateCapacityIssues(coaches, new Set([LAYOUT_ID]))).toEqual([
+        {
+          field: 'coaches',
+          rejectedValue: count,
+          issueKey: 'ISSUE_TRAIN_HAS_NO_SEATS',
+          actionKey: 'ACTION_ADD_COACH_WITH_SEATS',
+        },
+      ]);
+    },
+  );
 });

@@ -12,7 +12,7 @@ import {
   type PublishTimetableRequest,
   type PublishTimetableResult,
   type TripSeatUsage,
-  type ValidationErrorDetail,
+  type ValidationIssueRef,
 } from '@app/contracts';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import { UNIT_OF_WORK } from '@app/common/persistence/unit-of-work.port.js';
@@ -180,8 +180,8 @@ export class TimetablePublishService {
         {
           field: 'trainNumber',
           rejectedValue: request.trainNumber,
-          issue: 'is not a known train number',
-          action: 'Choose a train number from the train list',
+          issueKey: 'ISSUE_TRAIN_NUMBER_NOT_KNOWN',
+          actionKey: 'ACTION_PICK_TRAIN_FROM_LIST',
         },
       ]);
     }
@@ -238,7 +238,7 @@ export class TimetablePublishService {
 
   private refusal(
     code: ErrorCode,
-    details: ValidationErrorDetail[],
+    details: ValidationIssueRef[],
   ): CatalogSearchError {
     return new CatalogSearchError(code, details, code);
   }
@@ -261,8 +261,8 @@ export class TimetablePublishService {
         {
           field: 'Idempotency-Key',
           rejectedValue: idempotencyKey,
-          issue: 'has already been used for a different publish',
-          action: 'Send a new Idempotency-Key for a different request body',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REUSED',
+          actionKey: 'ACTION_SEND_NEW_IDEMPOTENCY_KEY',
         },
       ]);
     }
@@ -295,8 +295,8 @@ export class TimetablePublishService {
    */
   private validateRequestShape(
     request: PublishTimetableRequest,
-  ): ValidationErrorDetail[] {
-    const details: ValidationErrorDetail[] = [];
+  ): ValidationIssueRef[] {
+    const details: ValidationIssueRef[] = [];
     const today = cairoToday(new Date());
 
     // The whole point of versioning: a publish changes the future. A date
@@ -306,15 +306,16 @@ export class TimetablePublishService {
       details.push({
         field: 'effectiveFrom',
         rejectedValue: request.effectiveFrom,
-        issue: 'is not a civil date in YYYY-MM-DD form',
-        action: 'Send the effective date as YYYY-MM-DD',
+        issueKey: 'ISSUE_CIVIL_DATE_FORMAT',
+        actionKey: 'ACTION_SEND_EFFECTIVE_DATE',
       });
     } else if (request.effectiveFrom < today) {
       details.push({
         field: 'effectiveFrom',
         rejectedValue: request.effectiveFrom,
-        issue: `is in the past (today in Cairo is ${today})`,
-        action: `Choose an effective date of ${today} or later`,
+        issueKey: 'ISSUE_EFFECTIVE_DATE_IN_THE_PAST',
+        actionKey: 'ACTION_PICK_EFFECTIVE_DATE_NOW_OR_LATER',
+        params: { today },
       });
     }
 
@@ -322,8 +323,8 @@ export class TimetablePublishService {
       details.push({
         field: 'runningDays',
         rejectedValue: request.runningDays,
-        issue: 'names no day the train runs',
-        action: 'List at least one weekday, 0 for Sunday through 6 for Saturday',
+        issueKey: 'ISSUE_NO_RUNNING_DAYS',
+        actionKey: 'ACTION_LIST_RUNNING_WEEKDAYS',
       });
     }
 
@@ -332,8 +333,8 @@ export class TimetablePublishService {
         details.push({
           field: 'runningDays',
           rejectedValue: day,
-          issue: 'is not a weekday between 0 (Sunday) and 6 (Saturday)',
-          action: 'Remove the value or replace it with a weekday from 0 to 6',
+          issueKey: 'ISSUE_WEEKDAY_OUT_OF_RANGE',
+          actionKey: 'ACTION_REMOVE_OR_FIX_WEEKDAY',
         });
       }
     }
@@ -349,16 +350,16 @@ export class TimetablePublishService {
   private validateReferences(
     request: PublishTimetableRequest,
     references: PublishReferences,
-  ): ValidationErrorDetail[] {
-    const details: ValidationErrorDetail[] = [];
+  ): ValidationIssueRef[] {
+    const details: ValidationIssueRef[] = [];
 
     request.coaches.forEach((coach, index) => {
       if (!references.knownTravelClassIds.has(coach.travelClassId)) {
         details.push({
           field: `coaches[${index}].travelClassId`,
           rejectedValue: coach.travelClassId,
-          issue: 'is not a known travel class',
-          action: 'Choose a travel class from the travel class list',
+          issueKey: 'ISSUE_TRAVEL_CLASS_NOT_KNOWN',
+          actionKey: 'ACTION_PICK_TRAVEL_CLASS_FROM_LIST',
         });
       }
     });
@@ -368,8 +369,8 @@ export class TimetablePublishService {
         details.push({
           field: `fares[${index}].travelClassId`,
           rejectedValue: fare.travelClassId,
-          issue: 'is not a known travel class',
-          action: 'Choose a travel class from the travel class list',
+          issueKey: 'ISSUE_TRAVEL_CLASS_NOT_KNOWN',
+          actionKey: 'ACTION_PICK_TRAVEL_CLASS_FROM_LIST',
         });
       }
     });
@@ -399,22 +400,19 @@ export class TimetablePublishService {
    * operator submitted. A refusal they can act on is better than a success
    * that quietly ignored half their request.
    *
-   * Changing a composition is deliberately out of scope this sprint: the
-   * design's enumerated writes do not include `train_coach`. The refusal says
-   * so, or an operator reading it has no action to take.
+   * Composition changes are separate from publishing: change the train's
+   * coaches first, then publish with the matching composition.
    */
   private async validateComposition(
     request: PublishTimetableRequest,
     trainId: string,
-  ): Promise<ValidationErrorDetail[]> {
-    const actual = (await this.trips.getTrainCoaches(trainId)).map(
-      (coach) => ({
-        position: coach.position,
-        coachNumber: coach.coachNumber,
-        travelClassId: coach.travelClass.id,
-        coachLayoutId: coach.coachLayout.id,
-      }),
-    );
+  ): Promise<ValidationIssueRef[]> {
+    const actual = (await this.trips.getTrainCoaches(trainId)).map((coach) => ({
+      position: coach.position,
+      coachNumber: coach.coachNumber,
+      travelClassId: coach.travelClass.id,
+      coachLayoutId: coach.coachLayout.id,
+    }));
 
     // By value on the four fields that matter, in position order -- never by
     // object identity, and never by array order, which the client is free to
@@ -439,23 +437,29 @@ export class TimetablePublishService {
       return [];
     }
 
-    return [
-      {
-        field: 'coaches',
-        rejectedValue: submitted,
-        issue:
-          `does not match the train's current composition, which is ` +
-          `${describeComposition(expected)}. A publish validates its fares ` +
-          `against the coaches it is sent, and generation validates them ` +
-          `against the train's real coaches, so a mismatch would publish a ` +
-          `version that then generates no trips`,
-        action:
-          `Send exactly the train's current composition ` +
-          `(${describeComposition(expected)}). Composition cannot be changed ` +
-          `through this endpoint in this sprint -- change the train's coaches ` +
-          `first, then publish`,
+    if (expected.length === 0) {
+      return [
+        {
+          field: 'coaches',
+          rejectedValue: submitted,
+          issueKey: 'ISSUE_TRAIN_HAS_NO_COACHES',
+          actionKey: 'ACTION_ADD_TRAIN_COACHES_BEFORE_PUBLISH',
+        },
+      ];
+    }
+
+    return expected.map((coach) => ({
+      field: 'coaches',
+      rejectedValue: submitted,
+      issueKey: 'ISSUE_COACH_COMPOSITION_MISMATCH',
+      actionKey: 'ACTION_SEND_CURRENT_COACH_COMPOSITION',
+      params: {
+        position: String(coach.position),
+        coachNumber: String(coach.coachNumber),
+        travelClassId: coach.travelClassId,
+        coachLayoutId: coach.coachLayoutId,
       },
-    ];
+    }));
   }
 
   /**
@@ -765,16 +769,18 @@ export class TimetablePublishService {
           {
             field: 'trainNumber',
             rejectedValue: request.trainNumber,
-            issue:
-              'inventory could not say whether the affected trips have sold or held seats',
-            action: `Retry the publish with the same Idempotency-Key in about ${dependencyRetryAfterSeconds()} seconds`,
+            issueKey: 'ISSUE_SEAT_USAGE_UNAVAILABLE',
+            actionKey: 'ACTION_RETRY_PUBLISH',
+            params: {
+              retryAfterSeconds: String(dependencyRetryAfterSeconds()),
+            },
           },
         ],
         ErrorCode.DEPENDENCY_UNAVAILABLE,
       );
     }
 
-    const details: ValidationErrorDetail[] = [];
+    const details: ValidationIssueRef[] = [];
     const laterDate = addCivilDays(
       this.publishWindow()[1],
       PUBLISH_WINDOW_MARGIN_DAYS,
@@ -792,8 +798,13 @@ export class TimetablePublishService {
             {
               field: 'trainNumber',
               rejectedValue: request.trainNumber,
-              issue: `inventory did not answer for trip ${change.tripId} on ${change.serviceDate}`,
-              action: `Retry the publish with the same Idempotency-Key in about ${dependencyRetryAfterSeconds()} seconds`,
+              issueKey: 'ISSUE_TRIP_SEAT_USAGE_UNAVAILABLE',
+              actionKey: 'ACTION_RETRY_PUBLISH',
+              params: {
+                tripId: change.tripId,
+                serviceDate: change.serviceDate,
+                retryAfterSeconds: String(dependencyRetryAfterSeconds()),
+              },
             },
           ],
           ErrorCode.DEPENDENCY_UNAVAILABLE,
@@ -803,14 +814,21 @@ export class TimetablePublishService {
       const inUse = seats.soldCount + seats.heldCount;
       if (inUse === 0) continue;
 
-      const counts = `${seats.soldCount} sold and ${seats.heldCount} held seat(s)`;
+      const params = {
+        tripId: change.tripId,
+        serviceDate: change.serviceDate,
+        soldCount: String(seats.soldCount),
+        heldCount: String(seats.heldCount),
+        laterDate,
+      };
 
       if (change.kind === 'withdrawn') {
         details.push({
           field: 'runningDays',
           rejectedValue: request.runningDays,
-          issue: `trip ${change.tripId} on ${change.serviceDate} has ${counts}, and these running days would withdraw it`,
-          action: `Keep that weekday, or republish with an effectiveFrom of ${laterDate} or later`,
+          issueKey: 'ISSUE_PUBLISH_WOULD_WITHDRAW_IN_USE_TRIP',
+          actionKey: 'ACTION_KEEP_IN_USE_WEEKDAY_OR_PUBLISH_LATER',
+          params,
         });
         continue;
       }
@@ -823,8 +841,9 @@ export class TimetablePublishService {
         details.push({
           field: 'stops',
           rejectedValue: stillInUse,
-          issue: `trip ${change.tripId} on ${change.serviceDate} has ${counts} boarding or alighting at ${stillInUse.join(', ')}, and this route drops those stops`,
-          action: `Keep those stops, or republish with an effectiveFrom of ${laterDate} or later`,
+          issueKey: 'ISSUE_PUBLISH_WOULD_DROP_IN_USE_STOPS',
+          actionKey: 'ACTION_KEEP_IN_USE_STOPS_OR_PUBLISH_LATER',
+          params: { ...params, stationIds: stillInUse.join(', ') },
         });
         continue;
       }
@@ -833,8 +852,9 @@ export class TimetablePublishService {
         details.push({
           field: 'stops',
           rejectedValue: change.serviceDate,
-          issue: `trip ${change.tripId} on ${change.serviceDate} has ${counts}, and this publish would change its stops or times`,
-          action: `Republish with an effectiveFrom of ${laterDate} or later, so the change only reaches trips nobody has bought`,
+          issueKey: 'ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_TRIP',
+          actionKey: 'ACTION_PUBLISH_AFTER_IN_USE_TRIPS',
+          params,
         });
       }
     }
@@ -983,15 +1003,7 @@ export class TimetablePublishService {
     },
   ): Promise<PublishTimetableResult | null> {
     if (hasPostgresCode(error, EXCLUSION_VIOLATION)) {
-      throw this.refusal(ErrorCode.CONFLICT, [
-        {
-          field: 'effectiveFrom',
-          rejectedValue: params.request.effectiveFrom,
-          issue: await this.describeOverlap(params),
-          action:
-            'Choose an effective date after the clashing version, or withdraw that version first',
-        },
-      ]);
+      throw this.refusal(ErrorCode.CONFLICT, await this.overlapDetails(params));
     }
 
     if (!hasPostgresCode(error, UNIQUE_VIOLATION)) return null;
@@ -1007,8 +1019,8 @@ export class TimetablePublishService {
         {
           field: 'Idempotency-Key',
           rejectedValue: params.idempotencyKey,
-          issue: 'has already been used for a different publish',
-          action: 'Send a new Idempotency-Key for a different request body',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REUSED',
+          actionKey: 'ACTION_SEND_NEW_IDEMPOTENCY_KEY',
         },
       ]);
     }
@@ -1019,10 +1031,10 @@ export class TimetablePublishService {
   }
 
   /** Names the version in the way, so the operator knows what to move past. */
-  private async describeOverlap(params: {
+  private async overlapDetails(params: {
     request: PublishTimetableRequest;
     references: PublishReferences;
-  }): Promise<string> {
+  }): Promise<ValidationIssueRef[]> {
     const train = params.references.train!;
     const published = await this.repository.publishedVersionsOf(train.id);
 
@@ -1033,17 +1045,41 @@ export class TimetablePublishService {
     );
 
     if (clashing.length === 0) {
-      return 'overlaps a published version of this train';
+      return [
+        {
+          field: 'effectiveFrom',
+          rejectedValue: params.request.effectiveFrom,
+          issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_RANGE',
+          actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+        },
+      ];
     }
 
-    return `overlaps published version(s) ${clashing
-      .map(
-        (timetable) =>
-          `${timetable.version} (${timetable.effectiveFrom} to ${
-            timetable.effectiveUntil ?? 'open-ended'
-          })`,
-      )
-      .join(', ')} of this train`;
+    return clashing.map((timetable): ValidationIssueRef => {
+      if (!timetable.effectiveUntil) {
+        return {
+          field: 'effectiveFrom',
+          rejectedValue: params.request.effectiveFrom,
+          issueKey: 'ISSUE_TIMETABLE_OVERLAPS_OPEN_ENDED_VERSION',
+          actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+          params: {
+            version: String(timetable.version),
+            effectiveFrom: timetable.effectiveFrom,
+          },
+        };
+      }
+      return {
+        field: 'effectiveFrom',
+        rejectedValue: params.request.effectiveFrom,
+        issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION',
+        actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+        params: {
+          version: String(timetable.version),
+          effectiveFrom: timetable.effectiveFrom,
+          effectiveUntil: timetable.effectiveUntil,
+        },
+      };
+    });
   }
 
   private async snapshotOf(
@@ -1196,25 +1232,6 @@ export class TimetablePublishService {
       );
     });
   }
-}
-
-/** The train's coaches in words, so a refusal names what to send instead. */
-function describeComposition(
-  coaches: {
-    position: number;
-    coachNumber: number;
-    travelClassId: string;
-    coachLayoutId: string;
-  }[],
-): string {
-  if (coaches.length === 0) return 'no coaches at all';
-
-  return coaches
-    .map(
-      (coach) =>
-        `position ${coach.position}: coach ${coach.coachNumber}, class ${coach.travelClassId}, layout ${coach.coachLayoutId}`,
-    )
-    .join('; ');
 }
 
 function shapeOfTripStop(stop: TripStopEntity): StopShape {

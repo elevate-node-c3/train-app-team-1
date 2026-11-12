@@ -379,6 +379,254 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'اختر وقت بدء مختلفاً، ولو بفارق جزء من ألف من الثانية.',
     en: 'Choose a different effective time, even by one millisecond.',
   },
+  ISSUE_ROUTE_NEEDS_TWO_STOPS: {
+    ar: 'المسار يجب أن يضم محطتي توقف على الأقل.',
+    en: 'A route must have at least two stops.',
+  },
+  ISSUE_STOP_POSITIONS_OUT_OF_ORDER: {
+    ar: 'محطات التوقف ليست مرتبة بالترتيب الصحيح.',
+    en: 'The stops are not in the correct order.',
+  },
+  ISSUE_DAY_OFFSET_GOES_BACKWARDS: {
+    ar: 'فارق الأيام يعود إلى يوم سابق.',
+    en: 'The day offset moves backwards.',
+  },
+  ISSUE_FIRST_STOP_HAS_ARRIVAL: {
+    ar: 'المحطة الأولى لا يجب أن يكون لها وقت وصول.',
+    en: 'The first stop must not have an arrival time.',
+  },
+  ISSUE_FIRST_STOP_LACKS_DEPARTURE: {
+    ar: 'المحطة الأولى تحتاج إلى وقت مغادرة.',
+    en: 'The first stop needs a departure time.',
+  },
+  ISSUE_LAST_STOP_HAS_DEPARTURE: {
+    ar: 'المحطة الأخيرة لا يجب أن يكون لها وقت مغادرة.',
+    en: 'The last stop must not have a departure time.',
+  },
+  ISSUE_LAST_STOP_LACKS_ARRIVAL: {
+    ar: 'المحطة الأخيرة تحتاج إلى وقت وصول.',
+    en: 'The last stop needs an arrival time.',
+  },
+  ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE: {
+    ar: 'المحطة المتوسطة تحتاج إلى وقتي الوصول والمغادرة.',
+    en: 'An intermediate stop needs both arrival and departure times.',
+  },
+  ISSUE_STOP_TIMES_INVALID: {
+    ar: 'أوقات الجدول الزمني غير مكتملة أو غير صالحة.',
+    en: 'The timetable times are incomplete or invalid.',
+  },
+  ISSUE_ORIGIN_STOP_LACKS_DEPARTURE: {
+    ar: 'محطة المغادرة هذه ليس لها وقت مغادرة.',
+    en: 'This origin stop has no departure time.',
+  },
+  ISSUE_DEPARTURE_BEFORE_ARRIVAL: {
+    ar: 'وقت المغادرة يقع قبل وقت الوصول.',
+    en: 'The departure time is before the arrival time.',
+  },
+  ISSUE_STOP_TIMES_OUT_OF_ORDER: {
+    ar: 'أوقات محطات التوقف ليست مرتبة زمنياً.',
+    en: 'The stop times are not in chronological order.',
+  },
+  ISSUE_TRAIN_HAS_NO_TRAVEL_CLASSES: {
+    ar: 'هذا القطار ليس له درجات سفر.',
+    en: 'This train has no travel classes.',
+  },
+  ISSUE_COACH_LAYOUT_NOT_KNOWN: {
+    ar: 'تصميم العربة هذا غير موجود.',
+    en: 'This coach layout does not exist.',
+  },
+  ISSUE_TRAIN_HAS_NO_SEATS: {
+    ar: 'هذا القطار ليس له مقاعد.',
+    en: 'This train has no seats.',
+  },
+  ISSUE_NO_RUNNING_DAYS: {
+    ar: 'لم يُحدد أي يوم لتشغيل القطار.',
+    en: 'No running day was specified for the train.',
+  },
+  ISSUE_WEEKDAY_OUT_OF_RANGE: {
+    ar: 'هذا ليس يوم أسبوع من 0 للأحد إلى 6 للسبت.',
+    en: 'This is not a weekday from 0 for Sunday through 6 for Saturday.',
+  },
+  ISSUE_STATION_REPEATED_ON_ROUTE: {
+    ar: 'هذه المحطة موجودة بالفعل عند فهرس محطة التوقف {{firstStopIndex}}.',
+    en: 'This station already appears at stop index {{firstStopIndex}}.',
+  },
+  ISSUE_FARE_MISSING_FOR_PAIR: {
+    ar: 'لا توجد أجرة صالحة موجبة بعدد صحيح من القروش لدرجة السفر {{travelClassId}} من المحطة {{originStationId}} إلى المحطة {{destinationStationId}}.',
+    en: 'A valid positive whole-number fare is missing for travel class {{travelClassId}} from station {{originStationId}} to station {{destinationStationId}}.',
+  },
+  ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR: {
+    ar: 'لدرجة السفر {{travelClassId}}، أجرة الجزء من فهرس المحطة {{outerOriginIndex}} إلى {{outerDestinationIndex}} هي {{outerFarePiastres}} قرشاً، وهي أقل من أجرة الجزء الذي يتضمنه من فهرس المحطة {{innerOriginIndex}} إلى {{innerDestinationIndex}}، وقدرها {{innerFarePiastres}} قرشاً.',
+    en: 'For travel class {{travelClassId}}, the {{outerFarePiastres}}-piastre fare from stop index {{outerOriginIndex}} to {{outerDestinationIndex}} is lower than the {{innerFarePiastres}}-piastre fare from stop index {{innerOriginIndex}} to {{innerDestinationIndex}}, which it contains.',
+  },
+  ISSUE_COACH_SEATS_REPEATED: {
+    ar: 'العربة {{coachNumber}} تكرر أرقام المقاعد {{seatNumbers}}.',
+    en: 'Coach {{coachNumber}} repeats seat numbers {{seatNumbers}}.',
+  },
+  ISSUE_EFFECTIVE_DATE_IN_THE_PAST: {
+    ar: 'تاريخ البدء هذا قد مضى. تاريخ اليوم في القاهرة هو {{today}}.',
+    en: 'This effective date is in the past. Today in Cairo is {{today}}.',
+  },
+  ISSUE_TRAIN_HAS_NO_COACHES: {
+    ar: 'هذا القطار ليس له عربات حالياً.',
+    en: 'This train currently has no coaches.',
+  },
+  ISSUE_COACH_COMPOSITION_MISMATCH: {
+    ar: 'تركيبة العربات هذه لا تطابق القطار. يجب أن تتضمن العربة {{coachNumber}} في الموضع {{position}}، بدرجة السفر {{travelClassId}} وتصميم العربة {{coachLayoutId}}.',
+    en: 'This composition does not match the train. It must include coach {{coachNumber}} at position {{position}}, with travel class {{travelClassId}} and layout {{coachLayoutId}}.',
+  },
+  ISSUE_SEAT_USAGE_UNAVAILABLE: {
+    ar: 'تعذّر التحقق من المقاعد المباعة أو المحجوزة مؤقتاً في الرحلات المتأثرة.',
+    en: 'Sold or held seats could not be checked for the affected trips.',
+  },
+  ISSUE_TRIP_SEAT_USAGE_UNAVAILABLE: {
+    ar: 'تعذّر التحقق من المقاعد المباعة أو المحجوزة مؤقتاً للرحلة {{tripId}} في {{serviceDate}}.',
+    en: 'Sold or held seats could not be checked for trip {{tripId}} on {{serviceDate}}.',
+  },
+  ISSUE_PUBLISH_WOULD_WITHDRAW_IN_USE_TRIP: {
+    ar: 'في الرحلة {{tripId}} بتاريخ {{serviceDate}}، يبلغ عدد المقاعد المباعة {{soldCount}} وعدد المقاعد المحجوزة مؤقتاً {{heldCount}}. أيام التشغيل هذه ستلغي الرحلة.',
+    en: 'For trip {{tripId}} on {{serviceDate}}, sold seats total {{soldCount}} and held seats total {{heldCount}}. These running days would withdraw the trip.',
+  },
+  ISSUE_PUBLISH_WOULD_DROP_IN_USE_STOPS: {
+    ar: 'في الرحلة {{tripId}} بتاريخ {{serviceDate}}، يبلغ عدد المقاعد المباعة {{soldCount}} وعدد المقاعد المحجوزة مؤقتاً {{heldCount}}. يصعد الركاب أو ينزلون في المحطات {{stationIds}} التي سيزيلها هذا المسار.',
+    en: 'For trip {{tripId}} on {{serviceDate}}, sold seats total {{soldCount}} and held seats total {{heldCount}}. Passengers board or alight at stations {{stationIds}}, which this route would remove.',
+  },
+  ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_TRIP: {
+    ar: 'في الرحلة {{tripId}} بتاريخ {{serviceDate}}، يبلغ عدد المقاعد المباعة {{soldCount}} وعدد المقاعد المحجوزة مؤقتاً {{heldCount}}. نشر هذا الجدول سيغيّر محطات الرحلة أو أوقاتها.',
+    en: "For trip {{tripId}} on {{serviceDate}}, sold seats total {{soldCount}} and held seats total {{heldCount}}. This publish would change the trip's stops or times.",
+  },
+  ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_RANGE: {
+    ar: 'تاريخ البدء هذا يتداخل مع نسخة منشورة من الجدول الزمني لهذا القطار.',
+    en: 'This effective date overlaps a published timetable version for this train.',
+  },
+  ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION: {
+    ar: 'تاريخ البدء هذا يتداخل مع النسخة {{version}} من الجدول الزمني لهذا القطار، المنشورة من {{effectiveFrom}} إلى {{effectiveUntil}}.',
+    en: 'This effective date overlaps timetable version {{version}} for this train, published from {{effectiveFrom}} to {{effectiveUntil}}.',
+  },
+  ISSUE_TIMETABLE_OVERLAPS_OPEN_ENDED_VERSION: {
+    ar: 'تاريخ البدء هذا يتداخل مع النسخة {{version}} من الجدول الزمني لهذا القطار، المنشورة من {{effectiveFrom}} دون تاريخ انتهاء.',
+    en: 'This effective date overlaps timetable version {{version}} for this train, published from {{effectiveFrom}} with no end date.',
+  },
+  ACTION_ADD_STOPS_TO_TWO: {
+    ar: 'أضف محطات حتى يضم المسار محطتي توقف على الأقل.',
+    en: 'Add stops until the route has at least two.',
+  },
+  ACTION_RENUMBER_STOP_POSITIONS: {
+    ar: 'أعد ترقيم المحطات بترتيب متزايد.',
+    en: 'Renumber the stop positions in increasing order.',
+  },
+  ACTION_FIX_DAY_OFFSET: {
+    ar: 'زد فارق الأيام حتى لا يعود المسار إلى يوم سابق.',
+    en: 'Increase the day offset so the route never moves backwards in calendar days.',
+  },
+  ACTION_CLEAR_ARRIVAL_ON_FIRST_STOP: {
+    ar: 'امسح وقت الوصول في المحطة الأولى.',
+    en: 'Clear the arrival time at the first stop.',
+  },
+  ACTION_SET_DEPARTURE_ON_FIRST_STOP: {
+    ar: 'حدد وقت المغادرة في المحطة الأولى.',
+    en: 'Set the departure time at the first stop.',
+  },
+  ACTION_CLEAR_DEPARTURE_ON_LAST_STOP: {
+    ar: 'امسح وقت المغادرة في المحطة الأخيرة.',
+    en: 'Clear the departure time at the last stop.',
+  },
+  ACTION_SET_ARRIVAL_ON_LAST_STOP: {
+    ar: 'حدد وقت الوصول في المحطة الأخيرة.',
+    en: 'Set the arrival time at the last stop.',
+  },
+  ACTION_SET_ARRIVAL_ON_STOP: {
+    ar: 'حدد وقت الوصول في محطة التوقف هذه.',
+    en: 'Set the arrival time at this stop.',
+  },
+  ACTION_SET_DEPARTURE_ON_STOP: {
+    ar: 'حدد وقت المغادرة في محطة التوقف هذه.',
+    en: 'Set the departure time at this stop.',
+  },
+  ACTION_SET_TIMES_ON_EVERY_INTERMEDIATE_STOP: {
+    ar: 'حدد وقتي الوصول والمغادرة في كل محطة متوسطة.',
+    en: 'Set arrival and departure times on every intermediate stop.',
+  },
+  ACTION_FIX_DEPARTURE_AFTER_ARRIVAL: {
+    ar: 'حدد وقت مغادرة بعد الوصول أو مساوياً له.',
+    en: 'Set the departure time at or after the arrival.',
+  },
+  ACTION_FIX_STOP_TIME_ORDER: {
+    ar: 'حدد وقت وصول هذه المحطة بعد مغادرة المحطة السابقة أو عند وقتها نفسه.',
+    en: "Set this stop's arrival at or after the previous stop's departure.",
+  },
+  ACTION_ADD_COACH_WITH_TRAVEL_CLASS: {
+    ar: 'أضف عربة بدرجة سفر قبل النشر.',
+    en: 'Add a coach with a travel class before publishing.',
+  },
+  ACTION_PICK_COACH_LAYOUT_FROM_LIST: {
+    ar: 'اختر تصميم عربة موجوداً.',
+    en: 'Choose an existing coach layout.',
+  },
+  ACTION_ADD_COACH_WITH_SEATS: {
+    ar: 'أضف عربة بتصميم يحتوي على مقاعد قبل النشر.',
+    en: 'Add a coach with a layout that contains seats before publishing.',
+  },
+  ACTION_LIST_RUNNING_WEEKDAYS: {
+    ar: 'حدد يوم تشغيل واحداً على الأقل، من 0 للأحد إلى 6 للسبت.',
+    en: 'List at least one running day, from 0 for Sunday through 6 for Saturday.',
+  },
+  ACTION_REMOVE_OR_FIX_WEEKDAY: {
+    ar: 'احذف هذه القيمة أو استبدلها بيوم أسبوع من 0 إلى 6.',
+    en: 'Remove this value or replace it with a weekday from 0 to 6.',
+  },
+  ACTION_SEND_EFFECTIVE_DATE: {
+    ar: 'أرسل تاريخ البدء على صورة YYYY-MM-DD.',
+    en: 'Send the effective date as YYYY-MM-DD.',
+  },
+  ACTION_REMOVE_REPEATED_STATION: {
+    ar: 'احذف محطة التوقف المكررة، أو اختر محطة مختلفة.',
+    en: 'Remove the repeated stop, or choose a different station.',
+  },
+  ACTION_ADD_FARE_FOR_PAIR: {
+    ar: 'أضف أجرة صالحة موجبة بعدد صحيح من القروش لدرجة السفر {{travelClassId}} من المحطة {{originStationId}} إلى المحطة {{destinationStationId}}.',
+    en: 'Add a valid positive whole-number fare for travel class {{travelClassId}} from station {{originStationId}} to station {{destinationStationId}}.',
+  },
+  ACTION_RAISE_FARE_FOR_PAIR: {
+    ar: 'ارفع أجرة درجة السفر {{travelClassId}} من فهرس المحطة {{outerOriginIndex}} إلى {{outerDestinationIndex}} إلى {{innerFarePiastres}} قرشاً على الأقل.',
+    en: 'Raise the fare for travel class {{travelClassId}} from stop index {{outerOriginIndex}} to {{outerDestinationIndex}} to at least {{innerFarePiastres}} piastres.',
+  },
+  ACTION_USE_UNIQUE_COACH_SEATS: {
+    ar: 'استخدم كل رقم مقعد مرة واحدة فقط داخل العربة.',
+    en: 'Use each seat number only once within a coach.',
+  },
+  ACTION_PICK_EFFECTIVE_DATE_NOW_OR_LATER: {
+    ar: 'اختر تاريخ بدء هو {{today}} أو بعده.',
+    en: 'Choose an effective date of {{today}} or later.',
+  },
+  ACTION_ADD_TRAIN_COACHES_BEFORE_PUBLISH: {
+    ar: 'أضف عربات إلى القطار أولاً، ثم انشر الجدول الزمني.',
+    en: 'Add coaches to the train first, then publish the timetable.',
+  },
+  ACTION_SEND_CURRENT_COACH_COMPOSITION: {
+    ar: 'أرسل تركيبة العربات الحالية للقطار كما هي. لا يمكن تغييرها عبر هذا الطلب؛ غيّر عربات القطار أولاً، ثم انشر الجدول الزمني.',
+    en: "Send exactly the train's current composition. This request cannot change it; change the train's coaches first, then publish.",
+  },
+  ACTION_RETRY_PUBLISH: {
+    ar: 'أعد محاولة نشر الجدول الزمني بمفتاح المعاملة نفسه بعد نحو {{retryAfterSeconds}} ثانية.',
+    en: 'Retry the publish with the same idempotency key in about {{retryAfterSeconds}} seconds.',
+  },
+  ACTION_KEEP_IN_USE_WEEKDAY_OR_PUBLISH_LATER: {
+    ar: 'أبقِ يوم التشغيل هذا، أو أعد النشر بتاريخ بدء هو {{laterDate}} أو بعده.',
+    en: 'Keep that weekday, or republish with an effective date of {{laterDate}} or later.',
+  },
+  ACTION_KEEP_IN_USE_STOPS_OR_PUBLISH_LATER: {
+    ar: 'أبقِ محطات التوقف هذه، أو أعد النشر بتاريخ بدء هو {{laterDate}} أو بعده.',
+    en: 'Keep those stops, or republish with an effective date of {{laterDate}} or later.',
+  },
+  ACTION_PUBLISH_AFTER_IN_USE_TRIPS: {
+    ar: 'أعد النشر بتاريخ بدء هو {{laterDate}} أو بعده، حتى يقتصر التغيير على الرحلات التي لا تحتوي على مقاعد مباعة أو محجوزة مؤقتاً.',
+    en: 'Republish with an effective date of {{laterDate}} or later, so the change reaches only trips with no sold or held seats.',
+  },
+  ACTION_PICK_NON_OVERLAPPING_DATES: {
+    ar: 'اختر تاريخ بدء بعد النسخة المتداخلة، أو ألغِ تلك النسخة أولاً.',
+    en: 'Choose an effective date after the clashing version, or withdraw that version first.',
+  },
 };
 
 export function resolveDetailText(

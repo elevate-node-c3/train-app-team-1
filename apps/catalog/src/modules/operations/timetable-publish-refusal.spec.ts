@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ErrorCode } from '@app/contracts';
+import {
+  addCivilDays,
+  ErrorCode,
+  type ValidationIssueRef,
+} from '@app/contracts';
 
 import {
   BENI_SUEF,
@@ -17,6 +21,7 @@ import {
   republishWithoutFridays,
   requestWithThreeProblems,
   TODAY,
+  WINDOW_END,
   validRequest,
   type PublishHarness,
 } from '../../../../../test/fixtures/timetable-publish-harness.js';
@@ -27,6 +32,7 @@ import { SeatUsageUnavailableError } from './inventory-seat-usage.grpc.client.js
 const D_PLUS_3 = '2026-06-25';
 /** The first Friday on or after the effective date. */
 const FIRST_FRIDAY = '2026-06-26';
+const LATER_DATE = addCivilDays(WINDOW_END, 1);
 
 describe('TimetablePublishService refusals', () => {
   let harness: PublishHarness;
@@ -59,7 +65,7 @@ describe('TimetablePublishService refusals', () => {
       );
 
     expect(rejection).toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
-    const details = (rejection as { details: { field: string }[] }).details;
+    const details = (rejection as { details: ValidationIssueRef[] }).details;
 
     // All three faults in one answer; stopping at the first costs more round trips.
     expect(details.length).toBeGreaterThanOrEqual(3);
@@ -73,9 +79,11 @@ describe('TimetablePublishService refusals', () => {
     // Every detail names the change to make.
     for (const detail of details) {
       expect(detail).toMatchObject({
-        issue: expect.any(String),
-        action: expect.any(String),
+        issueKey: expect.stringMatching(/^ISSUE_/),
+        actionKey: expect.stringMatching(/^ACTION_/),
       });
+      expect(detail).not.toHaveProperty('issue');
+      expect(detail).not.toHaveProperty('action');
     }
 
     await expectNothingWritten();
@@ -89,9 +97,48 @@ describe('TimetablePublishService refusals', () => {
 
     await expect(
       harness.service.publish(validRequest(), 'k', OPERATOR),
-    ).rejects.toMatchObject({ code: ErrorCode.DEPENDENCY_UNAVAILABLE });
+    ).rejects.toMatchObject({
+      code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+      details: [
+        {
+          field: 'trainNumber',
+          issueKey: 'ISSUE_SEAT_USAGE_UNAVAILABLE',
+          actionKey: 'ACTION_RETRY_PUBLISH',
+          params: { retryAfterSeconds: '5' },
+        },
+      ],
+    });
 
     await expectNothingWritten();
+  });
+
+  it('preserves the trip and date when a seat-usage answer is missing', async () => {
+    harness = makeHarness({ withExistingVersion: true });
+    const trip = await harness.tripOn(validRequest().effectiveFrom);
+    const dependency = harness.service as unknown as {
+      seatUsage: { seatUsageForTrips: () => Promise<Map<string, unknown>> };
+    };
+    vi.spyOn(dependency.seatUsage, 'seatUsageForTrips').mockResolvedValue(
+      new Map(),
+    );
+
+    await expect(
+      harness.service.publish(validRequest(), 'missing-usage', OPERATOR),
+    ).rejects.toMatchObject({
+      code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+      details: [
+        {
+          issueKey: 'ISSUE_TRIP_SEAT_USAGE_UNAVAILABLE',
+          actionKey: 'ACTION_RETRY_PUBLISH',
+          params: {
+            tripId: trip.id,
+            serviceDate: trip.serviceDate,
+            retryAfterSeconds: '5',
+          },
+        },
+      ],
+    });
+    expect(await harness.auditCount()).toBe(0);
   });
 
   // Silence is never zero: consult the seam even with no affected trip.
@@ -124,13 +171,18 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'stops' })],
     });
 
-    const [detail] = (rejection as { details: { issue: string; action: string }[] })
-      .details;
-    expect(detail.issue).toContain(sold.id);
-    expect(detail.issue).toContain(D_PLUS_3);
-    expect(detail.issue).toContain('2 sold');
-    // A later effective date is the one thing that works.
-    expect(detail.action).toMatch(/effectiveFrom of \d{4}-\d{2}-\d{2} or later/);
+    const [detail] = (rejection as { details: ValidationIssueRef[] }).details;
+    expect(detail).toMatchObject({
+      issueKey: 'ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_TRIP',
+      actionKey: 'ACTION_PUBLISH_AFTER_IN_USE_TRIPS',
+      params: {
+        tripId: sold.id,
+        serviceDate: D_PLUS_3,
+        soldCount: '2',
+        heldCount: '0',
+        laterDate: LATER_DATE,
+      },
+    });
 
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.auditCount()).toBe(0);
@@ -160,8 +212,18 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'stops' })],
     });
     expect(
-      (rejection as { details: { issue: string }[] }).details[0].issue,
-    ).toContain('1 held');
+      (rejection as { details: ValidationIssueRef[] }).details[0],
+    ).toMatchObject({
+      issueKey: 'ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_TRIP',
+      actionKey: 'ACTION_PUBLISH_AFTER_IN_USE_TRIPS',
+      params: {
+        tripId: held.id,
+        serviceDate: D_PLUS_3,
+        soldCount: '0',
+        heldCount: '1',
+        laterDate: LATER_DATE,
+      },
+    });
 
     expect(await harness.auditCount()).toBe(0);
     expect(harness.store.timetables).toHaveLength(1);
@@ -208,12 +270,22 @@ describe('TimetablePublishService refusals', () => {
       );
 
     expect(rejection).toMatchObject({ code: ErrorCode.CONFLICT });
-    const [detail] = (
-      rejection as { details: { field: string; rejectedValue: unknown }[] }
-    ).details;
+    const [detail] = (rejection as { details: ValidationIssueRef[] }).details;
     expect(detail.field).toBe('stops');
     // Names the station, not just "shape changed".
     expect(detail.rejectedValue).toEqual([GIZA]);
+    expect(detail).toMatchObject({
+      issueKey: 'ISSUE_PUBLISH_WOULD_DROP_IN_USE_STOPS',
+      actionKey: 'ACTION_KEEP_IN_USE_STOPS_OR_PUBLISH_LATER',
+      params: {
+        tripId: held.id,
+        serviceDate: D_PLUS_3,
+        soldCount: '0',
+        heldCount: '1',
+        stationIds: GIZA,
+        laterDate: LATER_DATE,
+      },
+    });
 
     expect(await harness.auditCount()).toBe(0);
   });
@@ -261,8 +333,18 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'runningDays' })],
     });
     expect(
-      (rejection as { details: { issue: string }[] }).details[0].issue,
-    ).toContain('3 sold');
+      (rejection as { details: ValidationIssueRef[] }).details[0],
+    ).toMatchObject({
+      issueKey: 'ISSUE_PUBLISH_WOULD_WITHDRAW_IN_USE_TRIP',
+      actionKey: 'ACTION_KEEP_IN_USE_WEEKDAY_OR_PUBLISH_LATER',
+      params: {
+        tripId: sold.id,
+        serviceDate: FIRST_FRIDAY,
+        soldCount: '3',
+        heldCount: '0',
+        laterDate: LATER_DATE,
+      },
+    });
 
     expect((await harness.tripOn(FIRST_FRIDAY)).status).toBe('published');
     expect(await harness.auditCount()).toBe(0);
@@ -279,11 +361,7 @@ describe('TimetablePublishService refusals', () => {
 
     // Same route and times, so nothing a ticket depends on moves; refusing
     // would block republishing after a sale.
-    const result = await harness.service.publish(
-      validRequest(),
-      'k',
-      OPERATOR,
-    );
+    const result = await harness.service.publish(validRequest(), 'k', OPERATOR);
 
     expect(result.version).toBe(2);
     expect((await harness.tripOn(D_PLUS_3)).timetableVersion).toBe(2);
@@ -305,6 +383,9 @@ describe('TimetablePublishService refusals', () => {
         expect.objectContaining({
           field: 'effectiveFrom',
           rejectedValue: '2026-06-19',
+          issueKey: 'ISSUE_EFFECTIVE_DATE_IN_THE_PAST',
+          actionKey: 'ACTION_PICK_EFFECTIVE_DATE_NOW_OR_LATER',
+          params: { today: TODAY },
         }),
       ]),
     });
@@ -328,7 +409,29 @@ describe('TimetablePublishService refusals', () => {
   // The generator validates fares against the train's real coaches and
   // swallows the error, so a subset composition would commit but generate none.
   describe('the submitted composition', () => {
-    it('refuses a composition that is not the train\'s, before writing anything', async () => {
+    it('uses a parameterless ref when the train has no current coaches', async () => {
+      harness = makeHarness();
+      const dependency = harness.service as unknown as {
+        trips: { getTrainCoaches: () => Promise<unknown[]> };
+      };
+      vi.spyOn(dependency.trips, 'getTrainCoaches').mockResolvedValue([]);
+
+      await expect(
+        harness.service.publish(validRequest(), 'empty-coaches', OPERATOR),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: [
+          {
+            field: 'coaches',
+            issueKey: 'ISSUE_TRAIN_HAS_NO_COACHES',
+            actionKey: 'ACTION_ADD_TRAIN_COACHES_BEFORE_PUBLISH',
+          },
+        ],
+      });
+      await expectNothingWritten();
+    });
+
+    it("refuses a composition that is not the train's, before writing anything", async () => {
       harness = makeHarness();
 
       const rejection = await harness.service
@@ -359,10 +462,19 @@ describe('TimetablePublishService refusals', () => {
       });
 
       const detail = (
-        rejection as { details: { field: string; issue: string; action: string }[] }
+        rejection as { details: ValidationIssueRef[] }
       ).details.find((candidate) => candidate.field === 'coaches')!;
-      expect(detail.issue).toContain(FIRST_CLASS);
-      expect(detail.action).toMatch(/cannot be changed through this endpoint/);
+      expect(detail).toMatchObject({
+        issueKey: 'ISSUE_COACH_COMPOSITION_MISMATCH',
+        actionKey: 'ACTION_SEND_CURRENT_COACH_COMPOSITION',
+        params: {
+          position: '1',
+          coachNumber: '1',
+          travelClassId: FIRST_CLASS,
+          coachLayoutId: LAYOUT,
+        },
+      });
+      expect(JSON.stringify(detail)).not.toMatch(/generation|sprint|endpoint/);
 
       await expectNothingWritten();
       expect(harness.seatUsageAsks()).toEqual([]);
@@ -415,7 +527,7 @@ describe('TimetablePublishService refusals', () => {
     });
 
     // Order is the client's business, not a difference.
-    it('accepts the train\'s coaches in any array order', async () => {
+    it("accepts the train's coaches in any array order", async () => {
       harness = makeHarness({ withTwoCoaches: true });
       const request = validRequest({ coaches: twoCoachesReversed() });
 
@@ -475,9 +587,12 @@ describe('TimetablePublishService refusals', () => {
     harness = makeHarness({ withExistingVersion: true });
     harness.store.timetables[0].effectiveFrom = '2026-06-22';
     harness.failNextInsertWith(
-      Object.assign(new Error('conflicting key value violates exclusion constraint'), {
-        code: '23P01',
-      }),
+      Object.assign(
+        new Error('conflicting key value violates exclusion constraint'),
+        {
+          code: '23P01',
+        },
+      ),
     );
 
     const rejection = await harness.service
@@ -492,20 +607,145 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'effectiveFrom' })],
     });
     expect(
-      (rejection as { details: { issue: string }[] }).details[0].issue,
-    ).toContain('version(s) 1');
+      (rejection as { details: ValidationIssueRef[] }).details[0],
+    ).toMatchObject({
+      issueKey: 'ISSUE_TIMETABLE_OVERLAPS_OPEN_ENDED_VERSION',
+      actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+      params: { version: '1', effectiveFrom: '2026-06-22' },
+    });
 
     expect(await harness.auditCount()).toBe(0);
     expect(harness.store.requests).toHaveLength(0);
+  });
+
+  it('carries both dates for a bounded clashing version without English fragments', async () => {
+    harness = makeHarness({ withExistingVersion: true });
+    harness.store.timetables[0].effectiveUntil = D_PLUS_3;
+    harness.failNextInsertWith(
+      Object.assign(new Error('overlap'), { code: '23P01' }),
+    );
+
+    await expect(
+      harness.service.publish(validRequest(), 'bounded', OPERATOR),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CONFLICT,
+      details: [
+        {
+          field: 'effectiveFrom',
+          issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION',
+          actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+          params: {
+            version: '1',
+            effectiveFrom: '2026-06-10',
+            effectiveUntil: D_PLUS_3,
+          },
+        },
+      ],
+    });
+    expect(await harness.auditCount()).toBe(0);
+  });
+
+  it('returns separate structured refs for every clashing version', async () => {
+    harness = makeHarness({ withExistingVersion: true });
+    const bounded = harness.store.timetables[0];
+    bounded.effectiveUntil = D_PLUS_3;
+    harness.store.timetables.push({
+      ...bounded,
+      id: 'future-version',
+      version: 2,
+      effectiveFrom: FIRST_FRIDAY,
+      effectiveUntil: null,
+    });
+    harness.failNextInsertWith(
+      Object.assign(new Error('overlap'), { code: '23P01' }),
+    );
+
+    const rejection = await harness.service
+      .publish(validRequest(), 'multiple-overlaps', OPERATOR)
+      .catch((error: unknown) => error);
+    expect((rejection as { details: ValidationIssueRef[] }).details).toEqual([
+      {
+        field: 'effectiveFrom',
+        rejectedValue: validRequest().effectiveFrom,
+        issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION',
+        actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+        params: {
+          version: '1',
+          effectiveFrom: '2026-06-10',
+          effectiveUntil: D_PLUS_3,
+        },
+      },
+      {
+        field: 'effectiveFrom',
+        rejectedValue: validRequest().effectiveFrom,
+        issueKey: 'ISSUE_TIMETABLE_OVERLAPS_OPEN_ENDED_VERSION',
+        actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+        params: { version: '2', effectiveFrom: FIRST_FRIDAY },
+      },
+    ]);
+    expect(await harness.auditCount()).toBe(0);
+  });
+
+  it('uses a parameterless overlap fallback when the clashing row cannot be read', async () => {
+    harness = makeHarness();
+    harness.failNextInsertWith(
+      Object.assign(new Error('overlap'), { code: '23P01' }),
+    );
+
+    await expect(
+      harness.service.publish(validRequest(), 'missing-overlap', OPERATOR),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CONFLICT,
+      details: [
+        {
+          field: 'effectiveFrom',
+          issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_RANGE',
+          actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+        },
+      ],
+    });
+    await expectNothingWritten();
+  });
+
+  it('carries one complete language-free ref for every expected coach', async () => {
+    harness = makeHarness({ withTwoCoaches: true });
+
+    const rejection = await harness.service
+      .publish(validRequest(), 'coaches', OPERATOR)
+      .catch((error: unknown) => error);
+    const details = (
+      rejection as { details: ValidationIssueRef[] }
+    ).details.filter(
+      (detail) => detail.issueKey === 'ISSUE_COACH_COMPOSITION_MISMATCH',
+    );
+    expect(details).toHaveLength(2);
+    expect(details.map((detail) => detail.params)).toEqual([
+      {
+        position: '1',
+        coachNumber: '1',
+        travelClassId: FIRST_CLASS,
+        coachLayoutId: LAYOUT,
+      },
+      {
+        position: '2',
+        coachNumber: '2',
+        travelClassId: SECOND_CLASS,
+        coachLayoutId: LAYOUT,
+      },
+    ]);
+    await expectNothingWritten();
   });
 
   // Any other insert failure must not be mistaken for the idempotency race.
   it('rethrows an insert failure that is not a reused key', async () => {
     harness = makeHarness();
     harness.failNextInsertWith(
-      Object.assign(new Error('duplicate key value violates unique constraint'), {
-        code: '23505',
-      }),
+      Object.assign(
+        new Error('duplicate key value violates unique constraint'),
+        {
+          code: '23505',
+        },
+      ),
     );
 
     await expect(
