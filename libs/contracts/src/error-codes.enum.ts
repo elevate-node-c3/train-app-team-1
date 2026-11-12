@@ -14,6 +14,13 @@ export enum ErrorCode {
   ROUTE_NOT_FOUND = 'ROUTE_NOT_FOUND',
   RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND',
   SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  /**
+   * This service is up; something it had to ask could not answer. Distinct
+   * from SERVICE_UNAVAILABLE on purpose: the caller's request was well formed
+   * and retrying it can plausibly succeed, so the envelope carries
+   * `retryAfterSeconds` with it (TA-20 §6.2).
+   */
+  DEPENDENCY_UNAVAILABLE = 'DEPENDENCY_UNAVAILABLE',
   SERVICE_DEGRADED = 'SERVICE_DEGRADED',
   BAD_REQUEST = 'BAD_REQUEST',
   UNAUTHORIZED = 'UNAUTHORIZED',
