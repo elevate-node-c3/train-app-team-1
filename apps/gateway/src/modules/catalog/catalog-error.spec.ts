@@ -98,6 +98,28 @@ describe('decoding a catalog refusal', () => {
 
     expect(refusal?.details).toEqual([]);
   });
+
+  /**
+   * TA-20 CARRY: `toRpcException` attaches `retryAfterSeconds` to the JSON
+   * only for `DEPENDENCY_UNAVAILABLE`. The gateway must read it through, not
+   * drop it the way it used to drop everything beyond `code`/`details`.
+   */
+  it('restores retryAfterSeconds when the refusal carries one', () => {
+    const refusal = decodeCatalogRefusal(
+      refusalDetails({
+        code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+        retryAfterSeconds: 5,
+      }),
+    );
+
+    expect(refusal?.retryAfterSeconds).toBe(5);
+  });
+
+  it('leaves retryAfterSeconds undefined when the refusal carries none', () => {
+    const refusal = decodeCatalogRefusal(refusalDetails());
+
+    expect(refusal?.retryAfterSeconds).toBeUndefined();
+  });
 });
 
 describe('turning a refusal into an HTTP error', () => {
@@ -129,6 +151,29 @@ describe('turning a refusal into an HTTP error', () => {
     expect(Array.isArray(body.message)).toBe(true);
     expect(body.message[0].field).toBe('to');
     expect(body.message[0].action).not.toBe('');
+  });
+
+  /** The CARRY this gateway task closes: Task 10's §5 handoff. */
+  it('carries retryAfterSeconds onto the HttpException response', () => {
+    const exception = parseCatalogBusinessError({
+      details: refusalDetails({
+        code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+        retryAfterSeconds: 5,
+      }),
+    });
+
+    const body = exception?.getResponse() as { retryAfterSeconds?: number };
+    expect(exception?.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+    expect(body.retryAfterSeconds).toBe(5);
+  });
+
+  it('omits retryAfterSeconds when the refusal carries none', () => {
+    const exception = parseCatalogBusinessError({
+      details: refusalDetails(),
+    });
+
+    const body = exception?.getResponse() as { retryAfterSeconds?: number };
+    expect(body.retryAfterSeconds).toBeUndefined();
   });
 
   // Null means "this was not a business refusal", which is what tells the
