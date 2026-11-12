@@ -6,6 +6,7 @@ import { CoachLayoutEntity } from '../../../apps/catalog/src/modules/trains/enti
 import { DatedTripEntity } from '../../../apps/catalog/src/modules/trips/entities/dated-trip.entity.js';
 import { FareEntity } from '../../../apps/catalog/src/modules/fares/entities/fare.entity.js';
 import { GovernorateEntity } from '../../../apps/catalog/src/modules/stations/entities/governorate.entity.js';
+import { OperationsAuditEntity } from '../../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
 import { RecentSearchEntity } from '../../../apps/catalog/src/modules/recent-searches/entities/recent-search.entity.js';
 import { StationEntity } from '../../../apps/catalog/src/modules/stations/entities/station.entity.js';
 import { TimetableEntity } from '../../../apps/catalog/src/modules/timetables/entities/timetable.entity.js';
@@ -136,6 +137,7 @@ export async function catalogDataSource(): Promise<DataSource> {
       DatedTripEntity,
       TripStopEntity,
       RecentSearchEntity,
+      OperationsAuditEntity,
     ],
     extra: { connectionTimeoutMillis: 5000 },
   });
