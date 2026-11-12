@@ -13,6 +13,7 @@ import {
   addCivilDays,
   BOOKING_WINDOW_DAYS,
   cairoToday,
+  type ValidationIssueRef,
 } from '@app/contracts';
 import {
   tripGenerationEnabled,
@@ -59,6 +60,15 @@ const GENERATION_MARGIN_DAYS = 1;
 
 /** A unique violation on `uq_dated_trip_train_date`. */
 const UNIQUE_VIOLATION = '23505';
+
+function validationDiagnostics(details: ValidationIssueRef[]): string {
+  return details
+    .map(
+      (detail) =>
+        `${detail.field}: ${detail.issueKey} ${JSON.stringify(detail.params ?? {})}`,
+    )
+    .join('; ');
+}
 
 @Injectable()
 export class TripsService
@@ -166,7 +176,9 @@ export class TripsService
    * bounded. Callers must resolve which of a train's rows owns a given service
    * date -- `generateTripsForDateRange` does, via `isEffectiveVersionOn`.
    */
-  async getPublishedTimetables(timetableId?: string): Promise<TimetableEntity[]> {
+  async getPublishedTimetables(
+    timetableId?: string,
+  ): Promise<TimetableEntity[]> {
     return this.timetableRepository.find({
       where: {
         status: 'published',
@@ -339,9 +351,7 @@ export class TripsService
     const issues = validateFareRules(coaches, tripStops, fares);
 
     if (issues.length > 0) {
-      throw new Error(
-        `Invalid fares: ${issues.map((issue) => issue.issue).join('; ')}`,
-      );
+      throw new Error(`Invalid fares: ${validationDiagnostics(issues)}`);
     }
   }
 
@@ -358,7 +368,7 @@ export class TripsService
     const issues = validateCapacityIssues(coaches, knownCoachLayoutIds);
 
     if (issues.length > 0) {
-      throw new Error(issues.map((issue) => issue.issue).join('; '));
+      throw new Error(validationDiagnostics(issues));
     }
 
     return computeCapacity(coaches);
@@ -381,7 +391,7 @@ export class TripsService
     const issues = validateStopsStructure(draftStops, knownStationIds);
 
     if (issues.length > 0) {
-      throw new Error(issues.map((issue) => issue.issue).join('; '));
+      throw new Error(validationDiagnostics(issues));
     }
   }
 
@@ -389,7 +399,7 @@ export class TripsService
     const issues = validateStopsChronology(tripStops);
 
     if (issues.length > 0) {
-      throw new Error(issues.map((issue) => issue.issue).join('; '));
+      throw new Error(validationDiagnostics(issues));
     }
   }
 

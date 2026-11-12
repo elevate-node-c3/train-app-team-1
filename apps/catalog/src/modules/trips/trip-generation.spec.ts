@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { TimetableEntity, Weekday } from '../timetables/entities/timetable.entity.js';
+import {
+  TimetableEntity,
+  Weekday,
+} from '../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
 import { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 import { TripsService } from './trips.service.js';
@@ -92,7 +95,10 @@ function fareIndex(
 
   for (const [travelClassId, origin, destination, amount] of entries) {
     index.set(`${travelClassId}|${origin}|${destination}`, [
-      { effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: amount },
+      {
+        effectiveFrom: new Date('2020-01-01T00:00:00Z'),
+        amountPiastres: amount,
+      },
     ]);
   }
 
@@ -237,7 +243,7 @@ describe('Trip generation', () => {
         makeService().validateTimetableStops([
           stop({ departureTime: '23:00' }),
         ]),
-      ).toThrow(/at least two stops/);
+      ).toThrow(/ISSUE_ROUTE_NEEDS_TWO_STOPS/);
     });
 
     it('refuses an arrival at the first stop or a departure at the last', () => {
@@ -246,13 +252,13 @@ describe('Trip generation', () => {
       const arrivingFirst = overnightStops();
       arrivingFirst[0].arrivalTime = '22:50';
       expect(() => service.validateTimetableStops(arrivingFirst)).toThrow(
-        /First stop must not have arrival/,
+        /ISSUE_FIRST_STOP_HAS_ARRIVAL/,
       );
 
       const departingLast = overnightStops();
       departingLast[2].departureTime = '09:40';
       expect(() => service.validateTimetableStops(departingLast)).toThrow(
-        /Last stop must not have departure/,
+        /ISSUE_LAST_STOP_HAS_DEPARTURE/,
       );
     });
 
@@ -261,7 +267,7 @@ describe('Trip generation', () => {
       stops[1].departureTime = null;
 
       expect(() => makeService().validateTimetableStops(stops)).toThrow(
-        /Intermediate stop must have arrival and departure/,
+        /ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE/,
       );
     });
 
@@ -270,7 +276,7 @@ describe('Trip generation', () => {
       stops[2].position = 2;
 
       expect(() => makeService().validateTimetableStops(stops)).toThrow(
-        /not correctly ordered/,
+        /ISSUE_STOP_POSITIONS_OUT_OF_ORDER/,
       );
     });
 
@@ -279,7 +285,7 @@ describe('Trip generation', () => {
       stops[2].dayOffset = 0;
 
       expect(() => makeService().validateTimetableStops(stops)).toThrow(
-        /day offset cannot go backwards/,
+        /ISSUE_DAY_OFFSET_GOES_BACKWARDS/,
       );
     });
 
@@ -306,7 +312,7 @@ describe('Trip generation', () => {
       stops[1].departureAt = new Date(stops[1].arrivalAt!.getTime() - 60_000);
 
       expect(() => service.validateTripStopTimes(stops)).toThrow(
-        /Departure cannot be before arrival/,
+        /ISSUE_DEPARTURE_BEFORE_ARRIVAL/,
       );
     });
 
@@ -316,7 +322,7 @@ describe('Trip generation', () => {
       stops[2].arrivalAt = new Date(stops[1].departureAt!.getTime() - 60_000);
 
       expect(() => service.validateTripStopTimes(stops)).toThrow(
-        /not in chronological order/,
+        /ISSUE_STOP_TIMES_OUT_OF_ORDER/,
       );
     });
   });
@@ -346,7 +352,7 @@ describe('Trip generation', () => {
 
       expect(() =>
         service.validateTripFares([coach(FIRST_CLASS)], stops, fares),
-      ).toThrow(/missing or invalid fare/);
+      ).toThrow(/ISSUE_FARE_MISSING_FOR_PAIR/);
     });
 
     it('names every missing pair, not just the first', () => {
@@ -356,7 +362,9 @@ describe('Trip generation', () => {
 
       expect(() =>
         service.validateTripFares([coach(FIRST_CLASS)], stops, fares),
-      ).toThrow(/missing or invalid fare[\s\S]*missing or invalid fare/);
+      ).toThrow(
+        /ISSUE_FARE_MISSING_FOR_PAIR[\s\S]*ISSUE_FARE_MISSING_FOR_PAIR/,
+      );
     });
 
     it('refuses a class the train carries but the fares do not cover', () => {
@@ -379,7 +387,7 @@ describe('Trip generation', () => {
 
       expect(() =>
         service.validateTripFares([coach(FIRST_CLASS)], stops, fares),
-      ).toThrow(/is less than the segment it contains/);
+      ).toThrow(/ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR/);
     });
 
     it('accepts a longer segment priced exactly as its sub-segment', () => {
@@ -402,7 +410,7 @@ describe('Trip generation', () => {
 
       expect(() =>
         service.validateTripFares([coach(FIRST_CLASS)], stops, fares),
-      ).toThrow(/missing or invalid fare/);
+      ).toThrow(/ISSUE_FARE_MISSING_FOR_PAIR/);
     });
 
     it('ignores a fare that had not taken effect by the departure', () => {
@@ -416,7 +424,7 @@ describe('Trip generation', () => {
 
       expect(() =>
         service.validateTripFares([coach(FIRST_CLASS)], stops, fares),
-      ).toThrow(/missing or invalid fare/);
+      ).toThrow(/ISSUE_FARE_MISSING_FOR_PAIR/);
     });
 
     it('reads the fare in force at the departure when a pair has history', () => {
@@ -442,7 +450,7 @@ describe('Trip generation', () => {
     it('refuses a train with no travel classes', () => {
       expect(() =>
         service.validateTripFares([], stops, coveringFares(FIRST_CLASS)),
-      ).toThrow(/no travel classes/);
+      ).toThrow(/ISSUE_TRAIN_HAS_NO_TRAVEL_CLASSES/);
     });
   });
 
@@ -482,9 +490,9 @@ describe('Trip generation', () => {
     });
 
     it('refuses a train whose coaches have no seats', () => {
-      expect(() => makeService().calculateCapacity([coach(FIRST_CLASS)])).toThrow(
-        /no seats/,
-      );
+      expect(() =>
+        makeService().calculateCapacity([coach(FIRST_CLASS)]),
+      ).toThrow(/ISSUE_TRAIN_HAS_NO_SEATS/);
     });
 
     // A repeat would inflate capacity, and from Sprint 3 would make inventory
@@ -497,7 +505,7 @@ describe('Trip generation', () => {
       ];
 
       expect(() => makeService().calculateCapacity([repeating])).toThrow(
-        /Coach 1 repeats seat 4/,
+        /ISSUE_COACH_SEATS_REPEATED.*"coachNumber":"1".*"seatNumbers":"4"/,
       );
     });
 
@@ -508,7 +516,7 @@ describe('Trip generation', () => {
       ];
 
       expect(() => makeService().calculateCapacity([repeating])).toThrow(
-        /repeats seat 2/,
+        /ISSUE_COACH_SEATS_REPEATED.*"seatNumbers":"2"/,
       );
     });
 
@@ -520,7 +528,7 @@ describe('Trip generation', () => {
       ];
 
       expect(() => makeService().calculateCapacity([repeating])).toThrow(
-        /repeats seat 1, 2/,
+        /ISSUE_COACH_SEATS_REPEATED.*"seatNumbers":"1, 2"/,
       );
     });
 

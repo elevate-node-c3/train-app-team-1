@@ -1,4 +1,4 @@
-import type { ValidationErrorDetail } from '@app/contracts';
+import type { ValidationIssueRef } from '@app/contracts';
 
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 import type { FareIndex } from '../trips/trip-generation.types.js';
@@ -52,7 +52,7 @@ interface ResolvedStop {
  */
 export function validateTimetableCandidate(
   candidate: TimetableCandidate,
-): ValidationErrorDetail[] {
+): ValidationIssueRef[] {
   const resolvedStops = resolveStopInstants(
     candidate.stops,
     candidate.effectiveFrom,
@@ -94,8 +94,8 @@ function resolveStopInstants(
  */
 export function validateNoDuplicateStations(
   stops: TimetableStopDraftInput[],
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
   const seenAt = new Map<string, number>();
 
   for (let i = 0; i < stops.length; i++) {
@@ -106,8 +106,9 @@ export function validateNoDuplicateStations(
       details.push({
         field: `stops[${i}].stationId`,
         rejectedValue: stationId,
-        issue: `is the same station as stop ${firstSeenAt}`,
-        action: 'Remove the duplicate stop, or choose a different station',
+        issueKey: 'ISSUE_STATION_REPEATED_ON_ROUTE',
+        actionKey: 'ACTION_REMOVE_REPEATED_STATION',
+        params: { firstStopIndex: String(firstSeenAt) },
       });
     } else {
       seenAt.set(stationId, i);
@@ -125,15 +126,15 @@ export function validateNoDuplicateStations(
 export function validateStopsStructure(
   stops: TimetableStopDraftInput[],
   knownStationIds: ReadonlySet<string>,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   if (stops.length < 2) {
     details.push({
       field: 'stops',
       rejectedValue: stops.length,
-      issue: 'must have at least two stops',
-      action: 'Add stops until the route has at least two',
+      issueKey: 'ISSUE_ROUTE_NEEDS_TWO_STOPS',
+      actionKey: 'ACTION_ADD_STOPS_TO_TWO',
     });
     return details;
   }
@@ -146,8 +147,8 @@ export function validateStopsStructure(
     details.push({
       field: 'stops[0].arrivalTime',
       rejectedValue: firstStop.arrivalTime,
-      issue: 'First stop must not have arrival time',
-      action: 'Clear the arrival time on the first stop',
+      issueKey: 'ISSUE_FIRST_STOP_HAS_ARRIVAL',
+      actionKey: 'ACTION_CLEAR_ARRIVAL_ON_FIRST_STOP',
     });
   }
 
@@ -155,8 +156,8 @@ export function validateStopsStructure(
     details.push({
       field: 'stops[0].departureTime',
       rejectedValue: firstStop.departureTime,
-      issue: 'First stop must have departure time',
-      action: 'Set a departure time on the first stop',
+      issueKey: 'ISSUE_FIRST_STOP_LACKS_DEPARTURE',
+      actionKey: 'ACTION_SET_DEPARTURE_ON_FIRST_STOP',
     });
   }
 
@@ -164,8 +165,8 @@ export function validateStopsStructure(
     details.push({
       field: `stops[${lastIndex}].arrivalTime`,
       rejectedValue: lastStop.arrivalTime,
-      issue: 'Last stop must have arrival time',
-      action: 'Set an arrival time on the last stop',
+      issueKey: 'ISSUE_LAST_STOP_LACKS_ARRIVAL',
+      actionKey: 'ACTION_SET_ARRIVAL_ON_LAST_STOP',
     });
   }
 
@@ -173,8 +174,8 @@ export function validateStopsStructure(
     details.push({
       field: `stops[${lastIndex}].departureTime`,
       rejectedValue: lastStop.departureTime,
-      issue: 'Last stop must not have departure time',
-      action: 'Clear the departure time on the last stop',
+      issueKey: 'ISSUE_LAST_STOP_HAS_DEPARTURE',
+      actionKey: 'ACTION_CLEAR_DEPARTURE_ON_LAST_STOP',
     });
   }
 
@@ -185,8 +186,8 @@ export function validateStopsStructure(
       details.push({
         field: `stops[${i}].arrivalTime`,
         rejectedValue: stop.arrivalTime,
-        issue: 'Intermediate stop must have arrival and departure times',
-        action: 'Set an arrival time on this stop',
+        issueKey: 'ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE',
+        actionKey: 'ACTION_SET_ARRIVAL_ON_STOP',
       });
     }
 
@@ -194,8 +195,8 @@ export function validateStopsStructure(
       details.push({
         field: `stops[${i}].departureTime`,
         rejectedValue: stop.departureTime,
-        issue: 'Intermediate stop must have arrival and departure times',
-        action: 'Set a departure time on this stop',
+        issueKey: 'ISSUE_INTERMEDIATE_STOP_TIMES_INCOMPLETE',
+        actionKey: 'ACTION_SET_DEPARTURE_ON_STOP',
       });
     }
   }
@@ -205,8 +206,8 @@ export function validateStopsStructure(
       details.push({
         field: `stops[${i}].position`,
         rejectedValue: stops[i].position,
-        issue: 'Timetable stops are not correctly ordered',
-        action: 'Renumber stop positions so they strictly increase',
+        issueKey: 'ISSUE_STOP_POSITIONS_OUT_OF_ORDER',
+        actionKey: 'ACTION_RENUMBER_STOP_POSITIONS',
       });
     }
 
@@ -214,8 +215,8 @@ export function validateStopsStructure(
       details.push({
         field: `stops[${i}].dayOffset`,
         rejectedValue: stops[i].dayOffset,
-        issue: 'Timetable day offset cannot go backwards',
-        action: 'Fix the day offset so it never decreases along the route',
+        issueKey: 'ISSUE_DAY_OFFSET_GOES_BACKWARDS',
+        actionKey: 'ACTION_FIX_DAY_OFFSET',
       });
     }
   }
@@ -231,8 +232,8 @@ export function validateStopsStructure(
       details.push({
         field: `stops[${i}].stationId`,
         rejectedValue: stationId,
-        issue: 'is not a known station',
-        action: 'Choose a station from the station list',
+        issueKey: 'ISSUE_STATION_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_STATION_FROM_LIST',
       });
     }
   }
@@ -248,8 +249,8 @@ export function validateStopsStructure(
  */
 export function validateStopsChronology(
   stops: ResolvedStop[],
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   for (let i = 0; i < stops.length; i++) {
     const current = stops[i];
@@ -262,8 +263,8 @@ export function validateStopsChronology(
       details.push({
         field: `stops[${i}].departureTime`,
         rejectedValue: current.departureAt.toISOString(),
-        issue: 'Departure cannot be before arrival',
-        action: 'Fix the departure time so it is not before the arrival time',
+        issueKey: 'ISSUE_DEPARTURE_BEFORE_ARRIVAL',
+        actionKey: 'ACTION_FIX_DEPARTURE_AFTER_ARRIVAL',
       });
     }
 
@@ -275,8 +276,8 @@ export function validateStopsChronology(
       details.push({
         field: `stops[${i}].arrivalTime`,
         rejectedValue: current.arrivalAt,
-        issue: 'Invalid trip stop times',
-        action: 'Set arrival and departure times for every intermediate stop',
+        issueKey: 'ISSUE_STOP_TIMES_INVALID',
+        actionKey: 'ACTION_SET_TIMES_ON_EVERY_INTERMEDIATE_STOP',
       });
       continue;
     }
@@ -285,8 +286,8 @@ export function validateStopsChronology(
       details.push({
         field: `stops[${i}].arrivalTime`,
         rejectedValue: current.arrivalAt.toISOString(),
-        issue: 'Trip stops are not in chronological order',
-        action: 'Fix the times so each stop follows the one before it',
+        issueKey: 'ISSUE_STOP_TIMES_OUT_OF_ORDER',
+        actionKey: 'ACTION_FIX_STOP_TIME_ORDER',
       });
     }
   }
@@ -311,7 +312,10 @@ function resolveFareAmount(
 
   if (!price) return null;
 
-  if (!Number.isSafeInteger(price.amountPiastres) || price.amountPiastres <= 0) {
+  if (
+    !Number.isSafeInteger(price.amountPiastres) ||
+    price.amountPiastres <= 0
+  ) {
     return null;
   }
 
@@ -330,8 +334,8 @@ export function validateFareRules(
   coaches: TrainCoachEntity[],
   stops: ResolvedStop[],
   fares: FareIndex,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   const travelClassIds = [
     ...new Set(coaches.map((coach) => coach.travelClass.id)),
@@ -341,8 +345,8 @@ export function validateFareRules(
     details.push({
       field: 'coaches',
       rejectedValue: coaches.length,
-      issue: 'Train has no travel classes',
-      action: 'Add a coach with a travel class before publishing fares',
+      issueKey: 'ISSUE_TRAIN_HAS_NO_TRAVEL_CLASSES',
+      actionKey: 'ACTION_ADD_COACH_WITH_TRAVEL_CLASS',
     });
     return details;
   }
@@ -351,8 +355,8 @@ export function validateFareRules(
     details.push({
       field: 'stops',
       rejectedValue: stops.length,
-      issue: 'Trip must have at least two stops',
-      action: 'Add stops until the route has at least two',
+      issueKey: 'ISSUE_ROUTE_NEEDS_TWO_STOPS',
+      actionKey: 'ACTION_ADD_STOPS_TO_TWO',
     });
     return details;
   }
@@ -367,8 +371,8 @@ export function validateFareRules(
         details.push({
           field: `stops[${i}].departureTime`,
           rejectedValue: origin.departureAt,
-          issue: 'Origin stop has no departure time',
-          action: 'Set a departure time on this stop',
+          issueKey: 'ISSUE_ORIGIN_STOP_LACKS_DEPARTURE',
+          actionKey: 'ACTION_SET_DEPARTURE_ON_STOP',
         });
         continue;
       }
@@ -388,8 +392,13 @@ export function validateFareRules(
           details.push({
             field: `fares[${travelClassId}:${origin.stationId}->${destination.stationId}]`,
             rejectedValue: null,
-            issue: `missing or invalid fare for class ${travelClassId} from ${origin.stationId} to ${destination.stationId}`,
-            action: 'Add a positive fare for this class and station pair',
+            issueKey: 'ISSUE_FARE_MISSING_FOR_PAIR',
+            actionKey: 'ACTION_ADD_FARE_FOR_PAIR',
+            params: {
+              travelClassId,
+              originStationId: origin.stationId,
+              destinationStationId: destination.stationId,
+            },
           });
           continue;
         }
@@ -403,15 +412,29 @@ export function validateFareRules(
         const amount = amounts.get(`${i}|${j}`);
         if (amount === undefined) continue;
 
-        for (const contained of [`${i}|${j - 1}`, `${i + 1}|${j}`]) {
-          const inner = amounts.get(contained);
+        for (const [innerOriginIndex, innerDestinationIndex] of [
+          [i, j - 1],
+          [i + 1, j],
+        ]) {
+          const inner = amounts.get(
+            `${innerOriginIndex}|${innerDestinationIndex}`,
+          );
 
           if (inner !== undefined && amount < inner) {
             details.push({
               field: `fares[${travelClassId}:${stops[i].stationId}->${stops[j].stationId}]`,
               rejectedValue: amount,
-              issue: `fare for class ${travelClassId} from stop ${i} to ${j} (${amount}) is less than the segment it contains (${inner})`,
-              action: 'Raise this fare so it is not cheaper than a segment it contains',
+              issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT_FOR_PAIR',
+              actionKey: 'ACTION_RAISE_FARE_FOR_PAIR',
+              params: {
+                travelClassId,
+                outerOriginIndex: String(i),
+                outerDestinationIndex: String(j),
+                innerOriginIndex: String(innerOriginIndex),
+                innerDestinationIndex: String(innerDestinationIndex),
+                outerFarePiastres: String(amount),
+                innerFarePiastres: String(inner),
+              },
             });
           }
         }
@@ -440,8 +463,8 @@ export function validateFareFloor(
   coaches: TrainCoachEntity[],
   stops: ResolvedStop[],
   fares: FareIndex,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   const travelClassIds = [
     ...new Set(coaches.map((coach) => coach.travelClass.id)),
@@ -484,8 +507,8 @@ export function validateFareFloor(
       details.push({
         field: cheapest.field,
         rejectedValue: cheapest.amount,
-        issue: `is below the minimum chargeable amount (${cheapest.amount} piastres)`,
-        action: 'Raise this fare to at least the Stripe minimum',
+        issueKey: 'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+        actionKey: 'ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM',
       });
     }
   }
@@ -514,8 +537,8 @@ export function computeCapacity(coaches: TrainCoachEntity[]): number {
 export function validateCapacityIssues(
   coaches: TrainCoachEntity[],
   knownCoachLayoutIds: ReadonlySet<string>,
-): ValidationErrorDetail[] {
-  const details: ValidationErrorDetail[] = [];
+): ValidationIssueRef[] {
+  const details: ValidationIssueRef[] = [];
 
   for (let i = 0; i < coaches.length; i++) {
     const coach = coaches[i];
@@ -524,8 +547,8 @@ export function validateCapacityIssues(
       details.push({
         field: `coaches[${i}].coachLayoutId`,
         rejectedValue: coach.coachLayout.id,
-        issue: 'is not a known coach layout',
-        action: 'Choose a coach layout from the layout list',
+        issueKey: 'ISSUE_COACH_LAYOUT_NOT_KNOWN',
+        actionKey: 'ACTION_PICK_COACH_LAYOUT_FROM_LIST',
       });
     }
 
@@ -543,10 +566,12 @@ export function validateCapacityIssues(
       details.push({
         field: `coaches[${i}].coachLayout.rows`,
         rejectedValue: [...duplicates].sort(),
-        issue: `Coach ${coach.coachNumber} repeats seat ${[...duplicates]
-          .sort()
-          .join(', ')}`,
-        action: 'Remove the repeated seat number from the layout',
+        issueKey: 'ISSUE_COACH_SEATS_REPEATED',
+        actionKey: 'ACTION_USE_UNIQUE_COACH_SEATS',
+        params: {
+          coachNumber: String(coach.coachNumber),
+          seatNumbers: [...duplicates].sort().join(', '),
+        },
       });
     }
   }
@@ -555,8 +580,8 @@ export function validateCapacityIssues(
     details.push({
       field: 'coaches',
       rejectedValue: coaches.length,
-      issue: 'Train has no seats',
-      action: 'Add at least one coach with seats',
+      issueKey: 'ISSUE_TRAIN_HAS_NO_SEATS',
+      actionKey: 'ACTION_ADD_COACH_WITH_SEATS',
     });
   }
 

@@ -310,7 +310,7 @@ describe('publishing a timetable version', () => {
       expect(second.changed).toBeGreaterThan(0);
 
       const [predecessor] = (await source.query(
-        'SELECT to_char(effective_until, \'YYYY-MM-DD\') AS until FROM timetable WHERE id = $1',
+        "SELECT to_char(effective_until, 'YYYY-MM-DD') AS until FROM timetable WHERE id = $1",
         [first.timetableId],
       )) as { until: string }[];
       expect(predecessor.until).toBe(addCivilDays(later, -1));
@@ -346,9 +346,15 @@ describe('publishing a timetable version', () => {
         code: ErrorCode.CONFLICT,
         details: [expect.objectContaining({ field: 'effectiveFrom' })],
       });
-      expect(
-        (rejection as { details: { issue: string }[] }).details[0].issue,
-      ).toContain('version(s) 1');
+      expect(rejection).toMatchObject({
+        details: [
+          expect.objectContaining({
+            issueKey: 'ISSUE_TIMETABLE_OVERLAPS_OPEN_ENDED_VERSION',
+            actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+            params: { version: '1', effectiveFrom },
+          }),
+        ],
+      });
 
       // Refused, and the refusal left nothing of the second attempt behind.
       expect(await countOf('timetable')).toBe(1);
