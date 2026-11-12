@@ -1,6 +1,5 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
-import { GrpcMethod, RpcException } from '@nestjs/microservices';
-import * as grpc from '@grpc/grpc-js';
+import { GrpcMethod } from '@nestjs/microservices';
 import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
 import { ClsService } from 'nestjs-cls';
 import {
@@ -13,36 +12,10 @@ import {
   type TripStopsResponse,
 } from '@app/contracts';
 
-import { isCatalogSearchError } from './catalog-search-error.js';
 import { TripReturnSearchService } from './trip-return-search.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { TripStopsService } from './trip-stops.service.js';
-
-/**
- * Turns a refusal into a gRPC status.
- *
- * The business code travels in `details`, as identity's controller does it:
- * the status only tells a generic client how to categorise the failure, and
- * the gateway restores the code after validating it against the enum, so an
- * unknown string can never reach a traveller.
- *
- * The refusal carries only the code and the fields. The date strip and window
- * went with it for a while, so a client could re-render the picker beside the
- * error, but `ApiErrorDetail` has nowhere to put them and nothing at the edge
- * consumed them -- so they are not sent rather than sent and discarded.
- */
-function toRpcException(error: unknown): unknown {
-  if (!isCatalogSearchError(error)) return error;
-
-  return new RpcException({
-    code: grpc.status.INVALID_ARGUMENT,
-    details: JSON.stringify({
-      code: error.code,
-      details: error.details,
-    }),
-    message: error.message,
-  });
-}
+import { toRpcException } from './to-rpc-exception.js';
 
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
