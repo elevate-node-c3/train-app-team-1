@@ -5,9 +5,13 @@ import { ErrorCode } from '@app/contracts';
 import {
   BENI_SUEF,
   CAIRO,
+  FIRST_CLASS,
   GIZA,
+  LAYOUT,
   makeHarness,
   OPERATOR,
+  SECOND_CLASS,
+  twoCoachesReversed,
   republishTenMinutesLater,
   republishWithExtraStop,
   republishWithoutFridays,
@@ -336,6 +340,118 @@ describe('TimetablePublishService refusals', () => {
     );
 
     expect(result.version).toBe(1);
+  });
+
+  /**
+   * The divergence this refusal closes: `validateFareRules` and
+   * `validateFareFloor` take their travel-class set from the coaches they are
+   * handed, while `createDatedTrip` validates fares against the train's real
+   * `train_coach` rows and throws a plain `Error` that step 7 swallows. A
+   * publish naming a subset of the train's classes would validate against
+   * that subset, commit everything, report 29 trips created, and then
+   * generate none.
+   */
+  describe('the submitted composition', () => {
+    it('refuses a composition that is not the train\'s, before writing anything', async () => {
+      harness = makeHarness();
+
+      const rejection = await harness.service
+        .publish(
+          validRequest({
+            coaches: [
+              {
+                position: 1,
+                coachNumber: 1,
+                travelClassId: SECOND_CLASS,
+                coachLayoutId: LAYOUT,
+              },
+            ],
+          }),
+          'k',
+          OPERATOR,
+        )
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+      expect(rejection).toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: expect.arrayContaining([
+          expect.objectContaining({ field: 'coaches' }),
+        ]),
+      });
+
+      const detail = (
+        rejection as { details: { field: string; issue: string; action: string }[] }
+      ).details.find((candidate) => candidate.field === 'coaches')!;
+      // Names the composition to send instead, or the operator cannot act.
+      expect(detail.issue).toContain(FIRST_CLASS);
+      // And says why they cannot simply change it here.
+      expect(detail.action).toMatch(/cannot be changed through this endpoint/);
+
+      // Refused in step 3, so none of the four writes happened and the seam
+      // was never troubled.
+      await expectNothingWritten();
+      expect(harness.seatUsageAsks()).toEqual([]);
+    });
+
+    it('refuses a coach whose number or position was altered', async () => {
+      harness = makeHarness();
+
+      await expect(
+        harness.service.publish(
+          validRequest({
+            coaches: [
+              {
+                position: 1,
+                coachNumber: 7,
+                travelClassId: FIRST_CLASS,
+                coachLayoutId: LAYOUT,
+              },
+            ],
+          }),
+          'k',
+          OPERATOR,
+        ),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: expect.arrayContaining([
+          expect.objectContaining({ field: 'coaches' }),
+        ]),
+      });
+
+      await expectNothingWritten();
+    });
+
+    // The symmetric case: the rule must not refuse a correct request.
+    it('publishes when the submitted composition matches the train', async () => {
+      harness = makeHarness();
+
+      const result = await harness.service.publish(
+        validRequest(),
+        'k',
+        OPERATOR,
+      );
+
+      expect(result.version).toBe(1);
+      expect(result.created).toBeGreaterThan(0);
+      expect(await harness.timetableCount()).toBe(1);
+      expect(await harness.auditCount()).toBe(1);
+      // And the trips really were generated, which is the outcome the
+      // mismatch refusal exists to protect.
+      expect(harness.store.trips).toHaveLength(result.created);
+    });
+
+    // Order is the client's business, not a difference.
+    it('accepts the train\'s coaches in any array order', async () => {
+      harness = makeHarness({ withTwoCoaches: true });
+      const request = validRequest({ coaches: twoCoachesReversed() });
+
+      const result = await harness.service.publish(request, 'k', OPERATOR);
+
+      expect(result.version).toBe(1);
+    });
   });
 
   it('refuses an unknown train number', async () => {

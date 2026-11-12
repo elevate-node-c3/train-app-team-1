@@ -35,6 +35,10 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'الخدمة غير متوفرة حالياً، يرجى المحاولة لاحقاً',
     en: 'Service is temporarily unavailable, please try again later',
   },
+  [ErrorCode.DEPENDENCY_UNAVAILABLE]: {
+    ar: 'لم تتمكن إحدى الخدمات المطلوبة من الرد، يرجى إعادة المحاولة بعد قليل',
+    en: 'A service this request depends on could not answer, please try again shortly',
+  },
   [ErrorCode.BAD_REQUEST]: {
     ar: 'طلب غير صالح، يرجى التحقق من المدخلات',
     en: 'Bad request, please verify your input',

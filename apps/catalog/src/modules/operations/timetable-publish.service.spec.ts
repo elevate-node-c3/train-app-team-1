@@ -191,6 +191,106 @@ describe('TimetablePublishService.publish', () => {
     expect((await harness.tripOn('2026-06-26')).status).toBe('withdrawn');
   });
 
+  /**
+   * A withdrawn trip still owns its (train, service_date), so a date whose
+   * trip was withdrawn is not a date with no trip. If the diff could not see
+   * it, the date would be classed `created` and handed to `createDatedTrip`,
+   * whose own lookup has no status filter: it would find the withdrawn row
+   * and return it untouched. The date would be counted as created and stay
+   * withdrawn, with no `TripPublished` for inventory to recreate seats from --
+   * and the generation timer takes the same path, so nothing would repair it.
+   */
+  describe('a date whose trip was withdrawn', () => {
+    it('resurrects it, keeping its trip id, and announces it again', async () => {
+      harness = makeHarness({ withExistingVersion: true });
+
+      // Publish without Fridays: the window's Fridays are withdrawn.
+      const dropped = await harness.service.publish(
+        republishWithoutFridays(),
+        'drop-fridays',
+        OPERATOR,
+      );
+      expect(dropped.withdrawn).toBe(FRIDAYS_IN_WINDOW);
+
+      const withdrawnBefore = harness.store.trips.filter(
+        (trip) => trip.status === 'withdrawn',
+      );
+      expect(withdrawnBefore).toHaveLength(FRIDAYS_IN_WINDOW);
+      const idsBefore = withdrawnBefore.map((trip) => trip.id).sort();
+      const datesBefore = withdrawnBefore.map((trip) => trip.serviceDate);
+
+      const publishedEventsBefore = harness
+        .publishedEventTypes()
+        .filter((type) => type === EVENT_TYPES.tripPublished).length;
+
+      // Now put Fridays back.
+      const restored = await harness.service.publish(
+        validRequest({ effectiveFrom: '2026-06-23' }),
+        'restore-fridays',
+        OPERATOR,
+      );
+
+      // Truthful counts: the rows already existed, so this is `changed`, not
+      // `created` -- `created` would promise a new trip id.
+      expect(restored.created).toBe(0);
+      expect(restored.withdrawn).toBe(0);
+      expect(restored.changed).toBeGreaterThan(0);
+
+      // Published again, with the ids they always had.
+      for (const serviceDate of datesBefore) {
+        const trip = await harness.tripOn(serviceDate);
+        expect(trip.status).toBe('published');
+        expect(trip.timetableVersion).toBe(3);
+      }
+      const idsAfter = harness.store.trips
+        .filter((trip) => datesBefore.includes(trip.serviceDate))
+        .map((trip) => trip.id)
+        .sort();
+      expect(idsAfter).toEqual(idsBefore);
+
+      // And inventory was told, or it would never recreate the seats it
+      // destroyed on the withdrawal.
+      const publishedEventsAfter = harness
+        .publishedEventTypes()
+        .filter((type) => type === EVENT_TYPES.tripPublished).length;
+      expect(publishedEventsAfter - publishedEventsBefore).toBe(
+        restored.changed,
+      );
+      // No duplicate row was inserted for any of those dates.
+      expect(
+        harness.store.trips.filter((trip) =>
+          datesBefore.includes(trip.serviceDate),
+        ),
+      ).toHaveLength(FRIDAYS_IN_WINDOW);
+    });
+
+    it('does not count a withdrawn trip the new version still does not run', async () => {
+      harness = makeHarness({ withExistingVersion: true });
+
+      await harness.service.publish(
+        republishWithoutFridays(),
+        'drop-1',
+        OPERATOR,
+      );
+
+      // Fridays stay dropped. Nothing changes for them, and reporting a
+      // second withdrawal would describe work that did not happen.
+      const again = await harness.service.publish(
+        republishWithoutFridays({ effectiveFrom: '2026-06-23' }),
+        'drop-2',
+        OPERATOR,
+      );
+
+      expect(again.withdrawn).toBe(0);
+      expect(again.created).toBe(0);
+      expect(
+        harness
+          .publishedEventTypes()
+          .filter((type) => type === EVENT_TYPES.tripWithdrawn),
+      ).toHaveLength(FRIDAYS_IN_WINDOW);
+    });
+  });
+
   // Review Focus 4. The timer in TripsService can insert version-2 trips
   // before the apply pass runs, so the counts must come from the diff.
   it('reports the counts it computed even when the generation loop got there first', async () => {

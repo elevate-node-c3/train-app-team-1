@@ -159,8 +159,20 @@ export class TimetablePublishRepository {
       });
   }
 
-  /** The train's published dated trips inside one civil-date range. */
-  async publishedTripsBetween(
+  /**
+   * The train's dated trips inside one civil-date range, **whatever their
+   * status**.
+   *
+   * Withdrawn rows are included deliberately. `uq_dated_trip_train_date`
+   * means a withdrawn trip still owns its (train, service_date), so a diff
+   * that could not see it would class that date as "needs a new trip" and
+   * then hand it to `createDatedTrip`, whose own lookup has no status filter
+   * -- it would find the withdrawn row and return it untouched. The date
+   * would be counted as created and stay withdrawn, with no `TripPublished`
+   * for inventory to recreate seats from, and the generation timer takes the
+   * same path so nothing would ever repair it.
+   */
+  async tripsBetween(
     trainId: string,
     fromDate: string,
     toDate: string,
@@ -168,7 +180,6 @@ export class TimetablePublishRepository {
     return this.dataSource.getRepository(DatedTripEntity).find({
       where: {
         train: { id: trainId },
-        status: 'published',
         serviceDate: Between(fromDate, toDate),
       },
       order: { serviceDate: 'ASC' },

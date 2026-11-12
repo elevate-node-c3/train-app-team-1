@@ -62,6 +62,7 @@ const IDS = {
   trainType: '30000000-0000-4000-8000-000000000001',
   train: '30000000-0000-4000-8000-000000000002',
   travelClass: '40000000-0000-4000-8000-000000000001',
+  secondClass: '40000000-0000-4000-8000-000000000002',
   coachLayout: '50000000-0000-4000-8000-000000000001',
   trainCoach: '60000000-0000-4000-8000-000000000001',
 } as const;
@@ -353,6 +354,140 @@ describe('publishing a timetable version', () => {
       expect(await countOf('timetable')).toBe(1);
       expect(await countOf('operations_audit')).toBe(1);
       expect(await countOf('operations_request')).toBe(1);
+    });
+  });
+
+  /**
+   * The divergence a mismatch would open: `validateFareRules` takes its
+   * travel-class set from the submitted coaches, while `createDatedTrip`
+   * validates against the train's real `train_coach` rows and throws an error
+   * step 7 swallows. Against real Postgres this is the whole bug: a published
+   * version, an audit entry, an event, a key, a response saying 29 trips, and
+   * `dated_trip` empty.
+   */
+  describe('the submitted composition', () => {
+    it('refuses a mismatch before writing anything', async () => {
+      // A second coach the request will not mention, in a class with no fares.
+      await source.query(
+        `INSERT INTO travel_class (id, name_en, name_ar) VALUES ($1, 'Second', 'ثانية')`,
+        [IDS.secondClass],
+      );
+      await source.query(
+        `INSERT INTO train_coach (id, train_id, position, coach_number, travel_class_id, coach_layout_id)
+           VALUES ($1, $2, 2, 2, $3, $4)`,
+        [randomUUID(), IDS.train, IDS.secondClass, IDS.coachLayout],
+      );
+
+      const rejection = await service
+        .publish(request(), 'mismatch-key', OPERATOR)
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+      expect(rejection).toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        details: expect.arrayContaining([
+          expect.objectContaining({ field: 'coaches' }),
+        ]),
+      });
+
+      // Nothing written, and no published version that generates nothing.
+      expect(await countOf('timetable')).toBe(0);
+      expect(await countOf('timetable_stop')).toBe(0);
+      expect(await countOf('fare')).toBe(0);
+      expect(await countOf('operations_audit')).toBe(0);
+      expect(await countOf('operations_request')).toBe(0);
+      expect(await outboxTypes()).toEqual([]);
+      expect(await countOf('dated_trip')).toBe(0);
+    });
+
+    it('publishes, and really generates, when the composition matches', async () => {
+      const result = await service.publish(request(), 'match-key', OPERATOR);
+
+      expect(result.created).toBeGreaterThan(0);
+      // The outcome the refusal above protects: the reported count is the
+      // number of rows that exist.
+      expect(await countOf('dated_trip')).toBe(result.created);
+    });
+  });
+
+  /**
+   * A withdrawn trip still owns its (train, service_date) under
+   * `uq_dated_trip_train_date`, and `createDatedTrip`'s own lookup has no
+   * status filter -- so only a real database shows that a date whose trip was
+   * withdrawn is not a date with no trip.
+   */
+  describe('a date whose trip was withdrawn', () => {
+    it('is resurrected on republish, keeping its trip id, and announced again', async () => {
+      const everyDay = [0, 1, 2, 3, 4, 5, 6];
+      const weekday = new Date(`${effectiveFrom}T00:00:00.000Z`).getUTCDay();
+      const withoutThatDay = everyDay.filter((day) => day !== weekday);
+
+      // Runs daily, then stops running on one weekday.
+      await service.publish(
+        request({ runningDays: everyDay }),
+        'daily-key',
+        OPERATOR,
+      );
+      const dropped = await service.publish(
+        request({
+          runningDays: withoutThatDay,
+          effectiveFrom: addCivilDays(effectiveFrom, 1),
+        }),
+        'drop-key',
+        OPERATOR,
+      );
+      expect(dropped.withdrawn).toBeGreaterThan(0);
+
+      const withdrawnRows = (await source.query(
+        `SELECT id, to_char(service_date, 'YYYY-MM-DD') AS service_date
+           FROM dated_trip WHERE status = 'withdrawn' ORDER BY service_date`,
+      )) as { id: string; service_date: string }[];
+      expect(withdrawnRows.length).toBe(dropped.withdrawn);
+
+      const publishedBefore = (await outboxTypes()).filter(
+        (type) => type === EVENT_TYPES.tripPublished,
+      ).length;
+
+      // Put the weekday back.
+      const restored = await service.publish(
+        request({
+          runningDays: everyDay,
+          effectiveFrom: addCivilDays(effectiveFrom, 2),
+        }),
+        'restore-key',
+        OPERATOR,
+      );
+
+      // Counted as `changed`, because the rows and their trip ids already
+      // existed; `created` would promise a new trip id.
+      expect(restored.created).toBe(0);
+      expect(restored.changed).toBeGreaterThan(0);
+
+      for (const row of withdrawnRows) {
+        const [after] = (await source.query(
+          'SELECT id, status, timetable_version FROM dated_trip WHERE id = $1',
+          [row.id],
+        )) as { id: string; status: string; timetable_version: number }[];
+        // The same row, published again, on the newest version.
+        expect(after.status).toBe('published');
+        expect(after.timetable_version).toBe(restored.version);
+      }
+
+      // No duplicate row appeared for any of those dates.
+      const [{ count }] = (await source.query(
+        `SELECT count(*)::int AS count FROM dated_trip
+           WHERE service_date = ANY($1::date[])`,
+        [withdrawnRows.map((row) => row.service_date)],
+      )) as { count: number }[];
+      expect(count).toBe(withdrawnRows.length);
+
+      // And inventory was told, or it never recreates the seats it destroyed.
+      const publishedAfter = (await outboxTypes()).filter(
+        (type) => type === EVENT_TYPES.tripPublished,
+      ).length;
+      expect(publishedAfter - publishedBefore).toBe(restored.changed);
     });
   });
 

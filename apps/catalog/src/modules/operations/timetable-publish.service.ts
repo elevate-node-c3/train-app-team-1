@@ -25,6 +25,7 @@ import { OUTBOX, type OutboxPort } from '@app/messaging';
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 import type { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
+import type { DatedTripEntity } from '../trips/entities/dated-trip.entity.js';
 import type { TripStopEntity } from '../trips/entities/trip-stop.entity.js';
 import { buildTimetablePublished } from '../timetables/timetable-events.factory.js';
 import { CatalogSearchError } from '../trips/catalog-search-error.js';
@@ -102,6 +103,13 @@ function hasPostgresCode(error: unknown, sqlState: string): boolean {
   return (
     candidate.code === sqlState || candidate.driverError?.code === sqlState
   );
+}
+
+/** What every re-point in one pass shares, read once rather than per trip. */
+interface RepointTemplate {
+  timetableStops: TimetableStopEntity[];
+  capacity: number;
+  compositionSnapshot: DatedTripEntity['compositionSnapshot'];
 }
 
 /** A stop, reduced to what "the same shape" means for a sold trip. */
@@ -185,6 +193,7 @@ export class TimetablePublishService {
     const details = [
       ...this.validateRequestShape(request),
       ...this.validateReferences(request, references),
+      ...(await this.validateComposition(request, train.id)),
       ...validateTimetableCandidate(
         await this.buildCandidate(request, references, train.id),
       ),
@@ -371,6 +380,87 @@ export class TimetablePublishService {
   }
 
   /**
+   * The submitted composition must be the train's actual composition.
+   *
+   * This is not a tidiness rule. `validateFareRules` and `validateFareFloor`
+   * derive the set of travel classes to check from the coaches they are
+   * handed, while `createDatedTrip` validates fares against the train's real
+   * `train_coach` rows and throws a plain `Error` on a gap -- which step 7
+   * swallows and logs. So a publish naming a subset of the train's classes
+   * validates against that subset, commits the version, its audit entry, its
+   * event and its key, reports `created: 29`, and then fails every one of
+   * those 29 generations on the class it never looked at. The operator ends
+   * up with a published timetable that generates nothing and a response
+   * claiming otherwise.
+   *
+   * Refusing closes that by construction: if the two sets must be equal,
+   * validation and generation cannot disagree about which classes exist.
+   *
+   * The alternative -- ignore `request.coaches` and build the candidate from
+   * `getTrainCoaches` -- would also agree, by silently discarding a field the
+   * operator submitted. A refusal they can act on is better than a success
+   * that quietly ignored half their request.
+   *
+   * Changing a composition is deliberately out of scope this sprint: the
+   * design's enumerated writes do not include `train_coach`. The refusal says
+   * so, or an operator reading it has no action to take.
+   */
+  private async validateComposition(
+    request: PublishTimetableRequest,
+    trainId: string,
+  ): Promise<ValidationErrorDetail[]> {
+    const actual = (await this.trips.getTrainCoaches(trainId)).map(
+      (coach) => ({
+        position: coach.position,
+        coachNumber: coach.coachNumber,
+        travelClassId: coach.travelClass.id,
+        coachLayoutId: coach.coachLayout.id,
+      }),
+    );
+
+    // By value on the four fields that matter, in position order -- never by
+    // object identity, and never by array order, which the client is free to
+    // send in any sequence.
+    const byPosition = (
+      left: { position: number },
+      right: { position: number },
+    ): number => left.position - right.position;
+
+    const submitted = request.coaches
+      .map((coach) => ({
+        position: coach.position,
+        coachNumber: coach.coachNumber,
+        travelClassId: coach.travelClassId,
+        coachLayoutId: coach.coachLayoutId,
+      }))
+      .sort(byPosition);
+
+    const expected = [...actual].sort(byPosition);
+
+    if (JSON.stringify(submitted) === JSON.stringify(expected)) {
+      return [];
+    }
+
+    return [
+      {
+        field: 'coaches',
+        rejectedValue: submitted,
+        issue:
+          `does not match the train's current composition, which is ` +
+          `${describeComposition(expected)}. A publish validates its fares ` +
+          `against the coaches it is sent, and generation validates them ` +
+          `against the train's real coaches, so a mismatch would publish a ` +
+          `version that then generates no trips`,
+        action:
+          `Send exactly the train's current composition ` +
+          `(${describeComposition(expected)}). Composition cannot be changed ` +
+          `through this endpoint in this sprint -- change the train's coaches ` +
+          `first, then publish`,
+      },
+    ];
+  }
+
+  /**
    * Step 3's input.
    *
    * Two things worth stating. The known-reference sets are the **real** ones
@@ -502,11 +592,10 @@ export class TimetablePublishService {
       return { changes, created: 0, changed: 0, withdrawn: 0 };
     }
 
-    const trips = await this.repository.publishedTripsBetween(
-      trainId,
-      start,
-      windowEnd,
-    );
+    // Withdrawn rows included: a withdrawn trip still owns its (train,
+    // service_date), so a date whose trip was withdrawn is not a date with no
+    // trip -- see `tripsBetween`.
+    const trips = await this.repository.tripsBetween(trainId, start, windowEnd);
     const tripsByDate = new Map(trips.map((trip) => [trip.serviceDate, trip]));
     const stopsByTrip = await this.repository.tripStopsOf(
       trips.map((trip) => trip.id),
@@ -533,9 +622,14 @@ export class TimetablePublishService {
         continue;
       }
 
+      const withdrawn = trip.status === 'withdrawn';
       const current = (stopsByTrip.get(trip.id) ?? []).map(shapeOfTripStop);
 
       if (!runs) {
+        // Already withdrawn and still not running: nothing changes, and
+        // counting it would report a withdrawal that did not happen.
+        if (withdrawn) continue;
+
         changes.push({
           serviceDate,
           kind: 'withdrawn',
@@ -549,13 +643,24 @@ export class TimetablePublishService {
       // Re-pointed in place. Even an identical route is a change: the trip's
       // `timetable_id` and `timetable_version` move to the new row, or it
       // would keep naming a version that has been superseded.
+      //
+      // A *withdrawn* trip on a date the new version runs is re-pointed too,
+      // which resurrects it: the train genuinely runs that day, so the honest
+      // outcome is a published trip with `TripPublished` emitted, and
+      // inventory has to hear that to recreate the seats it destroyed. It is
+      // counted as `changed` rather than `created` because the row and its
+      // trip id are the ones that already existed -- `created` would promise
+      // a new trip id to whatever reads the counts.
       const proposed = this.proposedShape(request, serviceDate);
 
       changes.push({
         serviceDate,
         kind: 'changed',
         tripId: trip.id,
-        movesShape: !sameShape(current, proposed),
+        // A resurrection moves more than the shape, and a withdrawn trip has
+        // no seats to protect anyway -- if inventory somehow reports some,
+        // refusing is the safe answer.
+        movesShape: withdrawn || !sameShape(current, proposed),
         removedStationIds: current
           .map((stop) => stop.stationId)
           .filter(
@@ -978,12 +1083,26 @@ export class TimetablePublishService {
     diff: TimetableDiff,
     timetable: TimetableEntity,
   ): Promise<void> {
+    // Read once, not once per trip: the new version's stops and the train's
+    // coaches are the same for every date in the pass, and a 29-date
+    // republish was issuing 58 identical queries.
+    const repointTemplate = diff.changes.some(
+      (change) => change.kind === 'changed',
+    )
+      ? await this.repointTemplate(timetable)
+      : null;
+
     for (const change of diff.changes) {
       try {
         if (change.kind === 'created') {
           await this.trips.createDatedTrip(timetable, change.serviceDate);
         } else if (change.kind === 'changed') {
-          await this.repointTrip(change.tripId!, timetable, change.serviceDate);
+          await this.repointTrip(
+            change.tripId!,
+            timetable,
+            change.serviceDate,
+            repointTemplate!,
+          );
         } else {
           await this.trips.withdrawDatedTrip(change.tripId!);
         }
@@ -995,6 +1114,24 @@ export class TimetablePublishService {
         );
       }
     }
+  }
+
+  /**
+   * The parts of a re-point that do not vary by service date: the new
+   * version's stops, and the composition every trip it generates carries.
+   * Read outside the per-trip transactions, once.
+   */
+  private async repointTemplate(
+    timetable: TimetableEntity,
+  ): Promise<RepointTemplate> {
+    const timetableStops = await this.trips.getTimetableStops(timetable.id);
+    const coaches = await this.trips.getTrainCoaches(timetable.train.id);
+
+    return {
+      timetableStops,
+      capacity: this.trips.calculateCapacity(coaches),
+      compositionSnapshot: this.trips.buildCompositionSnapshot(coaches),
+    };
   }
 
   /**
@@ -1010,23 +1147,15 @@ export class TimetablePublishService {
     tripId: string,
     timetable: TimetableEntity,
     serviceDate: string,
+    template: RepointTemplate,
   ): Promise<void> {
     const correlationId = this.correlationId();
+    const { timetableStops, capacity, compositionSnapshot } = template;
 
+    // Still one transaction per trip: a date that fails must not cost the
+    // other dates theirs.
     await this.unitOfWork.withTransaction(async (ctx) => {
-      const manager = this.repository.managerOf(ctx);
       const occurredAt = new Date();
-
-      const timetableStops = await this.trips.getTimetableStops(
-        timetable.id,
-        manager,
-      );
-      const coaches = await this.trips.getTrainCoaches(
-        timetable.train.id,
-        manager,
-      );
-      const capacity = this.trips.calculateCapacity(coaches);
-      const compositionSnapshot = this.trips.buildCompositionSnapshot(coaches);
       const tripStops = this.trips.buildTripStops(timetableStops, serviceDate);
 
       const trip = await this.repository.repoint(ctx, {
@@ -1069,6 +1198,25 @@ export class TimetablePublishService {
       );
     });
   }
+}
+
+/** The train's coaches in words, so a refusal names what to send instead. */
+function describeComposition(
+  coaches: {
+    position: number;
+    coachNumber: number;
+    travelClassId: string;
+    coachLayoutId: string;
+  }[],
+): string {
+  if (coaches.length === 0) return 'no coaches at all';
+
+  return coaches
+    .map(
+      (coach) =>
+        `position ${coach.position}: coach ${coach.coachNumber}, class ${coach.travelClassId}, layout ${coach.coachLayoutId}`,
+    )
+    .join('; ');
 }
 
 function shapeOfTripStop(stop: TripStopEntity): StopShape {
