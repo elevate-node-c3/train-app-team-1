@@ -11,7 +11,9 @@ import { SecurityModule } from './common/security/security.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
+import { OperationsModule } from './modules/operations/operations.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /**
@@ -28,6 +30,8 @@ import { ServiceInfoController } from './service-info.controller.js';
     HealthModule,
     SecurityModule,
     IdentityModule,
+    CatalogModule,
+    OperationsModule,
   ],
   controllers: [ServiceInfoController],
   providers: [

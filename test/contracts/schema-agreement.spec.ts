@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CLAIM_OUTBOX_SQL,
@@ -22,6 +22,30 @@ const notificationDdl = readFileSync(
   'apps/notification/src/database/migrations/1761314500000-create-processed-event-email-delivery.ts',
   'utf8',
 );
+const catalogOutboxDdl = readFileSync(
+  'apps/catalog/src/database/migrations/1793300000004-create-catalog-outbox.ts',
+  'utf8',
+);
+
+/** Every relaying service owns `outbox_event`; each copy must match the shared SQL. */
+const outboxDdls: [string, string][] = [
+  ['identity', identityDdl],
+  ['catalog', catalogOutboxDdl],
+];
+
+const catalogProcessedEventDdl = readFileSync(
+  'apps/catalog/src/database/migrations/1793300000005-create-catalog-processed-event.ts',
+  'utf8',
+);
+
+/**
+ * Every consuming service owns `processed_event`; each copy must match the
+ * shared claim SQL. Catalog once shipped without it and dead-lettered events.
+ */
+const processedEventDdls: [string, string][] = [
+  ['notification', notificationDdl],
+  ['catalog', catalogProcessedEventDdl],
+];
 const emailDeliveryEntitySource = readFileSync(
   'apps/notification/src/modules/verification-emails/entities/email-delivery.entity.ts',
   'utf8',
@@ -131,61 +155,111 @@ function referencedColumns(sql: string, table: string): Set<string> {
 }
 
 describe('Schema agreement', () => {
-  it('gives every processed_event statement a column the migration creates', () => {
-    const columns = new Set(columnsOf(notificationDdl, 'processed_event'));
-    const referenced = new Set<string>();
-    for (const sql of [
-      CLAIM_PROCESSED_EVENT_SQL,
-      MARK_PROCESSED_EVENT_HANDLED_SQL,
-      MARK_PROCESSED_EVENT_SKIPPED_SQL,
-      MARK_PROCESSED_EVENT_FAILED_SQL,
-    ]) {
-      for (const column of referencedColumns(sql, 'processed_event')) {
-        referenced.add(column);
+  it.each(processedEventDdls)(
+    'gives every processed_event statement a column the %s migration creates',
+    (_service, ddl) => {
+      const columns = new Set(columnsOf(ddl, 'processed_event'));
+      const referenced = new Set<string>();
+      for (const sql of [
+        CLAIM_PROCESSED_EVENT_SQL,
+        MARK_PROCESSED_EVENT_HANDLED_SQL,
+        MARK_PROCESSED_EVENT_SKIPPED_SQL,
+        MARK_PROCESSED_EVENT_FAILED_SQL,
+      ]) {
+        for (const column of referencedColumns(sql, 'processed_event')) {
+          referenced.add(column);
+        }
       }
+
+      expect(referenced.size).toBeGreaterThanOrEqual(8);
+      expect([...referenced].filter((column) => !columns.has(column))).toEqual(
+        [],
+      );
+    },
+  );
+
+  it.each(processedEventDdls)(
+    'makes event_id the %s processed_event primary key',
+    (_service, ddl) => {
+      expect(tableBody(ddl, 'processed_event')).toMatch(
+        /event_id uuid PRIMARY KEY/,
+      );
+    },
+  );
+
+  it.each(processedEventDdls)(
+    'indexes only processing rows of %s, not the whole ledger',
+    (_service, ddl) => {
+      expect(ddl).toMatch(
+        /CREATE INDEX idx_processed_event_processing[\s\S]*?WHERE status = 'processing'/,
+      );
+    },
+  );
+
+  it('gives both processed_event tables the same columns', () => {
+    const [[, notification], [, catalog]] = processedEventDdls;
+
+    expect(columnsOf(catalog, 'processed_event').sort()).toEqual(
+      columnsOf(notification, 'processed_event').sort(),
+    );
+  });
+
+  it('gives every service that consumes events its own inbox table', () => {
+    // Catalog binds four event types; without this table every delivery
+    // dead-letters.
+    const consumers = [
+      'apps/catalog/src/database/migrations',
+      'apps/notification/src/database/migrations',
+    ];
+
+    for (const directory of consumers) {
+      const created = readdirSync(directory).some((file) =>
+        readFileSync(`${directory}/${file}`, 'utf8').includes(
+          'CREATE TABLE processed_event',
+        ),
+      );
+
+      expect(created, `${directory} creates processed_event`).toBe(true);
     }
-
-    expect(referenced.size).toBeGreaterThanOrEqual(8);
-    expect([...referenced].filter((column) => !columns.has(column))).toEqual(
-      [],
-    );
   });
 
-  it('makes event_id the processed_event primary key', () => {
-    expect(tableBody(notificationDdl, 'processed_event')).toMatch(
-      /event_id uuid PRIMARY KEY/,
-    );
-  });
-
-  it('indexes only processing rows, not the whole ledger', () => {
-    expect(notificationDdl).toMatch(
-      /CREATE INDEX idx_processed_event_processing[\s\S]*?WHERE status = 'processing'/,
-    );
-  });
-
-  it('gives every outbox statement a column the identity migration creates', () => {
-    const columns = new Set(columnsOf(identityDdl, 'outbox_event'));
-    const referenced = new Set<string>();
-    for (const sql of [
-      INSERT_OUTBOX_SQL,
-      CLAIM_OUTBOX_SQL,
-      MARK_OUTBOX_PUBLISHED_SQL,
-      RECORD_OUTBOX_FAILURE_SQL,
-    ]) {
-      for (const column of referencedColumns(sql, 'outbox_event')) {
-        referenced.add(column);
+  it.each(outboxDdls)(
+    'gives every outbox statement a column the %s migration creates',
+    (_service, ddl) => {
+      const columns = new Set(columnsOf(ddl, 'outbox_event'));
+      const referenced = new Set<string>();
+      for (const sql of [
+        INSERT_OUTBOX_SQL,
+        CLAIM_OUTBOX_SQL,
+        MARK_OUTBOX_PUBLISHED_SQL,
+        RECORD_OUTBOX_FAILURE_SQL,
+      ]) {
+        for (const column of referencedColumns(sql, 'outbox_event')) {
+          referenced.add(column);
+        }
       }
-    }
 
-    expect(referenced.size).toBeGreaterThanOrEqual(12);
-    expect([...referenced].filter((column) => !columns.has(column))).toEqual(
-      [],
-    );
-  });
+      expect(referenced.size).toBeGreaterThanOrEqual(12);
+      expect([...referenced].filter((column) => !columns.has(column))).toEqual(
+        [],
+      );
+    },
+  );
 
-  it('keeps the relay index partial on unpublished rows', () => {
-    expect(identityDdl).toMatch(
-      /CREATE INDEX idx_outbox_event_unpublished[\s\S]*?WHERE published_at IS NULL/,
+  it.each(outboxDdls)(
+    'keeps the %s relay index partial on unpublished rows',
+    (_service, ddl) => {
+      expect(ddl).toMatch(
+        /CREATE INDEX idx_outbox_event_unpublished[\s\S]*?WHERE published_at IS NULL/,
+      );
+    },
+  );
+
+  it('gives both outbox tables the same columns', () => {
+    const [[, identity], [, catalog]] = outboxDdls;
+
+    expect(columnsOf(catalog, 'outbox_event').sort()).toEqual(
+      columnsOf(identity, 'outbox_event').sort(),
     );
   });
 

@@ -11,6 +11,7 @@ import {
 import {
   AccessTokenVerificationError,
   buildAccessTokenClaims,
+  type SignAccessTokenInput,
 } from './access-token.claims.js';
 import { JwtAccessTokenSigner } from './access-token.signer.js';
 import { JwtAccessTokenVerifier } from './access-token.verifier.js';
@@ -32,9 +33,11 @@ function keyPair(): KeyPair {
 const ACTIVE = keyPair();
 const PREVIOUS = keyPair();
 
-const SIGN_INPUT = {
+// Annotated, so `roles` is the StaffRole union rather than a widened
+// `string[]` that no longer satisfies the signer's own input type.
+const SIGN_INPUT: SignAccessTokenInput = {
   sub: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  lvl: 'traveller' as const,
+  lvl: 'traveller',
   roles: ['operator'],
   sid: 'session-1',
   bkbl: true,

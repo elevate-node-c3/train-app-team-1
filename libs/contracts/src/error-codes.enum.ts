@@ -1,9 +1,6 @@
 /**
- * The stable machine-readable codes the envelope carries.
- *
- * Codes are grouped by concern rather than by HTTP status: a client switches on
- * the code, while the status remains the transport-level answer. Both the
- * Arabic and English catalogue entries are mandatory (see F3).
+ * Stable machine-readable codes, grouped by concern rather than HTTP status.
+ * Catalogue entries in both languages are mandatory.
  */
 export enum ErrorCode {
   SUCCESS = 'SUCCESS',
@@ -14,6 +11,8 @@ export enum ErrorCode {
   ROUTE_NOT_FOUND = 'ROUTE_NOT_FOUND',
   RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND',
   SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  /** Something this service needed could not answer; retryable, with `retryAfterSeconds`. */
+  DEPENDENCY_UNAVAILABLE = 'DEPENDENCY_UNAVAILABLE',
   SERVICE_DEGRADED = 'SERVICE_DEGRADED',
   BAD_REQUEST = 'BAD_REQUEST',
   UNAUTHORIZED = 'UNAUTHORIZED',

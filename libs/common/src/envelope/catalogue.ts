@@ -2,6 +2,14 @@ import { ErrorCode } from '@app/contracts';
 
 export type SupportedLanguage = 'ar' | 'en';
 
+/**
+ * A refused search date, carrying the last date the traveller could pick
+ * instead. Not a `SearchEmptyReason`: the search was refused, not answered
+ * with an empty list.
+ */
+export const CATALOG_SEARCH_DATE_OUT_OF_WINDOW =
+  'CATALOG_SEARCH_DATE_OUT_OF_WINDOW';
+
 export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.SUCCESS]: {
     ar: 'تمت العملية بنجاح',
@@ -26,6 +34,10 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.SERVICE_UNAVAILABLE]: {
     ar: 'الخدمة غير متوفرة حالياً، يرجى المحاولة لاحقاً',
     en: 'Service is temporarily unavailable, please try again later',
+  },
+  [ErrorCode.DEPENDENCY_UNAVAILABLE]: {
+    ar: 'لم تتمكن إحدى الخدمات المطلوبة من الرد، يرجى إعادة المحاولة بعد قليل',
+    en: 'A service this request depends on could not answer, please try again shortly',
   },
   [ErrorCode.BAD_REQUEST]: {
     ar: 'طلب غير صالح، يرجى التحقق من المدخلات',
@@ -139,6 +151,51 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'يجب إكمال الملف الشخصي قبل إتمام الحجز',
     en: 'Please complete your profile before making a booking',
   },
+
+  // --- Trip search (TA-17) -------------------------------------------------
+  //
+  // Keyed by the `SearchEmptyReason` wire values themselves, so the gateway
+  // needs no mapping table between the gRPC response and the sentence. These
+  // are not ErrorCodes on purpose: an empty result is a 200 with success
+  // true, not an error. The catalogue is Record<string, ...> and
+  // resolveMessage takes a string, so no enum has to grow for this.
+  //
+  // The three must read differently in both languages. BR-57 exists because
+  // travellers reported "I don't know what to change: station, date, or
+  // round-trip option" -- so each sentence names the field to change.
+  SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED: {
+    ar: 'لا يوجد قطار يسير بين هاتين المحطتين في هذا الاتجاه، يرجى تغيير المحطتين',
+    en: 'No train runs between these stations in this direction, please change the stations',
+  },
+  SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE: {
+    ar: 'عفوا, لا يوجد مواعيد متاحة في التاريخ المختار',
+    en: 'Sorry, no trains available on the selected date',
+  },
+  SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE: {
+    ar: 'هذا القطار لا يخدم هذا المسار، يرجى تغيير رقم القطار أو إزالته',
+    en: 'This train does not serve this route, please change or clear the train number',
+  },
+
+  // --- Round trip and filters (TA-18) --------------------------------------
+  //
+  // Both name a different thing to change, which is the whole point of
+  // keeping them apart from NO_TRIPS_ON_DATE. The research finding was
+  // travellers saying "I don't know what to change: station, date, or
+  // round-trip option" -- so the return-leg sentence offers the two choices
+  // that actually help, and the filter sentence says explicitly that the date
+  // is not the problem.
+  SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL: {
+    ar: 'لا يوجد قطار عودة يتحرك بعد وصول رحلة الذهاب في {{outboundArrivalTime}}، يرجى تغيير تاريخ العودة أو اختيار رحلة ذهاب أخرى',
+    en: 'No return train leaves after your outbound trip arrives at {{outboundArrivalTime}}; please change the return date or pick another outbound trip',
+  },
+  SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL: {
+    ar: 'توجد قطارات في هذا التاريخ ولكن لا يوجد ما يطابق عوامل التصفية المختارة، يرجى تعديل عوامل التصفية',
+    en: 'There are trains on this date, but none match the filters you chose; please adjust the filters',
+  },
+  [CATALOG_SEARCH_DATE_OUT_OF_WINDOW]: {
+    ar: 'التاريخ المختار خارج فترة الحجز المتاحة، آخر تاريخ متاح للحجز هو {{lastBookableDate}}',
+    en: 'The selected date is outside the booking window; the last bookable date is {{lastBookableDate}}',
+  },
 };
 
 /**
@@ -186,4 +243,27 @@ export function resolveMessage(
   return lang === 'en'
     ? 'An error occurred during request processing'
     : 'حدث خطأ أثناء معالجة الطلب';
+}
+
+/**
+ * Resolves a message and substitutes `{{name}}` placeholders.
+ *
+ * Catalog supplies values and the edge supplies words: a refused search date
+ * travels as a reason plus `{ lastBookableDate }`, and the sentence that
+ * quotes it is assembled here. That is what keeps catalog free of any
+ * language and keeps Accept-Language resolved in one place.
+ *
+ * An unsupplied placeholder is left verbatim rather than printed as
+ * "undefined" -- a visible `{{lastBookableDate}}` is a bug report, while
+ * "the last bookable date is undefined" is a lie told to a traveller.
+ */
+export function resolveMessageWithParams(
+  code: string,
+  lang: SupportedLanguage = 'ar',
+  params: Record<string, string> = {},
+): string {
+  return resolveMessage(code, lang).replace(
+    /\{\{(\w+)\}\}/g,
+    (placeholder, name: string) => params[name] ?? placeholder,
+  );
 }
