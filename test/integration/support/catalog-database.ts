@@ -7,6 +7,7 @@ import { DatedTripEntity } from '../../../apps/catalog/src/modules/trips/entitie
 import { FareEntity } from '../../../apps/catalog/src/modules/fares/entities/fare.entity.js';
 import { GovernorateEntity } from '../../../apps/catalog/src/modules/stations/entities/governorate.entity.js';
 import { OperationsAuditEntity } from '../../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
+import { OperationsRequestEntity } from '../../../apps/catalog/src/modules/operations/entities/operations-request.entity.js';
 import { RecentSearchEntity } from '../../../apps/catalog/src/modules/recent-searches/entities/recent-search.entity.js';
 import { StationEntity } from '../../../apps/catalog/src/modules/stations/entities/station.entity.js';
 import { TimetableEntity } from '../../../apps/catalog/src/modules/timetables/entities/timetable.entity.js';
@@ -138,6 +139,7 @@ export async function catalogDataSource(): Promise<DataSource> {
       TripStopEntity,
       RecentSearchEntity,
       OperationsAuditEntity,
+      OperationsRequestEntity,
     ],
     extra: { connectionTimeoutMillis: 5000 },
   });
