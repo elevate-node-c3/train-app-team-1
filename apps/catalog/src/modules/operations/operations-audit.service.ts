@@ -17,9 +17,9 @@ export interface AppendAuditInput {
   action: OperationsAction;
   actorAccountId: string;
   trainId: string;
-  /** A snapshot, null on a first publish. */
+  /** Null on a first publish. */
   before: unknown;
-  /** A snapshot, always present. */
+  /** Always present. */
   after: unknown;
   /** 0 this sprint; the column exists ahead of inventory having seats. */
   ticketsAffected: number;
@@ -27,11 +27,8 @@ export interface AppendAuditInput {
 }
 
 /**
- * BR-52's trail. `append` is the half of the contract that matters most: it
- * takes the caller's `TransactionContext` and nothing else, so a publish or
- * a fare change can never commit without its record, or roll back leaving
- * one behind. There is no overload that opens its own transaction -- the
- * same shape as `OutboxPort.append`, for the same reason.
+ * BR-52's trail. `append` takes the caller's transaction, so a change and its
+ * record commit together or not at all.
  */
 @Injectable()
 export class OperationsAuditService {

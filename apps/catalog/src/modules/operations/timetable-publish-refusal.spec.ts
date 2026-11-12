@@ -22,13 +22,8 @@ import {
 } from '../../../../../test/fixtures/timetable-publish-harness.js';
 import { SeatUsageUnavailableError } from './inventory-seat-usage.grpc.client.js';
 
-/**
- * Publishing a timetable version -- the refusals.
- *
- * Each one is a promise someone may already have bought, so every case below
- * asserts the same two things: the operator is told what to change, and
- * nothing at all was written.
- */
+// Refusals: tell the operator what to change and write nothing, because each
+// promise may already be sold.
 const D_PLUS_3 = '2026-06-25';
 /** The first Friday on or after the effective date. */
 const FIRST_FRIDAY = '2026-06-26';
@@ -66,9 +61,7 @@ describe('TimetablePublishService refusals', () => {
     expect(rejection).toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
     const details = (rejection as { details: { field: string }[] }).details;
 
-    // All three faults in one answer: a first stop with an arrival time, a
-    // repeated station, and a station the catalogue does not have. A publish
-    // that stopped at the first would cost the operator two more round trips.
+    // All three faults in one answer; stopping at the first costs more round trips.
     expect(details.length).toBeGreaterThanOrEqual(3);
     expect(details.map((detail) => detail.field)).toEqual(
       expect.arrayContaining([
@@ -77,7 +70,7 @@ describe('TimetablePublishService refusals', () => {
         'stops[2].stationId',
       ]),
     );
-    // Every detail names the change to make (BR-57).
+    // Every detail names the change to make.
     for (const detail of details) {
       expect(detail).toMatchObject({
         issue: expect.any(String),
@@ -101,8 +94,7 @@ describe('TimetablePublishService refusals', () => {
     await expectNothingWritten();
   });
 
-  // Silence is never zero. A publish must consult the seam even when it would
-  // touch no existing trip, or an unanswered question becomes "no tickets".
+  // Silence is never zero: consult the seam even with no affected trip.
   it('consults the seam on every publish, including one with no affected trip', async () => {
     harness = makeHarness();
 
@@ -134,14 +126,12 @@ describe('TimetablePublishService refusals', () => {
 
     const [detail] = (rejection as { details: { issue: string; action: string }[] })
       .details;
-    // The trips and the counts, so the operator can go and look.
     expect(detail.issue).toContain(sold.id);
     expect(detail.issue).toContain(D_PLUS_3);
     expect(detail.issue).toContain('2 sold');
-    // And a later effective date, which is the one thing that does work.
+    // A later effective date is the one thing that works.
     expect(detail.action).toMatch(/effectiveFrom of \d{4}-\d{2}-\d{2} or later/);
 
-    // The version that was already live is untouched, and no second one exists.
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.auditCount()).toBe(0);
     expect(harness.store.timetables[0].effectiveUntil).toBeNull();
@@ -151,9 +141,7 @@ describe('TimetablePublishService refusals', () => {
   it('refuses a time change to a held trip (that is the Sprint 5 delay)', async () => {
     harness = makeHarness({ withExistingVersion: true });
     const held = await harness.tripOn(D_PLUS_3);
-    // Held, not sold, and the stop set does not move at all -- only the
-    // clock readings do. A traveller holding a seat on the old time has to
-    // be told, not quietly moved.
+    // Held, not sold; only times move. A holder must be told, not quietly moved.
     harness.answerSeatUsage(held.id, {
       soldCount: 0,
       heldCount: 1,
@@ -188,8 +176,7 @@ describe('TimetablePublishService refusals', () => {
       stationIdsInUse: [GIZA, BENI_SUEF],
     });
 
-    // The three-station route minus its middle stop, which is where the hold
-    // boards. Fares for the remaining pair already exist.
+    // The middle stop is where the hold boards; the remaining pair has fares.
     const withoutGiza = validRequest();
     const rejection = await harness.service
       .publish(
@@ -225,8 +212,7 @@ describe('TimetablePublishService refusals', () => {
       rejection as { details: { field: string; rejectedValue: unknown }[] }
     ).details;
     expect(detail.field).toBe('stops');
-    // Named by station, not merely "the shape changed": the operator needs to
-    // know which stop cannot go.
+    // Names the station, not just "shape changed".
     expect(detail.rejectedValue).toEqual([GIZA]);
 
     expect(await harness.auditCount()).toBe(0);
@@ -248,8 +234,8 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'stops' })],
     });
 
-    // No remap: the sold ticket keeps naming stations in a route this publish
-    // would have rewritten, so the publish is the thing that gives way.
+    // No remap: the sold ticket still names stations in the old route, so the
+    // publish gives way.
     expect(await harness.stopStationIdsOn(D_PLUS_3)).toHaveLength(3);
     expect(await harness.auditCount()).toBe(0);
   });
@@ -278,7 +264,6 @@ describe('TimetablePublishService refusals', () => {
       (rejection as { details: { issue: string }[] }).details[0].issue,
     ).toContain('3 sold');
 
-    // Still running, and still version 1.
     expect((await harness.tripOn(FIRST_FRIDAY)).status).toBe('published');
     expect(await harness.auditCount()).toBe(0);
   });
@@ -292,9 +277,8 @@ describe('TimetablePublishService refusals', () => {
       stationIdsInUse: [CAIRO, BENI_SUEF],
     });
 
-    // The same route at the same times: nothing a ticket depends on moves,
-    // so there is nothing to refuse. Refusing here would make a timetable
-    // unpublishable for a month after its first sale.
+    // Same route and times, so nothing a ticket depends on moves; refusing
+    // would block republishing after a sale.
     const result = await harness.service.publish(
       validRequest(),
       'k',
@@ -331,8 +315,7 @@ describe('TimetablePublishService refusals', () => {
   it('accepts an effectiveFrom of today', async () => {
     harness = makeHarness();
 
-    // The boundary is inclusive: today's trips have not run yet, and a
-    // same-day publish is a normal operator action.
+    // Inclusive boundary: today's trips have not run yet.
     const result = await harness.service.publish(
       validRequest({ effectiveFrom: TODAY }),
       'k',
@@ -342,15 +325,8 @@ describe('TimetablePublishService refusals', () => {
     expect(result.version).toBe(1);
   });
 
-  /**
-   * The divergence this refusal closes: `validateFareRules` and
-   * `validateFareFloor` take their travel-class set from the coaches they are
-   * handed, while `createDatedTrip` validates fares against the train's real
-   * `train_coach` rows and throws a plain `Error` that step 7 swallows. A
-   * publish naming a subset of the train's classes would validate against
-   * that subset, commit everything, report 29 trips created, and then
-   * generate none.
-   */
+  // The generator validates fares against the train's real coaches and
+  // swallows the error, so a subset composition would commit but generate none.
   describe('the submitted composition', () => {
     it('refuses a composition that is not the train\'s, before writing anything', async () => {
       harness = makeHarness();
@@ -385,13 +361,9 @@ describe('TimetablePublishService refusals', () => {
       const detail = (
         rejection as { details: { field: string; issue: string; action: string }[] }
       ).details.find((candidate) => candidate.field === 'coaches')!;
-      // Names the composition to send instead, or the operator cannot act.
       expect(detail.issue).toContain(FIRST_CLASS);
-      // And says why they cannot simply change it here.
       expect(detail.action).toMatch(/cannot be changed through this endpoint/);
 
-      // Refused in step 3, so none of the four writes happened and the seam
-      // was never troubled.
       await expectNothingWritten();
       expect(harness.seatUsageAsks()).toEqual([]);
     });
@@ -438,8 +410,7 @@ describe('TimetablePublishService refusals', () => {
       expect(result.created).toBeGreaterThan(0);
       expect(await harness.timetableCount()).toBe(1);
       expect(await harness.auditCount()).toBe(1);
-      // And the trips really were generated, which is the outcome the
-      // mismatch refusal exists to protect.
+      // Trips really generated; that is what the mismatch refusal protects.
       expect(harness.store.trips).toHaveLength(result.created);
     });
 
@@ -475,7 +446,7 @@ describe('TimetablePublishService refusals', () => {
     });
 
     await expectNothingWritten();
-    // Refused before the seam was troubled: there is nothing to ask about.
+    // Refused before the seam: nothing to ask about.
     expect(harness.seatUsageAsks()).toEqual([]);
   });
 
@@ -498,10 +469,8 @@ describe('TimetablePublishService refusals', () => {
     await expectNothingWritten();
   });
 
-  // CARRY 2: `supersede` leaves a same-day or future-dated predecessor to the
-  // exclusion constraint, which raises a raw 23P01. Nothing else in this
-  // codebase matches that code, so without this the operator gets a 500 for a
-  // legitimate conflict.
+  // `supersede` leaves a same-day or future predecessor to the exclusion
+  // constraint (23P01); unmapped, that legitimate conflict becomes a 500.
   it('turns the exclusion constraint into a conflict naming the clashing version', async () => {
     harness = makeHarness({ withExistingVersion: true });
     harness.store.timetables[0].effectiveFrom = '2026-06-22';

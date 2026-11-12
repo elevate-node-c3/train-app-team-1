@@ -10,8 +10,7 @@ describe('SeatUsageService', () => {
     expect(usages.map((u) => u.tripId)).toEqual(['trip-a', 'trip-b']);
   });
 
-  // No seat tables this sprint. Zero is the honest answer, and it is an
-  // answer -- not an absence. Catalog must be able to tell the difference.
+  // Zero is an answer, not an absence; catalog must tell the difference.
   it('reports no sold or held seats while inventory holds no seats', async () => {
     const [usage] = await service.seatUsageForTrips(['trip-a']);
     expect(usage).toEqual({

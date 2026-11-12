@@ -2,16 +2,7 @@ import type { CallOptions } from '@grpc/grpc-js';
 import type { Observable } from 'rxjs';
 import type { CivilDateTime } from '@app/contracts';
 
-/**
- * The operations rpcs as this gateway calls them.
- *
- * No wire-level type for these exists in `@app/contracts` -- `catalog.dto.ts`
- * only carries the search surface, and `operations.dto.ts` carries catalog's
- * own domain shapes, which use `number`/`null` where the wire uses an
- * `optional` presence-tracked field. These interfaces are the wire shapes
- * themselves, matching `catalog.proto` and the catalog-side
- * `operations.grpc.controller.ts` that already names them the same way.
- */
+/** The operations rpcs as this gateway calls them; these match `catalog.proto`. */
 
 export interface PublishTimetableGrpcStop {
   stationId: string;
@@ -46,12 +37,7 @@ export interface PublishTimetableGrpcRequest {
   fares: PublishTimetableGrpcFare[];
 }
 
-/**
- * `created`/`changed`/`withdrawn` are `optional` on the wire (Task 10) so a
- * genuine republish-with-no-change arrives as a real `0`, not an absent key.
- * A consumer must read these as "present with value N" vs "absent", never
- * assume absent means zero.
- */
+/** The counts are optional so a genuine `0` is not an absent key. */
 export interface PublishTimetableGrpcResponse {
   timetableId: string;
   version: number;
@@ -93,7 +79,7 @@ export interface AuditEntryGrpc {
   trainId: string;
   beforeJson: string;
   afterJson: string;
-  /** Always 0 this sprint, but `optional` for the same zero-vs-absent reason. */
+  /** Always 0 this sprint; optional so zero is not confused with absent. */
   ticketsAffected?: number;
   correlationId: string;
   occurredAt: CivilDateTime;
@@ -104,10 +90,7 @@ export interface ListAuditEntriesGrpcResponse {
   nextCursor?: string;
 }
 
-/**
- * `metadata` and `options` are declared on every method so a deadline can be
- * threaded through the `ClientGrpc` proxy, matching `CatalogGrpcClient`.
- */
+/** `metadata`/`options` are declared on every method so a deadline can be threaded through. */
 export interface OperationsGrpcClient {
   publishTimetable(
     data: PublishTimetableGrpcRequest,

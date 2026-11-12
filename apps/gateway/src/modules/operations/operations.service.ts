@@ -6,14 +6,12 @@ import type { ListAuditQueryDto } from './dto/list-audit.dto.js';
 import type { PublishTimetableDto } from './dto/publish-timetable.dto.js';
 import { OperationsGrpcClientService } from './operations.grpc.client.js';
 
-/** Used only when a caller sends no `limit` at all, matching catalog's own default. */
+/** Matches catalog's default when a caller sends no `limit`. */
 const DEFAULT_AUDIT_LIST_LIMIT = 50;
 
 /**
- * What the publish answers with. `created`/`changed`/`withdrawn` are present
- * only when catalog's response carries them -- `optional` on the wire so a
- * genuine `0` (a republish that only re-points) is never confused with
- * "field never set" (TA-20, Task 10 §5).
+ * `created`/`changed`/`withdrawn` stay absent when unset, so a genuine `0`
+ * (a republish that only re-points) is never confused with "never set".
  */
 export interface PublishTimetableResult {
   timetableId: string;
@@ -36,7 +34,7 @@ export interface AuditEntryResult {
   action: string;
   actorAccountId: string;
   trainId: string;
-  /** Decoded from catalog's `beforeJson`, a snapshot rather than a typed shape. */
+  /** Parsed from catalog's `beforeJson`; a snapshot, not a typed shape. */
   before: unknown;
   after: unknown;
   ticketsAffected?: number;
@@ -49,15 +47,7 @@ export interface ListAuditResult {
   nextCursor?: string;
 }
 
-/**
- * Shapes the operator surface for the HTTP edge.
- *
- * Thin on purpose: no rule here decides whether a publish or a fare change is
- * valid -- that is catalog's, re-checked there regardless of what passed
- * here. The only real work is translating DTO to wire request and back,
- * preserving the zero-vs-absent distinction the wire's `optional` fields
- * carry.
- */
+/** Translates DTOs to wire requests and back; catalog owns every validity rule. */
 @Injectable()
 export class OperationsService {
   constructor(private readonly operations: OperationsGrpcClientService) {}
@@ -126,10 +116,8 @@ export class OperationsService {
   }
 
   /**
-   * BR-52's trail. `before`/`after` arrive as JSON strings on the wire
-   * (catalog never rewrites a snapshot's shape), parsed here so the REST
-   * response carries nested JSON rather than a string a client must parse
-   * itself again.
+   * BR-52's trail. `before`/`after` arrive as JSON strings and are parsed so
+   * the REST response carries JSON, not a string a client must parse again.
    */
   async listAudit(query: ListAuditQueryDto): Promise<ListAuditResult> {
     const response = await this.operations.listAuditEntries({
@@ -141,8 +129,7 @@ export class OperationsService {
     });
 
     return {
-      // proto3 omits an empty repeated field entirely, so a page with no
-      // rows arrives with no `entries` key at all.
+      // proto3 omits an empty repeated field, so an empty page has no `entries` key.
       entries: (response.entries ?? []).map((entry) => ({
         id: entry.id,
         action: entry.action,

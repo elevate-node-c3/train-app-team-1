@@ -1,16 +1,9 @@
 import type { LoggerService } from '@nestjs/common';
 
-/**
- * Catalog's home for operations configuration (§6.5). A later task adds an
- * inventory-call timeout here too, so this stays standalone functions rather
- * than one frozen object.
- */
-
 const STRIPE_MINIMUM_ENV_VAR = 'STRIPE_MINIMUM_CHARGE_PIASTRES';
 
-// Stripe's actual EGP floor is not documented anywhere accessible to this
-// repo. Refusing only non-positive fares until it is configured is still
-// conservative -- it never admits a fare of zero or less.
+// Stripe's EGP floor is not documented here; 1 piastre refuses zero or less
+// until it is configured.
 const UNCONFIGURED_FLOOR_PIASTRES = 1;
 
 let warnedUnconfigured = false;
@@ -38,7 +31,7 @@ export function isChargeableFare(amountPiastres: number): boolean {
   );
 }
 
-/** Logs once, at warn, when the Stripe floor is unconfigured. Call from catalog's bootstrap. */
+/** Warns once at bootstrap when the Stripe floor is unconfigured. */
 export function warnIfStripeFloorUnconfigured(logger: LoggerService): void {
   if (process.env[STRIPE_MINIMUM_ENV_VAR] !== undefined) return;
   if (warnedUnconfigured) return;
@@ -51,8 +44,7 @@ export function warnIfStripeFloorUnconfigured(logger: LoggerService): void {
 
 const INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
 
-// Generous for an interactive publish click, short enough that an operator
-// is not left staring at a spinner when inventory is actually down.
+// Long enough for a publish click, short enough not to hang when inventory is down.
 const DEFAULT_INVENTORY_SEAT_USAGE_TIMEOUT_MS = 2000;
 
 /** How long catalog waits for inventory's seat-usage answer before refusing the publish. */
@@ -69,20 +61,11 @@ export function seatUsageTimeoutMs(): number {
   return parsed;
 }
 
-// Deliberately longer than `seatUsageTimeoutMs()`'s own default: the wait is
-// for the dependency to recover, not for one more round-trip at the same
-// timeout that just elapsed. Not derived from it for that reason -- the two
-// numbers answer different questions and a change to one must not silently
-// move the other.
+// Longer than the seat-usage timeout on purpose: this waits for recovery,
+// not for one more round trip. Do not derive one from the other.
 const DEPENDENCY_RETRY_AFTER_SECONDS = 5;
 
-/**
- * How long a client should wait before retrying a request that failed
- * because inventory's seat-usage seam could not answer (`DEPENDENCY_UNAVAILABLE`).
- * The single source both the publish service's refusal prose and the gRPC
- * transport's `retryAfterSeconds` envelope field read, so the two can never
- * desync.
- */
+/** Retry wait for `DEPENDENCY_UNAVAILABLE`, shared by the refusal text and the envelope. */
 export function dependencyRetryAfterSeconds(): number {
   return DEPENDENCY_RETRY_AFTER_SECONDS;
 }
@@ -90,7 +73,7 @@ export function dependencyRetryAfterSeconds(): number {
 const INVENTORY_GRPC_URL_ENV_VAR = 'INVENTORY_GRPC_URL';
 const DEFAULT_INVENTORY_GRPC_URL = 'inventory:50051';
 
-/** Where catalog reaches inventory's gRPC server. Same `nonEmpty` treatment as the gateway's `grpc-settings.ts`, so a blank value falls back rather than becoming an empty host. */
+/** Inventory's gRPC URL; a blank value falls back to the default. */
 export function inventoryGrpcUrl(): string {
   return nonEmpty(process.env[INVENTORY_GRPC_URL_ENV_VAR]) ?? DEFAULT_INVENTORY_GRPC_URL;
 }

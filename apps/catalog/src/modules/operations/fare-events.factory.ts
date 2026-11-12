@@ -12,7 +12,7 @@ interface BuildFareChangedProps {
   payload: FareChangedPayloadV1;
 }
 
-/** Mirrors `trip-events.factory.ts`'s `buildTripPublished` exactly. */
+/** Mirrors `buildTripPublished` in `trip-events.factory.ts`. */
 export function buildFareChanged(
   props: BuildFareChangedProps,
 ): FareChangedEvent {

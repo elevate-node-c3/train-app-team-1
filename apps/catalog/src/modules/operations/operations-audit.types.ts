@@ -5,7 +5,7 @@ export interface OperationsAuditFilter {
   from?: Date;
   to?: Date;
   limit: number;
-  /** The `id` of the last entry a previous page returned. */
+  /** `id` of the last entry a previous page returned. */
   cursor?: string;
 }
 

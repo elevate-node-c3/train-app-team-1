@@ -14,23 +14,14 @@ interface FakeContext extends TransactionContext {
   staging: OperationsAuditEntity[];
 }
 
-/**
- * A minimal, honest double of the real unit of work: entries staged during
- * `withTransaction` only reach the committed store once the callback
- * resolves. A rejection discards the stage without ever merging it -- the
- * same guarantee a real Postgres `ROLLBACK` gives, reproduced here so
- * `OperationsAuditService`'s contract with its caller can be proven without
- * a database. The real transaction boundary (`TypeOrmUnitOfWork`) and the
- * database's own append-only trigger are exercised separately, against the
- * Compose Postgres (see task-6-report.md).
- */
+// Minimal unit of work: staged entries commit only when the callback resolves.
+// The real Postgres boundary is tested separately.
 function makeUnitOfWork(committed: OperationsAuditEntity[]) {
   const withTransaction = vi.fn(
     async (work: (ctx: FakeContext) => Promise<unknown>) => {
       const ctx: FakeContext = { driver: 'fake', staging: [] };
       const result = await work(ctx);
-      // Only reached if `work` resolved -- a throw skips this line entirely,
-      // so nothing staged during a rejected transaction ever becomes visible.
+      // Only reached if `work` resolved, so a rollback drops the stage.
       committed.push(...ctx.staging);
       return result;
     },
@@ -38,12 +29,7 @@ function makeUnitOfWork(committed: OperationsAuditEntity[]) {
   return { withTransaction };
 }
 
-/**
- * A repository double faithful enough to prove the service's filter/sort/
- * cursor contract: it reads only from `committed`, so a row staged but never
- * committed (a rollback) is invisible to `list`, exactly as the real
- * `(train_id, occurred_at DESC)`-ordered SQL would be.
- */
+// Reads only committed rows, so a rollback is invisible to `list`.
 function makeRepository(committed: OperationsAuditEntity[]) {
   return {
     append: vi.fn(async (ctx: FakeContext, entity: OperationsAuditEntity) => {
@@ -141,13 +127,10 @@ describe('OperationsAuditService', () => {
       return service.append(ctx as never, makeInput());
     });
 
-    // append wrote through the exact ctx the caller opened...
     expect(repository.append).toHaveBeenCalledWith(
       seenCtx,
       expect.anything(),
     );
-    // ...and the only transaction opened anywhere in this test is the
-    // caller's: append never asked for one of its own.
     expect(uow.withTransaction).toHaveBeenCalledOnce();
   });
 

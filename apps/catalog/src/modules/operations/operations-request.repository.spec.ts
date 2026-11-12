@@ -10,15 +10,8 @@ import {
   fingerprintOf,
 } from './operations-request.repository.js';
 
-/**
- * A committed store, plus a fake `DataSource.transaction` that only merges
- * a transaction's writes into it once the work resolves. This proves
- * `record` reads and writes through the `ctx` it is given -- including that
- * nothing it wrote during a rejected transaction becomes visible. The real
- * commit/rollback boundary (a Postgres transaction actually rolling back) is
- * proven separately in `test/integration/operations-request.repository.int-spec.ts`,
- * against the real TypeOrmUnitOfWork and the real database.
- */
+// Fake transaction commits staged writes only when the work resolves; the
+// real Postgres boundary is tested separately.
 function makeHarness() {
   const committed = new Map<string, OperationsRequestEntity>();
 
@@ -45,8 +38,7 @@ function makeHarness() {
         }),
       } as unknown as EntityManager;
 
-      // Only reached if `work` resolves -- a throw skips this line, so
-      // nothing staged during a rejected transaction ever becomes visible.
+      // Only reached if `work` resolved, so a rollback drops the stage.
       const result = await work(manager);
       for (const [key, value] of staged) committed.set(key, value);
       return result;
@@ -100,16 +92,13 @@ describe('OperationsRequestRepository', () => {
       });
     });
 
-    // record wrote through the exact manager the caller's transaction
-    // opened, not one of its own.
     expect(seenManager).toBeDefined();
     expect(await repository.find('key-2')).toMatchObject({
       idempotencyKey: 'key-2',
     });
   });
 
-  // The property that makes the key trustworthy: a crash between commit and
-  // response must not leave a half-recorded key behind.
+  // A crash between commit and response must not leave a half-recorded key.
   it('records nothing when the transaction rolls back', async () => {
     const { repository, unitOfWork, committed } = makeHarness();
 
@@ -134,8 +123,7 @@ describe('fingerprintOf', () => {
     expect(fingerprintOf({ a: 1, b: 2 })).toBe(fingerprintOf({ b: 2, a: 1 }));
   });
 
-  // Review Focus 3. Reusing a key for different content is a client bug;
-  // replaying the first response would hide it.
+  // Reusing a key for different content is a client bug; a replay would hide it.
   it('differs when any value differs', () => {
     expect(fingerprintOf({ a: 1 })).not.toBe(fingerprintOf({ a: 2 }));
   });

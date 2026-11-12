@@ -27,11 +27,7 @@ const catalogOutboxDdl = readFileSync(
   'utf8',
 );
 
-/**
- * Every service that runs the relay owns its own `outbox_event` table, and the
- * relay's SQL is shared. Each copy is held to the same shape here so one cannot
- * drift into a runtime failure.
- */
+/** Every relaying service owns `outbox_event`; each copy must match the shared SQL. */
 const outboxDdls: [string, string][] = [
   ['identity', identityDdl],
   ['catalog', catalogOutboxDdl],
@@ -43,9 +39,8 @@ const catalogProcessedEventDdl = readFileSync(
 );
 
 /**
- * Same again for the inbox: every service that consumes events owns a
- * `processed_event` table, and the claim SQL is shared. Catalog consumed events
- * for a release without this table, so each one dead-lettered.
+ * Every consuming service owns `processed_event`; each copy must match the
+ * shared claim SQL. Catalog once shipped without it and dead-lettered events.
  */
 const processedEventDdls: [string, string][] = [
   ['notification', notificationDdl],
@@ -210,8 +205,8 @@ describe('Schema agreement', () => {
   });
 
   it('gives every service that consumes events its own inbox table', () => {
-    // Catalog's InvalidationModule binds four event types; without this table
-    // every delivery dead-letters, which is how it shipped once already.
+    // Catalog binds four event types; without this table every delivery
+    // dead-letters.
     const consumers = [
       'apps/catalog/src/database/migrations',
       'apps/notification/src/database/migrations',

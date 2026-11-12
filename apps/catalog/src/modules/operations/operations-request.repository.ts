@@ -9,12 +9,8 @@ import { OperationsRequestEntity } from './entities/operations-request.entity.js
 import type { StoredOperationsRequest } from './operations-request.types.js';
 
 /**
- * Keyed by the client's `Idempotency-Key` (TA-20). `record` takes the
- * caller's transaction, with no overload that opens its own: the key must
- * commit in the same transaction as the change it names, or a crash between
- * commit and response would lose it and a retry would apply the change
- * twice. This mirrors `OperationsAuditRepository.append`, for the same
- * reason.
+ * Keyed by the client's `Idempotency-Key` (TA-20). `record` takes the caller's
+ * transaction, so the key commits with the change it names.
  */
 @Injectable()
 export class OperationsRequestRepository {
@@ -44,23 +40,15 @@ export class OperationsRequestRepository {
     entity.idempotencyKey = request.idempotencyKey;
     entity.fingerprint = request.fingerprint;
     entity.responseJson = request.responseJson;
-    // insert, not save: save checks for an existing row and silently turns
-    // a reused key into an UPDATE. A reused key with different content is a
-    // client bug (see fingerprintOf's doc comment), and only a plain INSERT
-    // lets the primary key reject it.
+    // insert, not save: save would silently UPDATE a reused key, and only a
+    // plain INSERT lets the primary key reject it.
     await repository.insert(entity);
   }
 }
 
 /**
- * A SHA-256 of `payload`, stable across key order but sensitive to any
- * value. Object keys are sorted recursively before serialising; array
- * **order** is left alone, because a timetable's stops are an ordered list
- * and reordering them is a different request.
- *
- * A key present with `undefined` and an absent key serialise the same way:
- * `JSON.stringify` drops an `undefined`-valued object property, which is
- * exactly the equivalence this fingerprint should have too.
+ * SHA-256 of `payload`, stable across key order. Array order is preserved:
+ * stops are an ordered list. An `undefined` value matches an absent key.
  */
 export function fingerprintOf(payload: unknown): string {
   return createHash('sha256')

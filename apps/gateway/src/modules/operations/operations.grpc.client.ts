@@ -50,11 +50,7 @@ export class OperationsGrpcClientService {
     );
   }
 
-  /**
-   * A read, not a change -- BR-52 governs attribution for changes, so unlike
-   * the two writes above this carries no `Idempotency-Key`, matching the
-   * catalog-side `OperationsGrpcController.listAuditEntries`.
-   */
+  /** A read, so no idempotency key; BR-52 attribution applies to changes only. */
   async listAuditEntries(
     request: ListAuditEntriesGrpcRequest,
   ): Promise<ListAuditEntriesGrpcResponse> {
@@ -64,10 +60,8 @@ export class OperationsGrpcClientService {
   }
 
   /**
-   * One call to catalog: caller metadata in, the idempotency key in when
-   * given, a deadline on it, errors mapped -- the same shape
-   * `CatalogGrpcClientService.call` uses, so a method that forgot the
-   * deadline would be exactly as invisible until production.
+   * Sends caller metadata and a deadline, then maps gRPC errors to HTTP, the
+   * same shape `CatalogGrpcClientService.call` uses.
    */
   private async call<T>(
     idempotencyKey: string | undefined,
@@ -94,11 +88,7 @@ export class OperationsGrpcClientService {
     }
   }
 
-  /**
-   * A business refusal first, then the transport status -- identical
-   * ordering to `CatalogGrpcClientService.toHttpError`, which already maps
-   * DEADLINE_EXCEEDED to 504 and UNAVAILABLE to 503 with a retry hint.
-   */
+  /** Business refusal first, then transport status, matching the catalog client. */
   private toHttpError(error: unknown): unknown {
     const business = parseCatalogBusinessError(error);
     if (business) return business;
@@ -109,8 +99,7 @@ export class OperationsGrpcClientService {
       return grpcStatusException(code);
     }
 
-    // An rxjs TimeoutError, which has no gRPC status: report it as the
-    // deadline it is rather than letting it become a 500.
+    // rxjs TimeoutError has no gRPC status; report DEADLINE_EXCEEDED, not 500.
     if (error instanceof Error && error.name === 'TimeoutError') {
       this.logger.warn('Catalog operations call exceeded its deadline locally');
       return grpcStatusException(4); // DEADLINE_EXCEEDED

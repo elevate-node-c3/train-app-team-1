@@ -68,25 +68,12 @@ export class TimetablesService {
   }
 
   /**
-   * The **seeding** path: flips a timetable somebody already prepared as a
-   * draft to published. Its one caller is `database/seeds/catalog.seed.ts`.
-   *
-   * `TimetablePublishService.publish` is the **operator** path, and the two
-   * are not interchangeable. This one writes no audit entry, which is right:
-   * BR-52 records operator actions, and seeding is not one -- there is no
-   * actor account to attribute it to. It also takes a timetable id rather
-   * than a timetable, because the row and its stops already exist.
-   *
-   * The one rule it must not break: since migration 1793300000006,
-   * `excl_timetable_published_overlap` allows exactly one *published* version
-   * per train per effective range. A seed that prepared two drafts for one
-   * train with overlapping ranges and published both would be refused by the
-   * database on the second call. Seed one published version per train, and
-   * let the operator path add the next one.
+   * Seeding path: publishes a prepared draft, with no audit entry because
+   * there is no operator. The database allows one published version per train
+   * and effective range, so seed one version per train.
    */
   async publishTimetable(timetableId: string): Promise<TimetableEntity> {
-    // Validate whole, then write. Generation runs after the commit, so a fare
-    // gap found there would otherwise leave a published timetable with no trips.
+    // Validate before writing; generation runs after the commit.
     const candidate = await this.getTimetableForPublishing(timetableId);
 
     if (!candidate) {
@@ -135,7 +122,7 @@ export class TimetablesService {
 
         const savedTimetable = await repository.save(timetable);
 
-        // Inside the transaction: the stations must match the route as published.
+        // Read stops in the same transaction so they match the published route.
         const stops = await manager.getRepository(TimetableStopEntity).find({
           where: { timetable: { id: savedTimetable.id } },
           order: { position: 'ASC' },

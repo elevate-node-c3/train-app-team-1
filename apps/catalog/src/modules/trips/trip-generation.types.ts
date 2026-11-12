@@ -3,9 +3,8 @@ import { addCivilDays, cairoInstantOf } from '@app/contracts';
 import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
 
 /**
- * A trip stop resolved onto one service date: real instants, not timetable
- * strings. Shared so the publish validator can check the same shape
- * generation builds, rather than a second copy that could drift.
+ * A trip stop resolved to real instants for one service date. Shared by
+ * generation and the publish validator.
  */
 export interface TripStopDraft {
   station: TimetableStopEntity['station'];
@@ -16,11 +15,8 @@ export interface TripStopDraft {
 }
 
 /**
- * The one place `'HH:mm'` + `dayOffset` + an anchor date turns into real
- * instants. `buildTripStops` (generation, already has a service date) and the
- * publish validator (resolving a candidate's own `effectiveFrom`) both call
- * this, so they can never silently disagree about what a timetable's times
- * mean -- the exact bug class Cairo DST exists to catch.
+ * The one place `'HH:mm'` and `dayOffset` turn into real Cairo instants.
+ * Generation and the publish validator both call it.
  */
 export function resolveStopTimes(
   anchorDate: string,
@@ -42,10 +38,7 @@ export interface FarePrice {
   amountPiastres: number;
 }
 
-/**
- * Every fare a train carries, keyed by class and station pair. Built from one
- * query so validating a trip costs no round trip per pair.
- */
+/** Every fare for a train, keyed by class and station pair, from one query. */
 export type FareIndex = Map<string, FarePrice[]>;
 
 export function fareKey(

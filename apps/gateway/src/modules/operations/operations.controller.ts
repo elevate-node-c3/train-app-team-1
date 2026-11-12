@@ -25,9 +25,8 @@ import {
 const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 
 /**
- * "Safe to retry" is a rule in TA-20, not a capability an operator's tool may
- * decline. Catalog refuses a missing key too; this catches it at the edge so a
- * malformed change never leaves the gateway.
+ * "Safe to retry" is a rule, not an optional capability. Catalog refuses a
+ * missing key too; catching it here keeps a malformed change off the wire.
  */
 function requireIdempotencyKey(value: string | undefined): string {
   const key = value?.trim();
@@ -50,9 +49,8 @@ function requireIdempotencyKey(value: string | undefined): string {
 }
 
 /**
- * The operator-only edge (TA-20). Every rule that decides whether a publish or
- * a fare change is valid belongs to catalog; this surface only checks shape,
- * the operator role, the idempotency header and makes the gRPC hop.
+ * The operator-only edge (TA-20). Catalog owns every validity rule; this
+ * surface checks shape, role and the idempotency header, then makes the hop.
  */
 @Controller('operations')
 export class OperationsController {

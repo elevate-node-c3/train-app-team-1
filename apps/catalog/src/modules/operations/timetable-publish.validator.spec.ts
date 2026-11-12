@@ -189,8 +189,7 @@ function candidateWithEveryProblem(): TimetableCandidate {
   return {
     stops: mutatedStops,
     coaches: [repeatingLayoutCoach, coach(SECOND_CLASS, { coachNumber: 2 })],
-    // No fare at all for SECOND_CLASS, and only a partial, underpriced one
-    // for FIRST_CLASS -- fares.delete below removes one in-order pair too.
+    // SECOND_CLASS has no fares; FIRST_CLASS is partial and underpriced.
     fares: (() => {
       const index = coveringFares([a, b, ...stops.slice(2).map((s) => s.stationId)], [FIRST_CLASS]);
       index.set(`${FIRST_CLASS}|${a}|${b}`, [
@@ -223,8 +222,8 @@ describe('validateTimetableCandidate', () => {
     expect(validateTimetableCandidate(validCandidate())).toEqual([]);
   });
 
-  // The story's named edge case: a problem on the 14th stop of 15 must not
-  // hide the others, or publishing becomes guess-and-retry.
+  // A problem on the 14th stop must not hide the others, or publishing is
+  // guess-and-retry.
   it('names every problem, not the first', () => {
     const details = validateTimetableCandidate(
       candidateWith({
@@ -369,16 +368,8 @@ describe('validateTimetableCandidate', () => {
   });
 });
 
-/**
- * C1 and I2: the duplicate-station and Stripe-floor rules are real TA-20
- * publish rules, but neither may reach the generator. `trips.service.ts`'s
- * `validateTimetableStops` calls only `validateStopsStructure`, and its
- * `validateTripFares` calls only `validateFareRules` -- never
- * `validateNoDuplicateStations` or `validateFareFloor`. These tests pin that
- * contract directly on the exported functions, so a future change that wires
- * either rule back into the shared groups (or into the generator's own
- * delegation) fails here before it ever reaches a nightly job.
- */
+// Publish-only rules must not reach the generator: it calls only
+// `validateStopsStructure` and `validateFareRules`.
 describe('generation safety: duplicate-station and the Stripe floor stay publish-only', () => {
   let originalFloor: string | undefined;
 
@@ -420,8 +411,7 @@ describe('generation safety: duplicate-station and the Stripe floor stay publish
     }));
     const [a, b, c] = stops.map((s) => s.stationId);
 
-    // Every segment is priced well above any realistic floor; only the
-    // floor-check rule (not validateFareRules) would ever reject it.
+    // Prices pass `validateFareRules`; only the floor check would reject them.
     const fares: FareIndex = new Map([
       [`${FIRST_CLASS}|${a}|${b}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 2 }]],
       [`${FIRST_CLASS}|${b}|${c}`, [{ effectiveFrom: new Date('2020-01-01T00:00:00Z'), amountPiastres: 3 }]],
