@@ -1,11 +1,8 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 /**
- * One `Idempotency-Key` a client has sent, forever (TA-20). `fingerprint`
- * tells a genuine retry (same key, same content) apart from a reused key on
- * different content, which is a client bug rather than a replay.
- * `responseJson` is what a genuine retry gets back instead of redoing the
- * write.
+ * One `Idempotency-Key`, forever (TA-20). `fingerprint` separates a genuine
+ * retry from a reused key on different content; `responseJson` is the replay.
  */
 @Entity('operations_request')
 export class OperationsRequestEntity {

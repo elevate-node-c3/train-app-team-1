@@ -34,15 +34,11 @@ service CatalogService {
       returns (ListRecentSearchesResponse);
 
   // Publishes one train's whole timetable as a new version (TA-20 §6.2,
-  // BR-52). The caller's account id and `Idempotency-Key` travel as gRPC
-  // metadata, never as request fields -- the same reason the recent-search
-  // request above carries no traveller identity: a field can be forged by a
-  // client, metadata the gateway minted from a verified token cannot be.
+  // BR-52). Caller identity and `Idempotency-Key` travel as gRPC metadata.
   rpc PublishTimetable (PublishTimetableRequest)
       returns (PublishTimetableResponse);
 
-  // Changes one fare, for future sales only (TA-20, BR-30, BR-51). Same
-  // metadata rule as the publish above.
+  // Changes one fare for future sales only (BR-30, BR-51); metadata as above.
   rpc ChangeFare (ChangeFareRequest) returns (ChangeFareResponse);
 
   // BR-52's trail: every publish and fare change this service has recorded,
@@ -367,8 +363,7 @@ message ListRecentSearchesResponse {
 // ---------------------------------------------------------------------------
 
 message PublishTimetableRequest {
-  // Echoed verbatim in a refusal's `rejectedValue`; resolved to the integer
-  // train column server-side.
+  // Echoed verbatim in refusals; catalog parses it to the integer train column.
   string trainNumber = 1;
   repeated int32 runningDays = 2;  // 0 = Sunday, matching Date.getUTCDay()
   string effectiveFrom = 3;        // 'YYYY-MM-DD', a Cairo civil date
@@ -379,9 +374,7 @@ message PublishTimetableRequest {
   reserved 7 to 19;
 }
 
-// One planned stop, as submitted: naive Cairo wall-clock 'HH:mm' plus a day
-// offset, never an instant -- `effectiveFrom` and each generated service date
-// supply the date.
+// A naive Cairo wall-clock time plus a day offset, never an instant.
 message PublishTimetableStop {
   string stationId = 1;
   int32 position = 2;    // strictly increasing along the route
@@ -411,18 +404,14 @@ message PublishTimetableFare {
   reserved 5 to 9;
 }
 
-// What the publish changed, counted from the diff computed before anything
-// was written -- never from what the background generation pass happened to
-// insert by the time this answer is sent.
+// Changes counted from the diff computed before writing, never from what the
+// background generation pass inserted.
 message PublishTimetableResponse {
   string timetableId = 1;  // the NEW version's row id
   int32 version = 2;       // 1 on a first publish
 
-  // All three are legitimately zero (a republish that only re-points keeps
-  // `created` at 0, say), so each is `optional`: this server's loader options
-  // carry no `defaults: true` (see catalog's main.ts), and a plain scalar's
-  // zero value does not serialize at all without it -- which would make a
-  // genuine zero indistinguishable from "field never set".
+  // All three can be legitimately zero, so each is `optional`; without
+  // `defaults: true`, a plain zero does not serialize.
   optional int32 created = 3;    // service dates that gained a trip
   optional int32 changed = 4;    // dated trips re-pointed in place
   optional int32 withdrawn = 5;  // dated trips the new version no longer runs
@@ -430,8 +419,7 @@ message PublishTimetableResponse {
   reserved 6 to 19;
 }
 
-// Changes one fare, for future sales only (BR-30, BR-51). The previous fare
-// row is never rewritten -- only a new one is added.
+// Future sales only (BR-30, BR-51); the previous fare row is never rewritten.
 message ChangeFareRequest {
   string trainNumber = 1;
   string travelClassId = 2;
@@ -446,9 +434,7 @@ message ChangeFareRequest {
 message ChangeFareResponse {
   string fareId = 1;
 
-  // Absent exactly on the pair's first-ever fare. `optional` for the same
-  // zero-vs-absent reason as the publish counts above -- a previous amount
-  // could in principle be legitimately read as a small integer.
+  // Absent exactly on the pair's first-ever fare; `optional` for zero-vs-absent.
   optional int32 previousAmountPiastres = 2;
   int32 newAmountPiastres = 3;
   string effectiveFrom = 4;
@@ -456,8 +442,8 @@ message ChangeFareResponse {
   reserved 5 to 19;
 }
 
-// BR-52's trail, paged newest first. A missing `trainId` reads every train;
-// `from`/`to` bound `occurredAt`, inclusive.
+// BR-52's trail, newest first. A missing `trainId` reads every train;
+// `from`/`to` bound `occurredAt` inclusively.
 message ListAuditEntriesRequest {
   optional string trainId = 1;
   optional string from = 2;  // ISO instant
@@ -468,11 +454,8 @@ message ListAuditEntriesRequest {
   reserved 6 to 19;
 }
 
-// `before`/`after` travel as JSON strings, not a typed message: BR-52 made
-// them snapshots on purpose so a format change can never make a past row
-// wrong, and this surface should not have to grow a new message every time a
-// new snapshot shape appears. `beforeJson` is the literal string "null"
-// exactly on a first publish.
+// `before`/`after` are JSON strings so past snapshots stay valid; `beforeJson`
+// is literally "null" on a first publish.
 message AuditEntry {
   string id = 1;
   string action = 2;  // 'timetable.published' | 'fare.changed'
@@ -481,8 +464,7 @@ message AuditEntry {
   string beforeJson = 5;
   string afterJson = 6;
 
-  // Always 0 this sprint -- inventory has no seat tables yet. `optional` for
-  // the same zero-vs-absent reason as the publish counts above.
+  // Always 0 this sprint (no seat tables); `optional` for zero-vs-absent.
   optional int32 ticketsAffected = 7;
   string correlationId = 8;
   CivilDateTime occurredAt = 9;

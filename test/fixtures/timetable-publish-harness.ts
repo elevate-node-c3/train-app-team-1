@@ -32,22 +32,8 @@ import {
   type FareIndex,
 } from '../../apps/catalog/src/modules/trips/trip-generation.types.js';
 
-/**
- * The doubles `TimetablePublishService`'s two unit specs share.
- *
- * It lives here rather than in either spec because importing one spec from
- * another would register its `describe`s twice, and copying the doubles would
- * let the two files' idea of "what the database does" drift apart.
- *
- * The honesty rule it follows: writes staged inside `withTransaction` become
- * visible only when the callback resolves, and a rejection discards the stage
- * without ever merging it -- the same guarantee a Postgres `ROLLBACK` gives.
- * That is enough to prove *this service's* contract with its collaborators.
- * It is deliberately **not** offered as proof of the transactional property
- * itself: `test/integration/timetable-publish.int-spec.ts` proves that
- * against real Postgres through the real `TypeOrmUnitOfWork`, because an
- * in-memory double proves nothing about the production path.
- */
+// Doubles shared by both publish specs. Writes land only when the transaction
+// resolves; the real Postgres boundary is proven in the integration spec.
 
 /** Cairo civil 'today' for every spec that uses this harness. */
 export const TODAY = '2026-06-20';
@@ -127,10 +113,7 @@ const TWO_COACHES: TrainCoachEntity[] = [
   coachEntity(2, 2, SECOND_TRAVEL_CLASS),
 ];
 
-/**
- * The two-coach composition, submitted highest position first. Array order is
- * the client's business and must not read as a different composition.
- */
+// Highest position first; array order is the client's business.
 export function twoCoachesReversed(): PublishTimetableRequest['coaches'] {
   return [...TWO_COACHES]
     .sort((left, right) => right.position - left.position)
@@ -157,9 +140,8 @@ function faresFor(
 ): PublishTimetableRequest['fares'] {
   const fares: PublishTimetableRequest['fares'] = [];
 
-  // Both classes, always: a fare for a class the composition does not carry
-  // is simply never looked at, and it lets the two-coach harness use the
-  // same request builder.
+  // Both classes always; unused fares are ignored, and the two-coach harness
+  // shares this builder.
   for (const travelClassId of [FIRST_CLASS, SECOND_CLASS]) {
     for (let i = 0; i < stationIds.length - 1; i += 1) {
       for (let j = i + 1; j < stationIds.length; j += 1) {
@@ -270,11 +252,7 @@ export function otherRequest(): PublishTimetableRequest {
   };
 }
 
-/**
- * Three independent faults at once: a first stop carrying an arrival time, a
- * station repeated, and a station id the catalogue does not have. All three
- * must be named in one answer.
- */
+// Three independent faults at once; all must be named in one answer.
 export function requestWithThreeProblems(): PublishTimetableRequest {
   const unknown = 'aaaaaaaa-0000-4000-8000-0000000000ff';
 
@@ -350,52 +328,25 @@ export interface PublishHarness {
   rejectSeatUsage: (error: Error) => void;
   /** Trip ids the seam was asked about, in call order. */
   seatUsageAsks: () => string[][];
-  /**
-   * Runs `work` the first time a transaction commits -- the window in which
-   * the generation timer can insert the new version's trips.
-   */
+  /** Runs `work` after the first commit, when the generation timer can race. */
   afterFirstCommit: (work: () => void) => void;
-  /**
-   * What `TripsService`'s timer does on its own: inserts dated trips for the
-   * newest published version across a date range.
-   */
+  /** Inserts trips the way `TripsService`'s timer does. */
   simulateGeneration: (fromDate: string, toDate: string) => void;
-  /**
-   * Makes the *next* `find` of this key answer null while the row is really
-   * there -- the concurrent-publish race, where the replay check runs before
-   * the winner commits and the duplicate only surfaces from `record`.
-   */
+  /** Makes the next `find` of this key return null; the concurrent-publish race. */
   hideNextFind: (idempotencyKey: string) => void;
-  /**
-   * Makes the next version insert fail with `error`, so the raw Postgres
-   * codes a legitimate publish can earn -- `23P01` from the exclusion
-   * constraint, `23505` from a version collision -- can be told apart.
-   */
+  /** Makes the next version insert fail, for mapping raw Postgres codes. */
   failNextInsertWith: (error: Error) => void;
 }
 
 export interface HarnessOptions {
-  /**
-   * Seeds a published version 1 of the three-station route plus a dated trip
-   * for every date in the window, which is what a republish acts on.
-   */
+  /** Seeds published version 1 and a trip for every date in the window. */
   withExistingVersion?: boolean;
-  /**
-   * Gives the train a second coach in another travel class, so a request
-   * naming only one of them is a composition mismatch.
-   */
+  /** Gives the train a second coach, so a one-class request is a mismatch. */
   withTwoCoaches?: boolean;
 }
 
-/**
- * One wired `TimetablePublishService` over an in-memory store.
- *
- * The pure parts of `TripsService` -- `buildTripStops`,
- * `buildCompositionSnapshot`, `calculateCapacity` -- are the **real** ones,
- * constructed the way `trip-generation-versions.spec.ts` does, so a stop
- * resolved by the publish and a stop resolved by generation cannot disagree
- * here while agreeing in production.
- */
+// One wired service over an in-memory store; the pure `TripsService` parts
+// are the real ones.
 export function makeHarness(options: HarnessOptions = {}): PublishHarness {
   const store = emptyStore();
   let transactionCount = 0;
@@ -415,8 +366,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
         transactionCount += 1;
         const ctx: StagingContext = { driver: 'harness', staging: [] };
         const result = await work(ctx);
-        // Only reached if `work` resolved: a throw skips this entirely, so
-        // nothing staged during a rejected transaction becomes visible.
+        // Only reached if `work` resolved, so a rollback drops the stage.
         for (const apply of ctx.staging) apply();
         const hook = firstCommitHook;
         firstCommitHook = null;
@@ -455,8 +405,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
     }),
     record: vi.fn(
       async (ctx: TransactionContext, request: StoredOperationsRequest) => {
-        // insert, not save: a key already present is a unique violation, the
-        // same way the real primary key behaves.
+        // Insert, not save: an existing key is a unique violation.
         if (
           store.requests.some(
             (stored) => stored.idempotencyKey === request.idempotencyKey,
@@ -607,8 +556,7 @@ function makeRepository(
   insertFailures: Error[],
 ) {
   return {
-    // The real one unwraps the context; here the reads below ignore the
-    // manager entirely, because the store has only one state.
+    // The store has one state, so reads ignore the manager.
     managerOf: vi.fn(() => undefined),
 
     resolveReferences: vi.fn(
@@ -651,8 +599,7 @@ function makeRepository(
         .sort((left, right) => left.position - right.position),
     ),
 
-    // No status filter, matching the real query: a withdrawn trip still owns
-    // its (train, service_date), so the diff has to be able to see it.
+    // No status filter: a withdrawn trip still owns its (train, service_date).
     tripsBetween: vi.fn(
       async (_trainId: string, fromDate: string, toDate: string) =>
         store.trips
@@ -815,14 +762,8 @@ function makeRepository(
   };
 }
 
-/**
- * A real `TripsService` with its database reads replaced.
- *
- * `createDatedTrip` and `withdrawDatedTrip` commit on their own in
- * production, so they commit straight into the store here --
- * `createDatedTrip` returning an existing trip rather than failing, exactly
- * as the real one does after a unique violation.
- */
+// Real `TripsService`, reads replaced; create returns an existing trip like
+// the real one after a unique violation.
 function makeTripsService(
   store: Store,
   coaches: TrainCoachEntity[],
@@ -957,10 +898,7 @@ function insertTrip(
   return trip;
 }
 
-/**
- * Version 1 of the three-station route, live since before the window, with a
- * dated trip for every date in it. This is the state a republish acts on.
- */
+/** Seeds version 1 and a trip for every date in the window. */
 function seedExistingVersion(
   store: Store,
   trips: TripsService,

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-// Deep import on purpose: the `@app/messaging` barrel pulls in the consumer
-// side too, and the cycle that creates leaves EventFailureRouter's injected
+// Deep import: the barrel pulls in consumers and creates a cycle that leaves
 // MessageRepublisher undefined at runtime.
 import { OutboxModule } from '@app/messaging/outbox/outbox.module.js';
 

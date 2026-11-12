@@ -15,10 +15,8 @@ import { pickEffectiveTimetable } from './timetable-version.service.js';
 import type { FareChangeReferences } from './fare-change.types.js';
 
 /**
- * Same reasoning as `TimetablePublishRepository`'s own guard: a uuid column
- * rejects a malformed value with `22P02` rather than "no such row", so a
- * mistyped id must be filtered to uuid shape first, or an operator's typo
- * becomes a 500 instead of the unknown-reference refusal it is.
+ * A UUID column rejects a malformed id with `22P02`, so filter to UUID shape
+ * first or a typo becomes a 500 instead of an unknown-reference refusal.
  */
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,14 +25,7 @@ function uuidsOnly(ids: string[]): string[] {
   return [...new Set(ids.filter((id) => UUID_PATTERN.test(id)))];
 }
 
-/**
- * Every read and write a fare change needs, and nothing else (TA-20).
- *
- * Mirrors `TimetablePublishRepository`'s shape for the same reason: unwrapping
- * a `TransactionContext` belongs to an adapter, never to a service, and
- * routing it through here is what lets `FareChangeService` be unit-tested
- * without a database at all.
- */
+/** Every read and write a fare change needs, and nothing else (TA-20). */
 @Injectable()
 export class FareChangeRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -80,10 +71,8 @@ export class FareChangeRepository {
   }
 
   /**
-   * The train's real route, in travel order, for the published version
-   * effective on `asOfDate`. Null when no published version covers that date
-   * -- "does this pair run in order" has no honest answer without a route to
-   * check it against.
+   * The route in travel order for the version effective on `asOfDate`, or null
+   * when no published version covers it.
    */
   async routeStationOrder(
     trainId: string,
@@ -107,9 +96,8 @@ export class FareChangeRepository {
   }
 
   /**
-   * The amount in effect for one (class, pair) at `asOf`, or null when none
-   * has taken effect yet -- the newest row whose `effective_from` had already
-   * arrived, the same reading `resolveFareAmount` gives a publish candidate.
+   * The newest amount already in effect at `asOf`, or null when none has taken
+   * effect yet.
    */
   async fareAmountAsOf(params: {
     trainId: string;
@@ -133,23 +121,9 @@ export class FareChangeRepository {
   }
 
   /**
-   * Every existing row for this exact (train, class, pair), locked for the
-   * rest of the caller's transaction. Taking this lock before reading the
-   * previous amount and inserting the new row is what makes two same-second
-   * operators serialise instead of interleave -- the loser's transaction
-   * blocks on this call until the winner commits or rolls back.
-   *
-   * `tables: ['fare']` is load-bearing, not cosmetic. The query joins `train`
-   * and `travel_class` to filter by their ids, and a bare `pessimistic_write`
-   * (no `OF` clause) locks every joined row too -- a review caught this
-   * taking a `FOR UPDATE` on the `train` row itself, which collided with
-   * `TimetablePublishService.insertVersion`'s `FOR KEY SHARE` on that same
-   * row and deadlocked (Postgres `40P01`), and separately blocked trip
-   * generation's own `FOR KEY SHARE` on any train with a fare change in
-   * flight. `tables` restricts the lock to the rows this method actually
-   * means to hold -- the `fare` rows -- so a publish and a fare change on the
-   * same train, or two fare changes on different pairs of the same train,
-   * never contend for anything.
+   * Locks this (train, class, pair) for the rest of the transaction. `tables:
+   * ['fare']` is load-bearing: a bare `pessimistic_write` also locks the joined
+   * `train` row and deadlocks against publish's `FOR KEY SHARE`.
    */
   async lockFareHistory(
     ctx: TransactionContext,
@@ -174,7 +148,7 @@ export class FareChangeRepository {
       });
   }
 
-  /** The new fare row. The previous one stays in place (CAT-2, BR-30). */
+  /** The new fare row; the previous one stays (CAT-2, BR-30). */
   async insertFare(
     ctx: TransactionContext,
     params: {

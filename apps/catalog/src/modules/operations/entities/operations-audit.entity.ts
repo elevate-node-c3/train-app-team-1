@@ -1,20 +1,12 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
-/** The only two writes BR-52 currently asks this trail to cover. */
+/** The only two writes BR-52 covers so far. */
 export type OperationsAction = 'timetable.published' | 'fare.changed';
 
 /**
- * One operator action, forever. BR-52: no change without its record, no
- * record without its change -- `OperationsAuditService.append` only ever
- * writes this row inside the caller's own transaction, so the two commit or
- * roll back together. The database's own `trg_operations_audit_append_only`
- * trigger (migration 1793300000007) is what makes "forever" a fact rather
- * than a habit: an `UPDATE` or `DELETE` against this table is rejected, full
- * stop.
- *
- * `before`/`after` are snapshots of the changed thing, not a computed diff --
- * a snapshot cannot become wrong later if the diff format changes.
- * `before` is null on a first publish, when there is nothing to compare to.
+ * One operator action, forever (BR-52). Only ever written inside the caller's
+ * transaction, and `trg_operations_audit_append_only` rejects UPDATE/DELETE.
+ * `before`/`after` are snapshots; `before` is null on a first publish.
  */
 @Entity('operations_audit')
 @Index('idx_operations_audit_train_occurred', ['trainId', 'occurredAt'])
@@ -25,7 +17,7 @@ export class OperationsAuditEntity {
   @Column({ type: 'text' })
   action!: OperationsAction;
 
-  /** The operator who made the change, from their verified token. */
+  /** From the operator's verified token. */
   @Column({ name: 'actor_account_id', type: 'uuid' })
   actorAccountId!: string;
 
@@ -39,14 +31,12 @@ export class OperationsAuditEntity {
   after!: unknown;
 
   /**
-   * Always 0 this sprint -- inventory has no seat tables yet. The column
-   * exists now because this table cannot be altered by UPDATE once rows
-   * exist, only a fresh migration's default would reach future inserts.
+   * Always 0 this sprint: inventory has no seat tables yet, and append-only
+   * rows mean the column must exist before them.
    */
   @Column({ name: 'tickets_affected', type: 'integer', default: 0 })
   ticketsAffected!: number;
 
-  /** Ties this row to the request that caused it. */
   @Column({ name: 'correlation_id', type: 'text' })
   correlationId!: string;
 

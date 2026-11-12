@@ -208,7 +208,7 @@ describe('OperationsController', () => {
   it('restores the refusal code and details from the gRPC status', async () => {
     const publishTimetable = vi.fn(() =>
       throwError(() => ({
-        code: 6, // ALREADY_EXISTS, mapped to CONFLICT by the catalog refusal.
+        code: 6, // ALREADY_EXISTS maps to CONFLICT.
         details: JSON.stringify({
           code: ErrorCode.CONFLICT,
           details: [
@@ -257,7 +257,7 @@ describe('OperationsController', () => {
       controller.publishTimetable(publishBody(), 'key-4'),
     ).resolves.toEqual(PUBLISH_RESULT);
 
-    // A genuine zero must survive the wire, not turn into an absent key.
+    // A genuine zero must survive the wire, not become absent.
     await expect(
       controller.publishTimetable(publishBody(), 'key-4'),
     ).resolves.toHaveProperty('created', 0);

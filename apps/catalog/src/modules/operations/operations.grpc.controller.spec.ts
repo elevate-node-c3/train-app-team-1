@@ -84,8 +84,7 @@ describe('OperationsGrpcController', () => {
 
     expect(response).toMatchObject({ timetableId: 't1', version: 1, created: 1 });
 
-    // The wire's absent optional fields become `null`, matching the domain
-    // type (`string | null`), not `undefined`.
+    // Absent wire fields become `null`, matching the domain type.
     expect(publish.mock.calls[0][0]).toMatchObject({
       trainNumber: '101',
       stops: [
@@ -146,8 +145,8 @@ describe('OperationsGrpcController', () => {
     expect(response.entries[0].beforeJson).toBe('null');
     expect(response.entries[1].afterJson).toBe(JSON.stringify({ version: 1 }));
     expect(response.nextCursor).toBeUndefined();
-    // No limit on the wire request still reaches the repository with a
-    // positive one -- `filter.limit + 1` inside it would otherwise fetch 1.
+    // A missing limit still reaches the repository positive; `limit + 1`
+    // would otherwise fetch 1.
     expect(list.mock.calls[0][0].limit).toBeGreaterThan(0);
   });
 

@@ -22,15 +22,8 @@ import {
 const OPERATIONS_CLIENT = 'OPERATIONS_GRPC';
 
 /**
- * The gateway's operator surface, fronting catalog's three operations rpcs.
- *
- * A second client registration even though the package and service names are
- * catalog's: `CatalogModule` does not export its resolved proxy, and sharing a
- * module-private token across feature roots would couple the two surfaces.
- *
- * The loader options must match catalog's (`enums: String`, `arrays: true`);
- * the `optional` count fields on the wire preserve a genuine zero without
- * `defaults: true`.
+ * A second catalog client on purpose; sharing `CatalogModule`'s proxy would
+ * couple the two surfaces. The loader options must match catalog's.
  */
 @Module({
   imports: [

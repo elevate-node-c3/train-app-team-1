@@ -24,7 +24,6 @@ function usageFor(tripId: string): TripSeatUsage {
   return { tripId, soldCount: 0, heldCount: 0, stationIdsInUse: [] };
 }
 
-/** Builds a client whose `ClientGrpc.getService` resolves to the given stub. */
 function clientWith(
   seatUsageForTrips: (
     data: unknown,
@@ -75,8 +74,7 @@ describe('InventorySeatUsageClient', () => {
     'throws rather than returning zeros when inventory times out',
     async () => {
       process.env[TIMEOUT_ENV_VAR] = '20';
-      // Never emits, never errors -- exactly a stopped inventory holding the
-      // connection open.
+      // Never emits or errors: a stopped inventory holding the connection open.
       const client = clientWith(() => new Observable<never>(() => {}));
 
       await expect(
@@ -86,10 +84,8 @@ describe('InventorySeatUsageClient', () => {
     2000,
   );
 
-  // Review Focus 1. A trip missing from the answer is an unanswered
-  // question. Reading it as "no tickets" is the story's worst failure.
+  // A missing trip is unanswered, not "no tickets".
   it('throws when inventory answers for fewer trips than were asked about', async () => {
-    // stub answers only trip-a
     const client = clientWith(() => of({ usages: [usageFor('trip-a')] }));
 
     await expect(
@@ -97,9 +93,7 @@ describe('InventorySeatUsageClient', () => {
     ).rejects.toBeInstanceOf(SeatUsageUnavailableError);
   });
 
-  // A malformed answer must refuse like every other unanswerable case, not
-  // escape as an uncaught TypeError that a consumer's instanceof check
-  // would miss.
+  // Refuse like any unanswerable case; a TypeError would escape the instanceof check.
   it('throws SeatUsageUnavailableError on a malformed response', async () => {
     const client = clientWith(
       () => of({}) as unknown as Observable<SeatUsageForTripsResponse>,
@@ -143,12 +137,8 @@ describe('InventorySeatUsageClient', () => {
   });
 });
 
-/**
- * Hand-built stubs cannot catch this class of bug: proto3 does not
- * serialize a zero-valued scalar, so whether `soldCount`/`heldCount` decode
- * as `0` or go missing entirely depends on the real loader's `defaults`
- * option, not on anything a test can assert against a plain object literal.
- */
+// Stubs cannot catch this: proto3 omits zero scalars, so decoding zero
+// depends on the real loader's `defaults` option.
 describe('the real inventory proto loader', () => {
   function tripSeatUsageType(): {
     serialize(message: unknown): Buffer;

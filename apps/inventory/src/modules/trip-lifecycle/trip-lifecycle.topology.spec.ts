@@ -81,8 +81,7 @@ describe('TripLifecycleTopologyService', () => {
   });
 
   it('declares the queue without consuming it', async () => {
-    // The whole point: the handler arrives in Sprint 3. Consuming now would
-    // acknowledge and discard the backlog it is meant to be keeping.
+    // Consuming now would acknowledge and discard the backlog.
     const { service, consume, queues } = makeService();
 
     await service.onApplicationBootstrap();
@@ -105,8 +104,7 @@ describe('TripLifecycleTopologyService', () => {
   });
 
   it('re-declares after the connection is replaced', async () => {
-    // A new broker has none of this, and the queue must exist before the next
-    // trip is published.
+    // A new broker has none of this; the queue must exist before the next publish.
     const { service, reconnectListeners, amqp } = makeService();
 
     await service.onApplicationBootstrap();

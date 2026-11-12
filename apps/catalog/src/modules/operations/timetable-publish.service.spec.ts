@@ -15,16 +15,10 @@ import {
   type PublishHarness,
 } from '../../../../../test/fixtures/timetable-publish-harness.js';
 
-/**
- * Publishing a timetable version -- the happy paths.
- *
- * Every date here is fixed by a frozen clock, because the booking window the
- * diff covers starts at Cairo's today and the counts below are exact. The
- * window is 2026-06-20 to 2026-07-20 inclusive, and a publish effective on
- * 2026-06-22 therefore touches the 29 dates from 06-22 onwards.
- */
+// Frozen clock: the window is 2026-06-20..2026-07-20, so a publish effective
+// 2026-06-22 touches 29 dates.
 const DATES_FROM_EFFECTIVE = 29;
-/** `EFFECTIVE_FROM` + 3, a date well inside the new version's range. */
+/** A date well inside the new version's range. */
 const D_PLUS_3 = '2026-06-25';
 /** Fridays from 2026-06-22 to 2026-07-20. */
 const FRIDAYS_IN_WINDOW = 4;
@@ -52,8 +46,7 @@ describe('TimetablePublishService.publish', () => {
 
     expect(result).toMatchObject({ version: 1, withdrawn: 0, changed: 0 });
     expect(result.created).toBeGreaterThan(0);
-    // Exact, not merely positive: every date the version runs on from its
-    // effective date to the end of the window, and no date before it.
+    // Exact: every date from the effective date to the window's end, none before.
     expect(result.created).toBe(DATES_FROM_EFFECTIVE);
     expect(result.timetableId).toBeTruthy();
     expect(harness.store.timetables[0]).toMatchObject({
@@ -73,11 +66,9 @@ describe('TimetablePublishService.publish', () => {
       OPERATOR,
     );
 
-    // One transaction, and the apply pass that follows it opens none of its
-    // own for a publish that only creates trips.
+    // One transaction; the apply pass opens none for a create-only publish.
     expect(harness.transactions()).toBe(1);
 
-    // All four writes landed, and they landed together.
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.auditCount()).toBe(1);
     expect(harness.publishedEventTypes()).toContain(
@@ -86,8 +77,6 @@ describe('TimetablePublishService.publish', () => {
     expect(harness.store.requests).toHaveLength(1);
     expect(JSON.parse(harness.store.requests[0].responseJson)).toEqual(result);
 
-    // The audit entry says who, what and against which train, with `before`
-    // null because nothing was superseded.
     expect(harness.store.audit[0]).toMatchObject({
       action: 'timetable.published',
       actorAccountId: OPERATOR,
@@ -112,11 +101,9 @@ describe('TimetablePublishService.publish', () => {
     );
 
     expect(result.version).toBe(2);
-    // The day before the successor takes effect, so no civil day is left
-    // without a live version.
+    // Day before the successor, so no civil day is left without a version.
     expect(previous.effectiveUntil).toBe('2026-06-21');
     expect(harness.store.timetables).toHaveLength(2);
-    // And the predecessor is what the audit trail's `before` recorded.
     expect(harness.store.audit[0].before).toMatchObject({
       timetableId: previous.id,
       version: 1,
@@ -134,11 +121,8 @@ describe('TimetablePublishService.publish', () => {
     const after = await harness.tripOn(D_PLUS_3);
     expect(after.id).toBe(before.id);
     expect(after.timetableVersion).toBe(2);
-    // Re-pointed, not recreated: the stops were rewritten in place and the
-    // new station is there.
     expect(await harness.stopStationIdsOn(D_PLUS_3)).toHaveLength(4);
-    // A re-point announces the trip again rather than withdrawing it --
-    // withdrawing would destroy inventory's seats for a train still running.
+    // Announce, don't withdraw: withdrawal would destroy seats for a running train.
     expect(harness.publishedEventTypes()).not.toContain(
       EVENT_TYPES.tripWithdrawn,
     );
@@ -187,24 +171,17 @@ describe('TimetablePublishService.publish', () => {
     expect(result.withdrawn).toBe(FRIDAYS_IN_WINDOW);
     expect(result.changed).toBe(DATES_FROM_EFFECTIVE - FRIDAYS_IN_WINDOW);
     expect(harness.publishedEventTypes()).toContain(EVENT_TYPES.tripWithdrawn);
-    // 2026-06-26 is the first Friday on or after the effective date.
+    // First Friday on or after the effective date.
     expect((await harness.tripOn('2026-06-26')).status).toBe('withdrawn');
   });
 
-  /**
-   * A withdrawn trip still owns its (train, service_date), so a date whose
-   * trip was withdrawn is not a date with no trip. If the diff could not see
-   * it, the date would be classed `created` and handed to `createDatedTrip`,
-   * whose own lookup has no status filter: it would find the withdrawn row
-   * and return it untouched. The date would be counted as created and stay
-   * withdrawn, with no `TripPublished` for inventory to recreate seats from --
-   * and the generation timer takes the same path, so nothing would repair it.
-   */
+  // A withdrawn trip still owns its (train, service_date). A diff that misses
+  // it would count the date as created and leave it withdrawn, with no
+  // `TripPublished` for inventory to recreate seats.
   describe('a date whose trip was withdrawn', () => {
     it('resurrects it, keeping its trip id, and announces it again', async () => {
       harness = makeHarness({ withExistingVersion: true });
 
-      // Publish without Fridays: the window's Fridays are withdrawn.
       const dropped = await harness.service.publish(
         republishWithoutFridays(),
         'drop-fridays',
@@ -223,20 +200,18 @@ describe('TimetablePublishService.publish', () => {
         .publishedEventTypes()
         .filter((type) => type === EVENT_TYPES.tripPublished).length;
 
-      // Now put Fridays back.
       const restored = await harness.service.publish(
         validRequest({ effectiveFrom: '2026-06-23' }),
         'restore-fridays',
         OPERATOR,
       );
 
-      // Truthful counts: the rows already existed, so this is `changed`, not
-      // `created` -- `created` would promise a new trip id.
+      // Rows already existed, so `changed`, not `created`; `created` promises
+      // a new trip id.
       expect(restored.created).toBe(0);
       expect(restored.withdrawn).toBe(0);
       expect(restored.changed).toBeGreaterThan(0);
 
-      // Published again, with the ids they always had.
       for (const serviceDate of datesBefore) {
         const trip = await harness.tripOn(serviceDate);
         expect(trip.status).toBe('published');
@@ -248,15 +223,13 @@ describe('TimetablePublishService.publish', () => {
         .sort();
       expect(idsAfter).toEqual(idsBefore);
 
-      // And inventory was told, or it would never recreate the seats it
-      // destroyed on the withdrawal.
+      // Inventory must be told, or destroyed seats are never recreated.
       const publishedEventsAfter = harness
         .publishedEventTypes()
         .filter((type) => type === EVENT_TYPES.tripPublished).length;
       expect(publishedEventsAfter - publishedEventsBefore).toBe(
         restored.changed,
       );
-      // No duplicate row was inserted for any of those dates.
       expect(
         harness.store.trips.filter((trip) =>
           datesBefore.includes(trip.serviceDate),
@@ -273,8 +246,7 @@ describe('TimetablePublishService.publish', () => {
         OPERATOR,
       );
 
-      // Fridays stay dropped. Nothing changes for them, and reporting a
-      // second withdrawal would describe work that did not happen.
+      // Still dropped: another withdrawal would describe work that did not happen.
       const again = await harness.service.publish(
         republishWithoutFridays({ effectiveFrom: '2026-06-23' }),
         'drop-2',
@@ -291,12 +263,10 @@ describe('TimetablePublishService.publish', () => {
     });
   });
 
-  // Review Focus 4. The timer in TripsService can insert version-2 trips
-  // before the apply pass runs, so the counts must come from the diff.
+  // The timer can insert version-2 trips before the apply pass, so counts
+  // must come from the diff.
   it('reports the counts it computed even when the generation loop got there first', async () => {
     harness = makeHarness();
-    // Exactly the race: the version commits, the timer sees it and generates,
-    // and only then does the publish's own apply pass run.
     harness.afterFirstCommit(() =>
       harness.simulateGeneration(EFFECTIVE_FROM, WINDOW_END),
     );
@@ -309,7 +279,6 @@ describe('TimetablePublishService.publish', () => {
 
     expect(result.created).toBeGreaterThan(0);
     expect(result.created).toBe(DATES_FROM_EFFECTIVE);
-    // And the apply pass did not double-insert what the timer already made.
     expect(harness.store.trips).toHaveLength(DATES_FROM_EFFECTIVE);
   });
 
@@ -333,8 +302,7 @@ describe('TimetablePublishService.publish', () => {
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.outboxCount()).toBe(firstOutboxCount);
     expect(await harness.auditCount()).toBe(1);
-    // The replay is answered from the stored response, without reopening a
-    // transaction or asking inventory again.
+    // Replay from the stored response: no new transaction, no second inventory ask.
     expect(harness.transactions()).toBe(1);
     expect(harness.seatUsageAsks()).toHaveLength(1);
   });
@@ -351,15 +319,12 @@ describe('TimetablePublishService.publish', () => {
       details: [expect.objectContaining({ field: 'Idempotency-Key' })],
     });
 
-    // Refused, not applied: still one version and one audit entry.
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.auditCount()).toBe(1);
   });
 
-  // CARRY 5: `record` inserts rather than saves, so a concurrent publish that
-  // committed the same key first fails this transaction with a plain unique
-  // violation. Re-reading the key is what tells that race apart from any
-  // other insert failure.
+  // `record` inserts, so a concurrent same-key publish fails with a plain
+  // unique violation; re-reading the key tells that race apart.
   it('replays a response a concurrent publish of the same request committed', async () => {
     harness = makeHarness();
     const winner = await harness.service.publish(
@@ -368,8 +333,7 @@ describe('TimetablePublishService.publish', () => {
       OPERATOR,
     );
 
-    // The loser's replay check runs before the winner commits, so it sees no
-    // stored key and proceeds -- exactly the race.
+    // The loser checks before the winner commits and sees no key.
     harness.hideNextFind('key-race');
 
     const replayed = await harness.service.publish(
@@ -379,7 +343,6 @@ describe('TimetablePublishService.publish', () => {
     );
 
     expect(replayed).toEqual(winner);
-    // The loser's transaction wrote nothing: one version, one audit entry.
     expect(await harness.timetableCount()).toBe(1);
     expect(await harness.auditCount()).toBe(1);
   });
