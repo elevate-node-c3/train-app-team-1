@@ -67,6 +67,7 @@ export const BENI_SUEF = 'aaaaaaaa-0000-4000-8000-000000000003';
 export const ASYUT = 'aaaaaaaa-0000-4000-8000-000000000004';
 
 export const FIRST_CLASS = 'bbbbbbbb-0000-4000-8000-000000000001';
+export const SECOND_CLASS = 'bbbbbbbb-0000-4000-8000-000000000002';
 export const LAYOUT = 'cccccccc-0000-4000-8000-000000000001';
 
 const KNOWN_STATIONS = [CAIRO, GIZA, BENI_SUEF, ASYUT];
@@ -83,6 +84,17 @@ const TRAVEL_CLASS: TravelClassEntity = {
   nameAr: 'أولى',
 };
 
+const SECOND_TRAVEL_CLASS: TravelClassEntity = {
+  id: SECOND_CLASS,
+  nameEn: 'Second',
+  nameAr: 'ثانية',
+};
+
+const CLASSES_BY_ID = new Map([
+  [FIRST_CLASS, TRAVEL_CLASS],
+  [SECOND_CLASS, SECOND_TRAVEL_CLASS],
+]);
+
 const COACH_LAYOUT: CoachLayoutEntity = {
   id: LAYOUT,
   layoutName: 'first-2x2',
@@ -92,16 +104,43 @@ const COACH_LAYOUT: CoachLayoutEntity = {
   ],
 };
 
-const TRAIN_COACHES: TrainCoachEntity[] = [
-  {
-    id: 'dddddddd-0000-4000-8000-000000000001',
+function coachEntity(
+  position: number,
+  coachNumber: number,
+  travelClass: TravelClassEntity,
+): TrainCoachEntity {
+  return {
+    id: `dddddddd-0000-4000-8000-00000000000${position}`,
     train: TRAIN,
-    position: 1,
-    coachNumber: 1,
-    travelClass: TRAVEL_CLASS,
+    position,
+    coachNumber,
+    travelClass,
     coachLayout: COACH_LAYOUT,
-  } as TrainCoachEntity,
+  } as TrainCoachEntity;
+}
+
+/** The train's composition as the catalogue holds it, by default one coach. */
+const ONE_COACH: TrainCoachEntity[] = [coachEntity(1, 1, TRAVEL_CLASS)];
+
+const TWO_COACHES: TrainCoachEntity[] = [
+  coachEntity(1, 1, TRAVEL_CLASS),
+  coachEntity(2, 2, SECOND_TRAVEL_CLASS),
 ];
+
+/**
+ * The two-coach composition, submitted highest position first. Array order is
+ * the client's business and must not read as a different composition.
+ */
+export function twoCoachesReversed(): PublishTimetableRequest['coaches'] {
+  return [...TWO_COACHES]
+    .sort((left, right) => right.position - left.position)
+    .map((coach) => ({
+      position: coach.position,
+      coachNumber: coach.coachNumber,
+      travelClassId: coach.travelClass.id,
+      coachLayoutId: coach.coachLayout.id,
+    }));
+}
 
 /** Every in-order pair of the four-station route, cheapest-containment safe. */
 const FARE_AMOUNTS: Record<string, number> = {
@@ -118,14 +157,19 @@ function faresFor(
 ): PublishTimetableRequest['fares'] {
   const fares: PublishTimetableRequest['fares'] = [];
 
-  for (let i = 0; i < stationIds.length - 1; i += 1) {
-    for (let j = i + 1; j < stationIds.length; j += 1) {
-      fares.push({
-        travelClassId: FIRST_CLASS,
-        originStationId: stationIds[i],
-        destinationStationId: stationIds[j],
-        amountPiastres: FARE_AMOUNTS[`${stationIds[i]}|${stationIds[j]}`],
-      });
+  // Both classes, always: a fare for a class the composition does not carry
+  // is simply never looked at, and it lets the two-coach harness use the
+  // same request builder.
+  for (const travelClassId of [FIRST_CLASS, SECOND_CLASS]) {
+    for (let i = 0; i < stationIds.length - 1; i += 1) {
+      for (let j = i + 1; j < stationIds.length; j += 1) {
+        fares.push({
+          travelClassId,
+          originStationId: stationIds[i],
+          destinationStationId: stationIds[j],
+          amountPiastres: FARE_AMOUNTS[`${stationIds[i]}|${stationIds[j]}`],
+        });
+      }
     }
   }
 
@@ -195,8 +239,10 @@ export function republishWithExtraStop(): PublishTimetableRequest {
 }
 
 /** The same route, no longer running on Fridays. */
-export function republishWithoutFridays(): PublishTimetableRequest {
-  return validRequest({ runningDays: [0, 1, 2, 3, 4, 6] });
+export function republishWithoutFridays(
+  overrides: Partial<PublishTimetableRequest> = {},
+): PublishTimetableRequest {
+  return validRequest({ runningDays: [0, 1, 2, 3, 4, 6], ...overrides });
 }
 
 /** The same route, ten minutes later throughout. */
@@ -334,6 +380,11 @@ export interface HarnessOptions {
    * for every date in the window, which is what a republish acts on.
    */
   withExistingVersion?: boolean;
+  /**
+   * Gives the train a second coach in another travel class, so a request
+   * naming only one of them is a composition mismatch.
+   */
+  withTwoCoaches?: boolean;
 }
 
 /**
@@ -467,7 +518,8 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
 
   const insertFailures: Error[] = [];
   const repository = makeRepository(store, stage, insertFailures);
-  const trips = makeTripsService(store);
+  const coaches = options.withTwoCoaches ? TWO_COACHES : ONE_COACH;
+  const trips = makeTripsService(store, coaches);
 
   const service = new TimetablePublishService(
     repository as never,
@@ -482,7 +534,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
   );
 
   if (options.withExistingVersion) {
-    seedExistingVersion(store, trips);
+    seedExistingVersion(store, trips, coaches);
   }
 
   return {
@@ -530,7 +582,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
         if (store.trips.some((trip) => trip.serviceDate === serviceDate)) {
           continue;
         }
-        insertTrip(store, newest, serviceDate, trips);
+        insertTrip(store, newest, serviceDate, trips, coaches);
       }
     },
     hideNextFind: (idempotencyKey) => {
@@ -574,7 +626,7 @@ function makeRepository(
           params.coachLayoutIds.filter((id) => id === LAYOUT),
         ),
         knownTravelClassIds: new Set(
-          params.travelClassIds.filter((id) => id === FIRST_CLASS),
+          params.travelClassIds.filter((id) => CLASSES_BY_ID.has(id)),
         ),
         layoutsById: new Map(
           params.coachLayoutIds.includes(LAYOUT)
@@ -582,9 +634,9 @@ function makeRepository(
             : [],
         ),
         classesById: new Map(
-          params.travelClassIds.includes(FIRST_CLASS)
-            ? [[FIRST_CLASS, TRAVEL_CLASS]]
-            : [],
+          [...CLASSES_BY_ID].filter(([id]) =>
+            params.travelClassIds.includes(id),
+          ),
         ),
       }),
     ),
@@ -599,14 +651,14 @@ function makeRepository(
         .sort((left, right) => left.position - right.position),
     ),
 
-    publishedTripsBetween: vi.fn(
+    // No status filter, matching the real query: a withdrawn trip still owns
+    // its (train, service_date), so the diff has to be able to see it.
+    tripsBetween: vi.fn(
       async (_trainId: string, fromDate: string, toDate: string) =>
         store.trips
           .filter(
             (trip) =>
-              trip.status === 'published' &&
-              trip.serviceDate >= fromDate &&
-              trip.serviceDate <= toDate,
+              trip.serviceDate >= fromDate && trip.serviceDate <= toDate,
           )
           .sort((left, right) =>
             left.serviceDate.localeCompare(right.serviceDate),
@@ -771,7 +823,10 @@ function makeRepository(
  * `createDatedTrip` returning an existing trip rather than failing, exactly
  * as the real one does after a unique violation.
  */
-function makeTripsService(store: Store): TripsService {
+function makeTripsService(
+  store: Store,
+  coaches: TrainCoachEntity[],
+): TripsService {
   const trips = new TripsService(
     {} as never,
     {} as never,
@@ -807,7 +862,7 @@ function makeTripsService(store: Store): TripsService {
       .filter((stop) => stop.timetable.id === timetableId)
       .sort((left, right) => left.position - right.position);
 
-  trips.getTrainCoaches = async () => TRAIN_COACHES;
+  trips.getTrainCoaches = async () => coaches;
 
   trips.createDatedTrip = async (timetable, serviceDate) => {
     const existing = store.trips.find(
@@ -815,7 +870,7 @@ function makeTripsService(store: Store): TripsService {
     );
     if (existing) return existing;
 
-    const trip = insertTrip(store, timetable, serviceDate, trips);
+    const trip = insertTrip(store, timetable, serviceDate, trips, coaches);
     store.events.push(
       buildTripPublished({
         eventId: randomUUID(),
@@ -828,7 +883,7 @@ function makeTripsService(store: Store): TripsService {
           trainType: TRAIN.trainType,
           serviceDate,
           timetableVersion: timetable.version,
-          capacity: trips.calculateCapacity(TRAIN_COACHES),
+          capacity: trips.calculateCapacity(coaches),
           stops: [],
           coaches: trip.compositionSnapshot,
         },
@@ -860,6 +915,7 @@ function insertTrip(
   timetable: TimetableEntity,
   serviceDate: string,
   trips: TripsService,
+  coaches: TrainCoachEntity[],
 ): DatedTripEntity {
   const timetableStops = store.timetableStops
     .filter((stop) => stop.timetable.id === timetable.id)
@@ -871,7 +927,7 @@ function insertTrip(
     timetable,
     serviceDate,
     timetableVersion: timetable.version,
-    compositionSnapshot: trips.buildCompositionSnapshot(TRAIN_COACHES),
+    compositionSnapshot: trips.buildCompositionSnapshot(coaches),
     status: 'published',
     publishedAt: new Date(),
     createdAt: new Date(),
@@ -905,7 +961,11 @@ function insertTrip(
  * Version 1 of the three-station route, live since before the window, with a
  * dated trip for every date in it. This is the state a republish acts on.
  */
-function seedExistingVersion(store: Store, trips: TripsService): void {
+function seedExistingVersion(
+  store: Store,
+  trips: TripsService,
+  coaches: TrainCoachEntity[],
+): void {
   const timetable = {
     id: randomUUID(),
     train: TRAIN,
@@ -953,6 +1013,6 @@ function seedExistingVersion(store: Store, trips: TripsService): void {
     serviceDate <= WINDOW_END;
     serviceDate = addDays(serviceDate, 1)
   ) {
-    insertTrip(store, timetable, serviceDate, trips);
+    insertTrip(store, timetable, serviceDate, trips, coaches);
   }
 }
