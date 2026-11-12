@@ -170,9 +170,9 @@ export class OperationsGrpcController {
     request: PublishTimetableRpcRequest,
     metadata?: Metadata,
   ): Promise<PublishTimetableRpcResponse> {
-    const { actorAccountId, idempotencyKey } = this.requireActor(metadata);
-
     try {
+      const { actorAccountId, idempotencyKey } = this.requireActor(metadata);
+
       return await this.publish.publish(
         toPublishRequest(request),
         idempotencyKey,
@@ -188,9 +188,9 @@ export class OperationsGrpcController {
     request: ChangeFareRequest,
     metadata?: Metadata,
   ): Promise<ChangeFareRpcResponse> {
-    const { actorAccountId, idempotencyKey } = this.requireActor(metadata);
-
     try {
+      const { actorAccountId, idempotencyKey } = this.requireActor(metadata);
+
       const result: ChangeFareResult = await this.fareChange.changeFare(
         request,
         idempotencyKey,
@@ -273,9 +273,10 @@ export class OperationsGrpcController {
     }
 
     if (details.length > 0) {
-      throw toRpcException(
-        new CatalogSearchError(ErrorCode.VALIDATION_ERROR, details),
-      );
+      // Thrown bare: the caller's own try/catch maps it through
+      // `toRpcException`, same as every other refusal in this file. Wrapping
+      // it here too would be a second place that knows how to do that.
+      throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, details);
     }
 
     return { actorAccountId: actorAccountId!, idempotencyKey: idempotencyKey! };

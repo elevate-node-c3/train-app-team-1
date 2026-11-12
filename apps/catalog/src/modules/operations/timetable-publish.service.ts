@@ -22,6 +22,7 @@ import type {
 } from '@app/common/persistence/unit-of-work.port.js';
 import { OUTBOX, type OutboxPort } from '@app/messaging';
 
+import { dependencyRetryAfterSeconds } from '../../config/operations-settings.js';
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 import type { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
@@ -68,9 +69,6 @@ import type {
  * report fewer trips than it causes.
  */
 const PUBLISH_WINDOW_MARGIN_DAYS = 1;
-
-/** How long a client should wait before retrying a publish inventory blocked. */
-const DEPENDENCY_RETRY_AFTER_SECONDS = 5;
 
 /** A unique violation -- here, a reused `Idempotency-Key`. */
 const UNIQUE_VIOLATION = '23505';
@@ -769,7 +767,7 @@ export class TimetablePublishService {
             rejectedValue: request.trainNumber,
             issue:
               'inventory could not say whether the affected trips have sold or held seats',
-            action: `Retry the publish with the same Idempotency-Key in about ${DEPENDENCY_RETRY_AFTER_SECONDS} seconds`,
+            action: `Retry the publish with the same Idempotency-Key in about ${dependencyRetryAfterSeconds()} seconds`,
           },
         ],
         ErrorCode.DEPENDENCY_UNAVAILABLE,
@@ -795,7 +793,7 @@ export class TimetablePublishService {
               field: 'trainNumber',
               rejectedValue: request.trainNumber,
               issue: `inventory did not answer for trip ${change.tripId} on ${change.serviceDate}`,
-              action: `Retry the publish with the same Idempotency-Key in about ${DEPENDENCY_RETRY_AFTER_SECONDS} seconds`,
+              action: `Retry the publish with the same Idempotency-Key in about ${dependencyRetryAfterSeconds()} seconds`,
             },
           ],
           ErrorCode.DEPENDENCY_UNAVAILABLE,
