@@ -1,5 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 const MAX_AUDIT_LIST_LIMIT = 200;
 
@@ -25,7 +33,7 @@ export class ListAuditQueryDto {
 
   @IsOptional()
   @Transform(({ value }) => toInteger(value))
-  @IsInt({ message: 'limit must be a whole number' })
+  @IsInt({ context: { issueKey: 'ISSUE_MUST_BE_WHOLE_NUMBER' } })
   @Min(1)
   @Max(MAX_AUDIT_LIST_LIMIT)
   limit?: number;

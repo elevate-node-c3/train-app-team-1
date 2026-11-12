@@ -32,13 +32,13 @@ export class PublishTimetableStopDto {
 
   @IsOptional()
   @Matches(CLOCK_TIME_PATTERN, {
-    message: 'arrivalTime must be a time of day in HH:mm form',
+    context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' },
   })
   arrivalTime?: string;
 
   @IsOptional()
   @Matches(CLOCK_TIME_PATTERN, {
-    message: 'departureTime must be a time of day in HH:mm form',
+    context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' },
   })
   departureTime?: string;
 }
@@ -91,7 +91,7 @@ export class PublishTimetableDto {
 
   /** A Cairo civil date. */
   @Matches(CIVIL_DATE_PATTERN, {
-    message: 'effectiveFrom must be a date in YYYY-MM-DD form',
+    context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   effectiveFrom!: string;
 

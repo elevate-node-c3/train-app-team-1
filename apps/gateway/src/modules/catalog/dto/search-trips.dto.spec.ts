@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { describe, expect, it } from 'vitest';
+import { createValidationPipe } from '@app/common';
 
 import { SearchTripsDto } from './search-trips.dto.js';
 
@@ -59,9 +60,9 @@ describe('the search query parameters', () => {
   // Whether the date is bookable is catalog's to answer -- the edge only
   // checks the shape, so a valid-looking future date passes here.
   it('does not judge whether the date is bookable', () => {
-    expect(validate(validQuery({ departureDate: '2030-01-01' })).fields).toEqual(
-      [],
-    );
+    expect(
+      validate(validQuery({ departureDate: '2030-01-01' })).fields,
+    ).toEqual([]);
   });
 
   it('requires a seat class', () => {
@@ -315,6 +316,111 @@ describe('the search query parameters', () => {
           `${bad} should be refused`,
         ).toEqual(['excludeSoldOut']);
       }
+    });
+  });
+});
+
+describe('search query detail contexts through the real validation pipe', () => {
+  it.each([
+    {
+      field: 'departureDate',
+      value: '20-06-2026',
+      issueKey: 'ISSUE_CIVIL_DATE_FORMAT',
+    },
+    {
+      field: 'returnDate',
+      value: '25-06-2026',
+      issueKey: 'ISSUE_CIVIL_DATE_FORMAT',
+    },
+    {
+      field: 'trainNumber',
+      value: 1.5,
+      issueKey: 'ISSUE_TRAIN_NUMBER_NOT_A_NUMBER',
+    },
+    {
+      field: 'trainNumber',
+      value: 0,
+      issueKey: 'ISSUE_TRAIN_NUMBER_TOO_SMALL',
+    },
+    { field: 'sort', value: 'cheapest', issueKey: 'ISSUE_SORT_NOT_OFFERED' },
+    {
+      field: 'trainTypeIds',
+      value: 'express',
+      issueKey: 'ISSUE_TRAIN_TYPE_LIST_MALFORMED',
+    },
+    {
+      field: 'departAfter',
+      value: '24:00',
+      issueKey: 'ISSUE_CLOCK_TIME_FORMAT',
+    },
+    {
+      field: 'departBefore',
+      value: '24:00',
+      issueKey: 'ISSUE_CLOCK_TIME_FORMAT',
+    },
+    { field: 'maxFare', value: 0.5, issueKey: 'ISSUE_FARE_NOT_A_NUMBER' },
+    { field: 'maxFare', value: -1, issueKey: 'ISSUE_FARE_NEGATIVE' },
+    {
+      field: 'excludeSoldOut',
+      value: 'yes',
+      issueKey: 'ISSUE_MUST_BE_YES_OR_NO',
+    },
+  ])('$field keeps $issueKey', async ({ field, value, issueKey }) => {
+    await expect(
+      createValidationPipe().transform(validQuery({ [field]: value }), {
+        type: 'query',
+        metatype: SearchTripsDto,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message: expect.arrayContaining([
+          expect.objectContaining({ field, issueKey }),
+        ]),
+      },
+    });
+  });
+
+  it('keeps the custom same-station issue and corrective action', async () => {
+    await expect(
+      createValidationPipe().transform(validQuery({ to: CAIRO }), {
+        type: 'query',
+        metatype: SearchTripsDto,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message: [
+          {
+            field: 'to',
+            rejectedValue: CAIRO,
+            issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+            actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+          },
+        ],
+      },
+    });
+  });
+
+  it('preserves the existing query transforms in the real pipe', async () => {
+    const dto = await createValidationPipe().transform(
+      validQuery({
+        trainNumber: '٩٠٣',
+        trainTypeIds: `${CAIRO},${ALEX}`,
+        departAfter: '٠٦:٣٠',
+        departBefore: '23:59',
+        maxFare: '١٥٥٠٠',
+        excludeSoldOut: 'false',
+      }),
+      { type: 'query', metatype: SearchTripsDto },
+    );
+
+    expect(dto).toBeInstanceOf(SearchTripsDto);
+    expect(dto).toMatchObject({
+      trainNumber: 903,
+      trainTypeIds: [CAIRO, ALEX],
+      departAfter: 390,
+      departBefore: 1439,
+      maxFare: 15500,
+      excludeSoldOut: false,
     });
   });
 });
