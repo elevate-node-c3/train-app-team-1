@@ -1,5 +1,6 @@
 import { ErrorCode } from './error-codes.enum.js';
 
+/** Display prose; ValidationIssueRef is the internal, language-free counterpart. */
 export interface ValidationErrorDetail {
   field: string;
   rejectedValue: unknown;

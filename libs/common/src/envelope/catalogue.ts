@@ -232,8 +232,9 @@ export function resolveLanguage(
 export function resolveMessage(
   code: string,
   lang: SupportedLanguage = 'ar',
+  catalogue = MESSAGE_CATALOGUE,
 ): string {
-  const entry = MESSAGE_CATALOGUE[code];
+  const entry = Object.hasOwn(catalogue, code) ? catalogue[code] : undefined;
   if (entry && entry[lang]) {
     return entry[lang];
   }
@@ -261,9 +262,11 @@ export function resolveMessageWithParams(
   code: string,
   lang: SupportedLanguage = 'ar',
   params: Record<string, string> = {},
+  catalogue = MESSAGE_CATALOGUE,
 ): string {
-  return resolveMessage(code, lang).replace(
+  return resolveMessage(code, lang, catalogue).replace(
     /\{\{(\w+)\}\}/g,
-    (placeholder, name: string) => params[name] ?? placeholder,
+    (placeholder, name: string) =>
+      Object.hasOwn(params, name) ? (params[name] ?? placeholder) : placeholder,
   );
 }
