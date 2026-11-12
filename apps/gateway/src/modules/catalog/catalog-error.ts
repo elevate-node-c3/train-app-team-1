@@ -22,6 +22,12 @@ import {
 interface CatalogRefusal {
   code: ErrorCode;
   details: ValidationErrorDetail[];
+  /**
+   * Present only on a `DEPENDENCY_UNAVAILABLE` refusal (TA-20 CARRY): the
+   * catalog-side `toRpcException` attaches it to the JSON so an operator's
+   * tool knows how long to wait before retrying a publish.
+   */
+  retryAfterSeconds?: number;
 }
 
 function isValidationDetail(value: unknown): value is ValidationErrorDetail {
@@ -61,6 +67,9 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
     details: Array.isArray(record.details)
       ? record.details.filter(isValidationDetail)
       : [],
+    ...(typeof record.retryAfterSeconds === 'number'
+      ? { retryAfterSeconds: record.retryAfterSeconds }
+      : {}),
   };
 }
 
@@ -89,6 +98,11 @@ export function parseCatalogBusinessError(
     {
       code: refusal.code,
       message: refusal.details,
+      // `HttpExceptionFilter` reads this generically and puts it on the
+      // envelope; absent here means absent there, same as every other field.
+      ...(refusal.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: refusal.retryAfterSeconds }),
     },
     HTTP_STATUS_BY_ERROR_CODE[refusal.code] ??
       HttpStatus.INTERNAL_SERVER_ERROR,
