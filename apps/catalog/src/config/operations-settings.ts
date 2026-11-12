@@ -69,6 +69,24 @@ export function seatUsageTimeoutMs(): number {
   return parsed;
 }
 
+// Deliberately longer than `seatUsageTimeoutMs()`'s own default: the wait is
+// for the dependency to recover, not for one more round-trip at the same
+// timeout that just elapsed. Not derived from it for that reason -- the two
+// numbers answer different questions and a change to one must not silently
+// move the other.
+const DEPENDENCY_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * How long a client should wait before retrying a request that failed
+ * because inventory's seat-usage seam could not answer (`DEPENDENCY_UNAVAILABLE`).
+ * The single source both the publish service's refusal prose and the gRPC
+ * transport's `retryAfterSeconds` envelope field read, so the two can never
+ * desync.
+ */
+export function dependencyRetryAfterSeconds(): number {
+  return DEPENDENCY_RETRY_AFTER_SECONDS;
+}
+
 const INVENTORY_GRPC_URL_ENV_VAR = 'INVENTORY_GRPC_URL';
 const DEFAULT_INVENTORY_GRPC_URL = 'inventory:50051';
 

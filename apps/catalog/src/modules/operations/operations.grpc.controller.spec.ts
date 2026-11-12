@@ -201,7 +201,7 @@ describe('OperationsGrpcController', () => {
       expect(publish).not.toHaveBeenCalled();
     });
 
-    it('refuses changeFare the same way', async () => {
+    it('refuses changeFare the same way with no caller account id', async () => {
       const changeFare = vi.fn();
       const controller = controllerWith({
         fareChange: { changeFare } as Partial<FareChangeService>,
@@ -210,6 +210,20 @@ describe('OperationsGrpcController', () => {
 
       const error = await controller
         .changeFare(changeFareRequest, metadataWith('key-3'))
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(RpcException);
+      expect(changeFare).not.toHaveBeenCalled();
+    });
+
+    it('refuses changeFare the same way with no idempotency key', async () => {
+      const changeFare = vi.fn();
+      const controller = controllerWith({
+        fareChange: { changeFare } as Partial<FareChangeService>,
+      });
+
+      const error = await controller
+        .changeFare(changeFareRequest, metadataWith())
         .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(RpcException);
