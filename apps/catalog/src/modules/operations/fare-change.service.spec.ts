@@ -77,7 +77,14 @@ function tupleKey(params: {
   return `${params.trainId}|${params.travelClassId}|${params.originStationId}|${params.destinationStationId}`;
 }
 
-function makeRepository(store: Store, stage: (ctx: TransactionContext, work: () => void) => void) {
+function makeRepository(
+  store: Store,
+  stage: (ctx: TransactionContext, work: () => void) => void,
+  // The civil date the train's one published version takes effect.
+  // Defaults far in the past, matching "a route that is already live" --
+  // overridden by the future-only-version test (F4).
+  routeEffectiveFrom: string,
+) {
   return {
     resolveReferences: vi.fn(
       async (params: {
@@ -94,8 +101,12 @@ function makeRepository(store: Store, stage: (ctx: TransactionContext, work: () 
       }),
     ),
 
-    routeStationOrder: vi.fn(async (trainId: string) =>
-      trainId === TRAIN_ID ? [...ROUTE] : null,
+    // Mirrors the real repository's own rule: null when `asOfDate` is before
+    // the version's `effectiveFrom` -- the exact behaviour F4 found broken
+    // when the service probed with "today" instead of the fare's own civil
+    // date.
+    routeStationOrder: vi.fn(async (trainId: string, asOfDate: string) =>
+      trainId === TRAIN_ID && asOfDate >= routeEffectiveFrom ? [...ROUTE] : null,
     ),
 
     fareAmountAsOf: vi.fn(
@@ -150,6 +161,22 @@ function makeRepository(store: Store, stage: (ctx: TransactionContext, work: () 
           effectiveFrom: Date;
         },
       ) => {
+        // Mirrors `uq_fare_effective_version`: the exact same tuple at the
+        // exact same instant is a unique violation, the real constraint F5
+        // found unhandled.
+        if (
+          store.fares.some(
+            (row) =>
+              tupleKey(row) === tupleKey(params) &&
+              row.effectiveFrom.getTime() === params.effectiveFrom.getTime(),
+          )
+        ) {
+          throw Object.assign(new Error('duplicate key value'), {
+            code: '23505',
+            constraint: 'uq_fare_effective_version',
+          });
+        }
+
         const row: FareRow = { id: randomUUID(), ...params };
         stage(ctx, () => store.fares.push(row));
         return row;
@@ -167,8 +194,14 @@ export interface FareChangeHarness {
   requestCount: () => number;
 }
 
-function makeHarness(): FareChangeHarness {
+export interface FareChangeHarnessOptions {
+  /** The train's one published version's civil `effectiveFrom`. */
+  routeEffectiveFrom?: string;
+}
+
+function makeHarness(options: FareChangeHarnessOptions = {}): FareChangeHarness {
   const store = emptyStore();
+  const routeEffectiveFrom = options.routeEffectiveFrom ?? '2020-01-01';
 
   const stage = (ctx: TransactionContext, work: () => void): void => {
     (ctx as StagingContext).staging.push(work);
@@ -213,7 +246,7 @@ function makeHarness(): FareChangeHarness {
     ),
   };
 
-  const repository = makeRepository(store, stage);
+  const repository = makeRepository(store, stage, routeEffectiveFrom);
 
   const service = new FareChangeService(
     repository as never,
@@ -513,5 +546,52 @@ describe('FareChangeService.changeFare', () => {
 
     expect(harness.auditCount()).toBe(2);
     expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(2);
+  });
+
+  // F4: checking the route against "today" refused every fare change for a
+  // train whose only published version starts in the future. The fix probes
+  // with the fare's own `effectiveFrom` civil date instead.
+  it('accepts a fare change for a train whose only published version starts in the future', async () => {
+    const futureHarness = makeHarness({ routeEffectiveFrom: '2026-07-01' });
+
+    // Frozen "now" (2026-06-20) is before the route's effective date, so a
+    // probe with today's date would see no route at all; the fare's own
+    // effectiveFrom (on or after the route's date) must be used instead.
+    const result = await futureHarness.service.changeFare(
+      request({ effectiveFrom: new Date('2026-07-01T00:00:00.000Z').toISOString() }),
+      'k',
+      OPERATOR,
+    );
+
+    expect(result).toMatchObject({ newAmountPiastres: 20_000 });
+  });
+
+  // F5: the same train, class, pair and *instant*, resubmitted under a new
+  // idempotency key, hits `uq_fare_effective_version` -- a different
+  // constraint than the idempotency-key race, and must not surface as a raw
+  // 500.
+  it('refuses a same-instant resubmission as a conflict, not a 500', async () => {
+    const effectiveFrom = new Date('2026-06-25T00:00:00.000Z').toISOString();
+
+    await harness.service.changeFare(
+      request({ amountPiastres: 20_000, effectiveFrom }),
+      'first-key',
+      OPERATOR,
+    );
+
+    const rejection = await harness.service
+      .changeFare(
+        request({ amountPiastres: 21_000, effectiveFrom }),
+        'second-key',
+        OPERATOR,
+      )
+      .then(() => null, (error: unknown) => error);
+
+    expect(rejection).toMatchObject({
+      code: ErrorCode.CONFLICT,
+      details: [expect.objectContaining({ field: 'effectiveFrom' })],
+    });
+    // Only the first change was written.
+    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
   });
 });
