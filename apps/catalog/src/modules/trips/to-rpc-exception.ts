@@ -2,16 +2,8 @@ import { RpcException } from '@nestjs/microservices';
 import * as grpc from '@grpc/grpc-js';
 import { ErrorCode } from '@app/contracts';
 
+import { dependencyRetryAfterSeconds } from '../../config/operations-settings.js';
 import { isCatalogSearchError } from './catalog-search-error.js';
-
-/**
- * Mirrors `timetable-publish.service.ts`'s own `DEPENDENCY_RETRY_AFTER_SECONDS`
- * (the wait its refusal's `action` text names in prose). `CatalogSearchError`
- * has no field for it, so the envelope's `retryAfterSeconds` has nowhere else
- * to come from -- the transport is the one place left to close that gap
- * (task-8/9 reports' handoff).
- */
-const DEPENDENCY_RETRY_AFTER_SECONDS = 5;
 
 /**
  * A generic client's categorisation only -- the gateway restores the real
@@ -50,7 +42,7 @@ export function toRpcException(error: unknown): unknown {
       code: error.code,
       details: error.details,
       ...(error.code === ErrorCode.DEPENDENCY_UNAVAILABLE
-        ? { retryAfterSeconds: DEPENDENCY_RETRY_AFTER_SECONDS }
+        ? { retryAfterSeconds: dependencyRetryAfterSeconds() }
         : {}),
     }),
     message: error.message,

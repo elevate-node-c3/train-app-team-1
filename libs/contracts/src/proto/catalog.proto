@@ -3,10 +3,9 @@ syntax = "proto3";
 package train.catalog.v1;
 
 // The catalog surface: a read side travellers use, and an operator-only write
-// surface TA-20 adds on top of it. The two stay false of each other -- search
-// is still strictly read-only -- but as of TA-20 the service as a whole is
-// NOT: `PublishTimetable` and `ChangeFare` below publish events and write
-// outbox rows, exactly the thing search itself still never does.
+// surface TA-20 adds on top of it. Search itself is still strictly
+// read-only, but `PublishTimetable` and `ChangeFare` below publish events
+// and write outbox rows -- exactly the thing search never does.
 //
 // Both sides share one proto service and the gateway shares one client for
 // it, because they share one deployment unit: splitting the write surface
