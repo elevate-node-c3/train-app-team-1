@@ -3,6 +3,7 @@ export * from './error-codes.enum.js';
 export * from './error-code-http.js';
 export * from './grpc-status.js';
 export * from './envelope.dto.js';
+export * from './validation-issue-ref.js';
 export * from './health.dto.js';
 export * from './identity/token-contract.js';
 export * from './identity/identity.grpc.js';
