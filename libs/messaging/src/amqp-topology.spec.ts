@@ -1,3 +1,4 @@
+import type { Channel } from 'amqplib';
 import { describe, expect, it } from 'vitest';
 import {
   BUDGET_MS,
@@ -19,33 +20,30 @@ import {
 
 type Call = Record<string, unknown>;
 
-function fakeChannel(): {
-  calls: Call[];
-  channel: {
-    assertExchange: (
-      name: string,
-      type: string,
-      options: unknown,
-    ) => Promise<unknown>;
-    assertQueue: (name: string, options: unknown) => Promise<unknown>;
-    bindQueue: (
-      queue: string,
-      exchange: string,
-      key: string,
-    ) => Promise<unknown>;
-  };
-} {
+/**
+ * Typed as the slice of `Channel` that `declareTopology` takes, so the stub
+ * has to answer with amqplib's own reply shapes -- a hand-written signature
+ * returning `Promise<unknown>` drifted from the real one.
+ */
+type TopologyChannel = Pick<
+  Channel,
+  'assertExchange' | 'assertQueue' | 'bindQueue'
+>;
+
+function fakeChannel(): { calls: Call[]; channel: TopologyChannel } {
   const calls: Call[] = [];
   return {
     calls,
     channel: {
       assertExchange: async (name, type, options) => {
         calls.push({ kind: 'exchange', name, type, options });
-        return {};
+        return { exchange: name };
       },
       assertQueue: async (name, options) => {
         calls.push({ kind: 'queue', name, options });
-        return { queue: name, messageCount: 0, consumerCount: 0 };
+        // amqplib allows an absent name, in which case the broker generates
+        // one; the topology never does that, so '' is unreachable here.
+        return { queue: name ?? '', messageCount: 0, consumerCount: 0 };
       },
       bindQueue: async (queue, exchange, routingKey) => {
         calls.push({ kind: 'binding', queue, exchange, routingKey });

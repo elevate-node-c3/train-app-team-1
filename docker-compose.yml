@@ -54,6 +54,7 @@ services:
 
   redis:
     image: redis:8-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -106,6 +107,8 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://catalog:${CATALOG_DB_PASSWORD:-catalog_dev}@postgres:5432/catalog
+      OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-true}
+      INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
 
   # The only service reachable from outside the Compose network.
   gateway:
@@ -154,24 +157,6 @@ services:
     volumes:
       # Identity is the only process that can mint a token.
       - ./config/jwt/dev-private.pem:/app/config/jwt/dev-private.pem:ro
-
-  # The identity-seed service runs once to create the initial staff accounts in the identity database.
-  identity-seed:
-    build:
-      <<: *build
-      args:
-        APP: identity
-    restart: 'no'
-    depends_on:
-      postgres: { condition: service_healthy }
-      identity: { condition: service_started }
-    command: node dist/apps/identity/src/database/seeds/staff-accounts.seed.js
-    environment:
-      NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgres://identity:${IDENTITY_DB_PASSWORD:-identity_dev}@postgres:5432/identity
-      BCRYPT_COST: ${BCRYPT_COST:-12}
-      OPERATOR_SEED_PASSWORD: "${OPERATOR_SEED_PASSWORD:-Operator!Dev123}"
-      CONDUCTOR_SEED_PASSWORD: "${CONDUCTOR_SEED_PASSWORD:-Conductor!Dev123}"
 
   inventory:
     <<: *service
@@ -225,6 +210,27 @@ services:
       EVENT_RETRY_DELAYS_MS: ${EVENT_RETRY_DELAYS_MS:-1000,3000,9000}
       EVENT_PREFETCH: ${EVENT_PREFETCH:-10}
       EVENT_CLAIM_LEASE_SECONDS: ${EVENT_CLAIM_LEASE_SECONDS:-60}
+
+  # Seeds every service's database, then exits.
+  # `profiles` keeps it out of `compose up`;
+  # run it when you want it: docker compose run --rm seeder
+  seeder:
+    profiles: ['seed']
+    build:
+      <<: *build
+      target: seeder
+      args:
+        APP: catalog
+    depends_on: *service-deps
+    environment:
+      <<: *service-env
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      BCRYPT_COST: ${BCRYPT_COST:-12}
+      OPERATOR_SEED_PASSWORD: "${OPERATOR_SEED_PASSWORD:-Operator!Dev123}"
+      CONDUCTOR_SEED_PASSWORD: "${CONDUCTOR_SEED_PASSWORD:-Conductor!Dev123}"
 
 volumes:
   postgres_data:

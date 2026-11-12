@@ -1,0 +1,508 @@
+syntax = "proto3";
+
+package train.catalog.v1;
+
+// The catalog surface: a read side travellers use, and an operator-only write
+// surface TA-20 adds on top of it. Search itself is still strictly
+// read-only, but `PublishTimetable` and `ChangeFare` below publish events
+// and write outbox rows -- exactly the thing search never does.
+//
+// Both sides share one proto service and the gateway shares one client for
+// it, because they share one deployment unit: splitting the write surface
+// into a second service would buy catalog no isolation it does not already
+// have at the module level, and would cost the gateway a second connection
+// to the same process.
+service CatalogService {
+  rpc SearchOneWayTrips (SearchOneWayTripsRequest)
+      returns (SearchOneWayTripsResponse);
+
+  // The return leg of a round trip. The outbound trip decides the lower bound:
+  // its arrival is read by the server (BR-20), never sent by the client, and
+  // the train number narrows the outbound leg only, so it is not on this
+  // request at all.
+  rpc SearchReturnTrips (SearchReturnTripsRequest)
+      returns (SearchReturnTripsResponse);
+
+  // Every stop from boarding to alighting, in travel order. The pair is the
+  // one the search result offered, so the count always matches its
+  // `intermediateStops`.
+  rpc GetTripStops (GetTripStopsRequest) returns (TripStopsResponse);
+
+  // The traveller's five most recent searches. The traveller comes from caller
+  // metadata, never from the request body.
+  rpc ListRecentSearches (ListRecentSearchesRequest)
+      returns (ListRecentSearchesResponse);
+
+  // Publishes one train's whole timetable as a new version (TA-20 §6.2,
+  // BR-52). Caller identity and `Idempotency-Key` travel as gRPC metadata.
+  rpc PublishTimetable (PublishTimetableRequest)
+      returns (PublishTimetableResponse);
+
+  // Changes one fare for future sales only (BR-30, BR-51); metadata as above.
+  rpc ChangeFare (ChangeFareRequest) returns (ChangeFareResponse);
+
+  // BR-52's trail: every publish and fare change this service has recorded,
+  // newest first.
+  rpc ListAuditEntries (ListAuditEntriesRequest)
+      returns (ListAuditEntriesResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Time on the wire
+// ---------------------------------------------------------------------------
+
+// A Cairo wall-clock moment a client can render without any date arithmetic.
+//
+// Deliberately NOT google.protobuf.Timestamp. A Timestamp is a UTC instant, so
+// a client configured to Dubai time formatting it would display a shifted hour
+// — exactly what BR-17 forbids. An ISO string alone fails for the same reason
+// in practice, because the likeliest client call, `new Date(s).toLocaleTime
+// String()`, re-renders in the device's zone.
+//
+// `localTime` is meant to be printed verbatim. `iso` is redundant by
+// construction (localDate + 'T' + localTime + utcOffset) and exists only for
+// clients that need the instant itself, such as a sales-close countdown.
+message CivilDateTime {
+  string localDate = 1;  // 'YYYY-MM-DD', Cairo calendar date
+  string localTime = 2;  // 'HH:mm', 24-hour Cairo wall clock
+  string utcOffset = 3;  // '+02:00', or '+03:00' under DST, from IANA tzdata
+  string iso = 4;        // RFC 3339, carrying the offset above
+  string timeZone = 5;   // 'Africa/Cairo' today; carried, never assumed
+
+  reserved 6 to 9;       // unixMillis, seconds-precision localTime
+}
+
+// Both languages always travel, so the client picks and catalog never has to
+// speak one. Accept-Language is resolved at the HTTP edge only (BR-56).
+message LocalizedName {
+  string en = 1;
+  string ar = 2;
+}
+
+message Money {
+  // Integer minor units — piastres for EGP. Never a float, never a decimal
+  // string. Excludes the booking fee, which booking adds at its own stage
+  // (BR-19).
+  //
+  // int32, not int64: proto-loader maps 64-bit integers to JS strings by
+  // default, which would silently turn a fare into a string at the gateway.
+  // int32 holds 21 million EGP in piastres, far beyond any single ticket.
+  int32 amountMinor = 1;
+  string currency = 2;  // ISO 4217, 'EGP'
+}
+
+// ---------------------------------------------------------------------------
+// Request
+// ---------------------------------------------------------------------------
+
+message SearchOneWayTripsRequest {
+  string originStationId = 1;       // uuid, required
+  string destinationStationId = 2;  // uuid, required, must differ from 1
+  string departureDate = 3;         // 'YYYY-MM-DD', Cairo civil date, required
+  string travelClassId = 4;         // uuid, required — every search is one class
+  string language = 5;              // 'ar' | 'en' | '' — a preference, not behaviour
+
+  // Optional train-number filter (BR-18). Wrapped so that "absent" and "0" are
+  // distinguishable; a bare int32 cannot express that in proto3.
+  optional int32 trainNumber = 6;
+
+  // An unknown enum value arrives as its number and is treated as UNSPECIFIED,
+  // so an older server never rejects a newer client's order.
+  SearchSort sort = 7;
+  SearchFilters filters = 8;
+
+  // The return date of a round trip, on the OUTBOUND search.
+  //
+  // It does not change this list: the outbound leg is the same search either
+  // way. It is here because BR-20 can then refuse an impossible return date now
+  // rather than after the traveller has chosen an outbound trip, and because it
+  // is the only thing that tells catalog this search is a round trip -- which is
+  // what makes its recent-search entry repeatable as one (CAT-4).
+  //
+  // Optional so "absent" and "" stay distinguishable: an empty string from a
+  // client that always sends the field must not read as "one way".
+  optional string returnDate = 9;  // 'YYYY-MM-DD', Cairo civil date
+
+  reserved 10 to 19;  // passenger counts
+}
+
+enum SearchSort {
+  // Proto3 decodes an absent field to 0, so UNSPECIFIED must mean the mandated
+  // default: departure time from the passenger's origin, ascending (BR-18).
+  SEARCH_SORT_UNSPECIFIED = 0;
+  SEARCH_SORT_DEPARTURE_ASC = 1;
+  SEARCH_SORT_DURATION_ASC = 2;
+  SEARCH_SORT_FARE_ASC = 3;
+  SEARCH_SORT_ARRIVAL_ASC = 4;
+}
+
+message SearchFilters {
+  repeated string trainTypeIds = 1;
+  optional int32 departAfterMinutes = 2;   // Cairo minutes since midnight
+  optional int32 departBeforeMinutes = 3;
+  optional int32 maxFareMinor = 4;
+  optional bool excludeSoldOut = 5;
+}
+
+// The return leg of a round trip. There is deliberately no arrival time here:
+// BR-20 says the server reads the chosen outbound trip's arrival, so a client
+// cannot widen the window by sending one. There is no train number either --
+// it narrowed the outbound leg only.
+message SearchReturnTripsRequest {
+  string outboundTripId = 1;                 // uuid, required
+  string outboundOriginStationId = 2;        // uuid, required
+  string outboundDestinationStationId = 3;   // uuid, required
+  string returnDate = 4;                     // 'YYYY-MM-DD', Cairo civil date
+  string travelClassId = 5;                  // uuid, required
+  string language = 6;                       // 'ar' | 'en' | ''
+
+  SearchSort sort = 7;
+  SearchFilters filters = 8;
+
+  reserved 9 to 19;
+}
+
+// ---------------------------------------------------------------------------
+// Response
+// ---------------------------------------------------------------------------
+
+message SearchOneWayTripsResponse {
+  // Server-decided five-day strip. Always present — even when `trips` is empty
+  // — so the client can always render the picker. The server owns it so the
+  // booking-window rule lives in exactly one place.
+  repeated DateStripDay dateStrip = 1;
+
+  // Complete and unpaginated, ordered by origin departure ascending. One day
+  // between two stations is tens of trips, so the whole day is returned and
+  // CAT-4's filters and sorts will apply to all of it, not to a page.
+  repeated TripResult trips = 2;
+
+  // Set if and only if `trips` is empty. The three reasons are distinguishable
+  // by design: each one tells the traveller a different thing to change.
+  optional EmptyResult emptyResult = 3;
+
+  // The booking window that produced the strip, echoed so the client can grey
+  // out dates and build its own messages from one authority.
+  BookingWindow bookingWindow = 4;
+
+  // The instant the server evaluated time-dependent eligibility. Lets a client
+  // detect a stale response and makes the cache re-filter auditable.
+  CivilDateTime evaluatedAt = 5;
+
+  // Facets for narrowing the day. Computed over the unfiltered day, so a
+  // client is never offered a train type its current filter already removed.
+  // Field 6 was reserved before anything serialized it, which is why taking it
+  // is not a breaking change.
+  FilterOptions filterOptions = 6;
+
+  reserved 7 to 19;  // nextPageToken if pagination ever arrives
+}
+
+// The choices the day actually offers. Repeated fields are omitted by proto3
+// when empty, so the gateway restores `trainTypes: []` for REST clients.
+message FilterOptions {
+  repeated TrainTypeOption trainTypes = 1;
+  int32 minFareMinor = 2;
+  int32 maxFareMinor = 3;
+}
+
+message TrainTypeOption {
+  string id = 1;
+  LocalizedName name = 2;
+  int32 tripCount = 3;
+}
+
+// The return list. No date strip and no booking window: the outbound call
+// already sent both, and repeating them would let the two disagree.
+message SearchReturnTripsResponse {
+  repeated TripResult trips = 1;
+
+  // Set if and only if `trips` is empty. The return flow distinguishes
+  // "nothing runs that day" from "everything left before the outbound lands".
+  optional EmptyResult emptyResult = 2;
+
+  CivilDateTime evaluatedAt = 3;
+
+  // Over the unfiltered day, exactly as the one-way response.
+  FilterOptions filterOptions = 4;
+
+  reserved 5 to 19;
+}
+
+message BookingWindow {
+  string firstBookableDate = 1;  // Cairo 'YYYY-MM-DD' — today
+  string lastBookableDate = 2;   // today + 29 days
+  int32 totalDays = 3;           // 30
+}
+
+message DateStripDay {
+  string date = 1;   // Cairo 'YYYY-MM-DD'
+  bool selected = 2; // exactly one day is true
+  bool isToday = 3;
+  // Always true today; kept so an edge-clamped strip can still be rendered
+  // honestly if the strip ever includes a non-bookable day.
+  bool bookable = 4;
+}
+
+message TripResult {
+  string tripId = 1;
+  int32 trainNumber = 2;
+  LocalizedName trainType = 3;
+  TravelClass travelClass = 4;
+
+  TripEndpoint departure = 5;  // the PASSENGER's origin, not the train's
+  TripEndpoint arrival = 6;    // the PASSENGER's destination
+
+  // Computed from the two stored instants, never from wall-clock fields, so
+  // midnight and daylight-saving crossings are arithmetically irrelevant.
+  int32 durationMinutes = 7;
+
+  // Stops strictly between the two endpoints; both endpoints excluded (BR-17).
+  int32 intermediateStops = 8;
+
+  // Behind the Sprint-3 inventory seam. Today this is the trip's capacity in
+  // the requested class; from Sprint 3 it is the real per-segment count
+  // (BR-24). Neither this field nor any cache key changes then.
+  int32 availableSeats = 9;
+  // A trip with no seats left is RETURNED and marked, not hidden (BR-16). A
+  // train with no coach of the requested class is not a result at all.
+  bool soldOut = 10;
+
+  Money fare = 11;  // excludes the booking fee
+
+  reserved 12 to 29;  // amenities, per-coach breakdown, cheapest-class hint
+}
+
+message TravelClass {
+  string id = 1;
+  LocalizedName name = 2;
+}
+
+message TripEndpoint {
+  string stationId = 1;
+  LocalizedName name = 2;
+  CivilDateTime at = 3;  // departure at the origin, arrival at the destination
+}
+
+// ---------------------------------------------------------------------------
+// Empty results
+// ---------------------------------------------------------------------------
+
+message EmptyResult {
+  SearchEmptyReason reason = 1;
+
+  // Parameters for the gateway's localized sentence, e.g.
+  // {'lastBookableDate': '2026-12-03'}. Catalog never speaks a language, so it
+  // supplies the values and the edge supplies the words.
+  map<string, string> params = 2;
+}
+
+enum SearchEmptyReason {
+  SEARCH_EMPTY_REASON_UNSPECIFIED = 0;
+  // No published timetable stops at both stations in this travel order.
+  // The traveller should change the stations.
+  SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED = 1;
+  // The route is served, but nothing sellable departs the passenger's origin
+  // on the selected Cairo date. The traveller should change the date.
+  SEARCH_EMPTY_REASON_NO_TRIPS_ON_DATE = 2;
+  // A train number was supplied and that train does not serve this pair in
+  // this direction. The traveller should change or clear the train number.
+  SEARCH_EMPTY_REASON_TRAIN_NOT_ON_ROUTE = 3;
+  // The day had return trips, but every one of them departs before the chosen
+  // outbound arrives. The traveller should change the return date or the
+  // outbound trip.
+  SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL = 4;
+  // The day had trips, and the supplied filters removed all of them. The
+  // traveller should change the filters, not the date.
+  SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Stops
+// ---------------------------------------------------------------------------
+
+message GetTripStopsRequest {
+  string tripId = 1;                  // uuid, required
+  string originStationId = 2;         // uuid, required — the passenger's origin
+  string destinationStationId = 3;    // uuid, required
+  string language = 4;                // carried, never used to choose names
+}
+
+message TripStop {
+  string stationId = 1;
+  LocalizedName name = 2;
+
+  // Optional because the first stop has no arrival and the last no departure.
+  // Both are Cairo wall-clock values, so a client prints them verbatim.
+  optional CivilDateTime arrival = 3;
+  optional CivilDateTime departure = 4;
+
+  bool boarding = 5;
+  bool alighting = 6;
+}
+
+message TripStopsResponse {
+  // Boarding stop, every stop between, and the alighting stop, in travel order.
+  repeated TripStop stops = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Recent searches
+// ---------------------------------------------------------------------------
+
+message ListRecentSearchesRequest {
+  string language = 1;  // 'ar' | 'en' | '' — the traveller is caller metadata
+}
+
+message ListRecentSearchesResponse {
+  repeated RecentSearch recentSearches = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Operations (TA-20): the operator-only write surface
+// ---------------------------------------------------------------------------
+
+message PublishTimetableRequest {
+  // Echoed verbatim in refusals; catalog parses it to the integer train column.
+  string trainNumber = 1;
+  repeated int32 runningDays = 2;  // 0 = Sunday, matching Date.getUTCDay()
+  string effectiveFrom = 3;        // 'YYYY-MM-DD', a Cairo civil date
+  repeated PublishTimetableStop stops = 4;
+  repeated PublishTimetableCoach coaches = 5;
+  repeated PublishTimetableFare fares = 6;
+
+  reserved 7 to 19;
+}
+
+// A naive Cairo wall-clock time plus a day offset, never an instant.
+message PublishTimetableStop {
+  string stationId = 1;
+  int32 position = 2;    // strictly increasing along the route
+  int32 dayOffset = 3;   // 0 for the departure day, 1 for an overnight leg
+  optional string arrivalTime = 4;    // absent at the first stop
+  optional string departureTime = 5;  // absent at the last stop
+
+  reserved 6 to 9;
+}
+
+message PublishTimetableCoach {
+  int32 position = 1;
+  int32 coachNumber = 2;
+  string travelClassId = 3;
+  string coachLayoutId = 4;
+
+  reserved 5 to 9;
+}
+
+// One fare the publish records, in integer piastres and excluding any fee.
+message PublishTimetableFare {
+  string travelClassId = 1;
+  string originStationId = 2;
+  string destinationStationId = 3;
+  int32 amountPiastres = 4;
+
+  reserved 5 to 9;
+}
+
+// Changes counted from the diff computed before writing, never from what the
+// background generation pass inserted.
+message PublishTimetableResponse {
+  string timetableId = 1;  // the NEW version's row id
+  int32 version = 2;       // 1 on a first publish
+
+  // All three can be legitimately zero, so each is `optional`; without
+  // `defaults: true`, a plain zero does not serialize.
+  optional int32 created = 3;    // service dates that gained a trip
+  optional int32 changed = 4;    // dated trips re-pointed in place
+  optional int32 withdrawn = 5;  // dated trips the new version no longer runs
+
+  reserved 6 to 19;
+}
+
+// Future sales only (BR-30, BR-51); the previous fare row is never rewritten.
+message ChangeFareRequest {
+  string trainNumber = 1;
+  string travelClassId = 2;
+  string originStationId = 3;
+  string destinationStationId = 4;
+  int32 amountPiastres = 5;
+  string effectiveFrom = 6;  // ISO instant; now or later is accepted (BR-51)
+
+  reserved 7 to 19;
+}
+
+message ChangeFareResponse {
+  string fareId = 1;
+
+  // Absent exactly on the pair's first-ever fare; `optional` for zero-vs-absent.
+  optional int32 previousAmountPiastres = 2;
+  int32 newAmountPiastres = 3;
+  string effectiveFrom = 4;
+
+  reserved 5 to 19;
+}
+
+// BR-52's trail, newest first. A missing `trainId` reads every train;
+// `from`/`to` bound `occurredAt` inclusively.
+message ListAuditEntriesRequest {
+  optional string trainId = 1;
+  optional string from = 2;  // ISO instant
+  optional string to = 3;    // ISO instant
+  int32 limit = 4;
+  optional string cursor = 5;  // the `id` of the last entry a previous page returned
+
+  reserved 6 to 19;
+}
+
+// `before`/`after` are JSON strings so past snapshots stay valid; `beforeJson`
+// is literally "null" on a first publish.
+message AuditEntry {
+  string id = 1;
+  string action = 2;  // 'timetable.published' | 'fare.changed'
+  string actorAccountId = 3;
+  string trainId = 4;
+  string beforeJson = 5;
+  string afterJson = 6;
+
+  // Always 0 this sprint (no seat tables); `optional` for zero-vs-absent.
+  optional int32 ticketsAffected = 7;
+  string correlationId = 8;
+  CivilDateTime occurredAt = 9;
+
+  reserved 10 to 19;
+}
+
+message ListAuditEntriesResponse {
+  repeated AuditEntry entries = 1;
+  optional string nextCursor = 2;
+
+  reserved 3 to 19;
+}
+
+message RecentSearchStation {
+  string id = 1;
+  LocalizedName name = 2;
+}
+
+enum RecentSearchKind {
+  RECENT_SEARCH_KIND_UNSPECIFIED = 0;
+  RECENT_SEARCH_KIND_ONE_WAY = 1;
+  RECENT_SEARCH_KIND_ROUND_TRIP = 2;
+}
+
+message RecentSearch {
+  RecentSearchStation origin = 1;
+  RecentSearchStation destination = 2;
+  TravelClass travelClass = 3;
+  RecentSearchKind kind = 4;
+
+  // Absent when the traveller did not narrow by train.
+  optional int32 trainNumber = 5;
+
+  // Absent when the date is too old to repeat. Both travel together: a
+  // round-trip entry with no outbound date cannot be repeated either.
+  optional string departureDate = 6;
+  optional string returnDate = 7;
+
+  CivilDateTime searchedAt = 8;
+}

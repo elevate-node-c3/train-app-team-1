@@ -45,11 +45,16 @@ cp .env.example .env
 docker compose up
 ```
 
-That is the whole setup. The first run builds seven app images plus the one-shot
-seed image and takes a few minutes; later runs are cached. Compose also runs a
-one-shot `identity-seed` service after identity starts; it creates the BR-01
-operator and conductor accounts. Running it again is safe: it reports both
-accounts as already present.
+That is the whole setup. The first run builds seven app images and takes a few
+minutes; later runs are cached. Nothing is seeded by `up`. When you want data,
+run the seeder:
+
+```bash
+docker compose run --rm seeder
+```
+
+It seeds every service's database -- the BR-01 operator and conductor, catalog's
+network, and its trips -- and is safe to run again: nothing is duplicated.
 
 Every variable also has the same default baked into `docker-compose.yml`, so
 `docker compose up` on its own works too — copying `.env` is what lets you
@@ -58,8 +63,8 @@ change ports or credentials.
 ### What comes up
 
 Compose starts four infrastructure containers, waits for each to report
-healthy, starts the seven application services, and runs the one-shot staff
-seed.
+healthy, and starts the seven application services. It seeds nothing; the
+`seeder` service does that, and only when you ask for it.
 
 | | Host address | Notes |
 | --- | --- | --- |
@@ -300,10 +305,9 @@ in `docker-compose.yml`, and nothing else.
    *Expected:* the four infrastructure containers report `healthy`, and the
    readiness report's top-level `status` is `ready`. The route reports rather
    than returning `503`, so read the field. The seven app containers have no
-   Compose healthcheck, so `ps` alone is not enough. The one-shot
-   `identity-seed` container exits after creating (or finding) the operator and
-   conductor accounts; `docker compose up` runs it for you. If identity and
-   Postgres run on the host instead, seed by hand with `npm run seed:staff`.
+   Compose healthcheck, so `ps` alone is not enough. The operator and conductor
+   accounts come from `docker compose run --rm seeder`, which `up` does not run
+   for you. On the host, `npm run seed:staff` does the identity half alone.
    The development credentials are `operator@train.local` / `Operator!Dev123`
    and `conductor@train.local` / `Conductor!Dev123` unless `.env` overrides the
    seed password variables.
@@ -430,5 +434,46 @@ A complete Postman Collection and Environment are provided in `postman/`:
 1. Open Postman -> click **Import**.
 2. Select both JSON files from the `postman/` folder.
 3. Select the **Train App - Local Environment** active environment.
-4. Execute queries against Gateway (`/health`, `/health/ready`, `/health/live`, `/api/v1/ping-all`, `/api/v1/auth/*`) or standalone microservice health endpoints. Built-in test scripts validate status codes, bilingual envelopes, and extract the correlation ID, account id, and token pair into environment variables automatically.
+4. Execute queries against Gateway (`/health`, `/health/ready`, `/health/live`, `/api/v1/ping-all`, `/api/v1/auth/*`, `/api/v1/trips/search`) or standalone microservice health endpoints. Built-in test scripts validate status codes, bilingual envelopes, and extract the correlation ID, account id, and token pair into environment variables automatically.
+
+### Trip Search (TA-17)
+
+The **Trip Search (Gateway)** folder covers one-way search: the happy path, the optional train-number filter (ASCII and Arabic-Indic digits), both empty-result reasons in Arabic and English, and the refusals that name the field to change.
+
+It needs two things first:
+
+1. A verified traveller. Run **Authentication (Gateway) > Sign In**; the folder inherits the bearer `{{accessToken}}` it stores. Search has no guest mode.
+2. Trips on a date you can actually search, loaded once catalog has migrated:
+   ```bash
+   npm run catalog:seed:today
+   ```
+   The `searchFrom`, `searchTo`, `searchUnservedFrom`, `searchTravelClassId` and `searchTrainNumber` variables are that network's fixed ids. `searchDepartureDate` is filled in automatically with the Cairo date three days out -- the day this seed puts trips on -- whenever it is left blank.
+
+   > `docker compose exec catalog npm run catalog:seed` is the third option, and the only one that publishes through the domain: it creates a timetable and lets trip generation produce the dated trips and their events, the way the operations API does. Use it when you care about the publishing path rather than about search fixtures. It runs the compiled seed from `dist/`; on the host, build first with `npm run catalog:seed:build`. [apps/catalog/README.md](apps/catalog/README.md) explains what generates trips, how fares are modelled, and the two daylight-saving decisions.
+
+   > `npm run catalog:seed:search` loads the same network but keeps the fixture's **June 2026** dates. The integration specs search those with a frozen clock; a Postman request cannot, because the real booking window is thirty days from today. Use `catalog:seed:today` for anything you drive by hand, and `catalog:seed:search` only when you want the fixture's own dates in the database.
+
+### Round trip, filters, stops and recent searches (TA-18)
+
+The same folder continues with the second half of the story:
+
+| Request | What it shows |
+| --- | --- |
+| **Filtered and Sorted Search** | A departure window in Cairo wall-clock time, a fare ceiling in piastres, and `sort` -- plus `filterOptions`, which describes the day *before* the filters apply so a client can always undo one |
+| **Filter by Train Type** | `trainTypeIds` as CSV; a query string has no arrays, and the repeated-key form changes shape with the number of values |
+| **Empty Result - Filters Excluded All** | There *are* trains that day, so the sentence names the filters rather than sending the traveller back to the date picker |
+| **Round Trip - Outbound Leg** | The first of two calls. The return date does not change this list; it lets BR-20 refuse an impossible one up front, and makes the recent-search entry a round trip. Stores `{{outboundTripId}}` |
+| **Round Trip - Return Leg** | The second list, bounded by the chosen trip's arrival -- which the server reads itself, so no arrival time is sent |
+| **Round Trip - Refusal, Return Before Departure** | The BR-20 refusal, naming `returnDate` and carrying the range to pick from |
+| **A Trip's Stops** | What the design's "4 Stops" opens: the passenger's own segment, in travel order, each stop with its Cairo time |
+| **Recent Searches** | The last five, newest first |
+
+Three things worth knowing:
+
+- **Run the outbound leg first.** The return call and the stops request both read `{{outboundTripId}}`, which that request's test script stores.
+- **The filter requests use Tanta -> Ramsis** (`{{searchFilterFrom}}` / `{{searchFilterTo}}`). It is the only pair the seed gives two train types and two fares, so it is the only one where a train-type filter or a fare sort has anything to do.
+- **Recent searches are per traveller.** Sign in as somebody else and the list is empty -- that is the rule (§2.3 rule 6), not a bug. Pass `--clear-recent` to the seed to start from an empty list:
+  ```bash
+  npm run catalog:seed:today -- --clear-recent
+  ```
 

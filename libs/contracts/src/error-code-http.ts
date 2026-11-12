@@ -1,9 +1,8 @@
 import { ErrorCode } from './error-codes.enum.js';
 
 /**
- * The HTTP answer a business code deserves at the edge. This is a contract
- * fact, not a transport-adapter detail, so it sits beside `GRPC_HTTP_MAP` and
- * the two tables can be tested against each other.
+ * The HTTP answer each business code gets. It sits beside `GRPC_HTTP_MAP` so
+ * the two tables can be tested together.
  */
 export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.VALIDATION_ERROR]: 400,
@@ -11,6 +10,7 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.UNAUTHORIZED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.RESOURCE_NOT_FOUND]: 404,
+  [ErrorCode.CONFLICT]: 409,
   [ErrorCode.EMAIL_ALREADY_REGISTERED]: 409,
   [ErrorCode.EMAIL_NOT_VERIFIED]: 409,
   [ErrorCode.VERIFICATION_REQUIRED]: 409,
@@ -30,5 +30,7 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.PASSWORD_REUSE]: 400,
   [ErrorCode.PASSWORD_RESET_INVALID]: 400,
   [ErrorCode.RATE_LIMITED]: 429,
+  // 503, like SERVICE_UNAVAILABLE: a dead dependency and a dead service are the same wait.
+  [ErrorCode.DEPENDENCY_UNAVAILABLE]: 503,
   [ErrorCode.PROFILE_INCOMPLETE]: 403,
 };
