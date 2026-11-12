@@ -83,7 +83,8 @@ export type ComposeService =
   | 'gateway'
   | 'identity'
   | 'notification'
-  | 'catalog';
+  | 'catalog'
+  | 'inventory';
 
 export function compose(...args: string[]): string {
   return docker(['compose', ...args], COMPOSE_TIMEOUT_MS);
@@ -137,12 +138,32 @@ export function stopStack(): void {
 }
 
 /**
- * Runs the standalone seed after identity has migrated. The image may not have
- * been built by `startStack` (the seed is intentionally not in the backbone
- * slice), so allow the first-build budget rather than the command timeout.
+ * Runs identity's standalone staff seed after identity has migrated.
+ *
+ * The seeder image carries both identity's and catalog's compiled seeds, so
+ * its command is narrowed to the one seed this harness needs. That keeps the
+ * auth slice independent of a running catalog, which `seed-all` would require.
+ * The image may not have been built by `startStack` (the seed is intentionally
+ * not in the backbone slice), so allow the first-build budget and ask `run`
+ * to build it.
  */
 export function seedStaff(): void {
-  docker(['compose', 'up', '--no-deps', 'identity-seed'], BUILD_TIMEOUT_MS);
+  const password = process.env.IDENTITY_DB_PASSWORD ?? 'identity_dev';
+  docker(
+    [
+      'compose',
+      'run',
+      '--rm',
+      '--no-deps',
+      '--build',
+      '-e',
+      `DATABASE_URL=postgres://identity:${encodeURIComponent(password)}@postgres:5432/identity`,
+      'seeder',
+      'node',
+      'dist/apps/identity/src/database/seeds/staff-accounts.seed.js',
+    ],
+    BUILD_TIMEOUT_MS,
+  );
 }
 
 /**

@@ -77,6 +77,14 @@ export const SEARCH_FIXTURE_IDS = {
     overnight: fixtureUuid(7, 2),
     singleClass: fixtureUuid(7, 3),
     loop: fixtureUuid(7, 4),
+    /**
+     * TA-20's operator flow: a train with a composition but no timetable, so
+     * a first publish creates version 1 rather than superseding a fixture.
+     * `operationsRetry` is the same shape for the idempotency replay case, so
+     * neither test depends on the other having run first.
+     */
+    operations: fixtureUuid(7, 5),
+    operationsRetry: fixtureUuid(7, 6),
   },
   timetables: {
     mainLine: fixtureUuid(9, 1),
@@ -103,6 +111,10 @@ export const SEARCH_FIXTURE_TRAIN_NUMBERS = {
   overnight: 980,
   singleClass: 404,
   loop: 606,
+  /** TA-20's operator flow. */
+  operations: 916,
+  /** TA-20's idempotent-replay flow. */
+  operationsRetry: 917,
 } as const;
 
 export interface FixtureGovernorate {
@@ -390,6 +402,9 @@ export const SEARCH_FIXTURE = {
     { id: IDS.trains.overnight, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.overnight, trainTypeId: IDS.trainTypes.sleeper },
     { id: IDS.trains.singleClass, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.singleClass, trainTypeId: IDS.trainTypes.express },
     { id: IDS.trains.loop, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.loop, trainTypeId: IDS.trainTypes.express },
+    // No timetables: TA-20's first publish creates one for each.
+    { id: IDS.trains.operations, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.operations, trainTypeId: IDS.trainTypes.express },
+    { id: IDS.trains.operationsRetry, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.operationsRetry, trainTypeId: IDS.trainTypes.express },
   ] satisfies FixtureTrain[],
 
   trainCoaches: [
@@ -399,6 +414,8 @@ export const SEARCH_FIXTURE = {
     // No first-class coach at all, so a first-class search must not list it.
     { id: fixtureUuid(8, 4), trainId: IDS.trains.singleClass, position: 1, coachNumber: 1, travelClassId: IDS.travelClasses.second, coachLayoutId: IDS.coachLayouts.second },
     { id: fixtureUuid(8, 5), trainId: IDS.trains.loop, position: 1, coachNumber: 1, travelClassId: IDS.travelClasses.first, coachLayoutId: IDS.coachLayouts.first },
+    { id: fixtureUuid(8, 6), trainId: IDS.trains.operations, position: 1, coachNumber: 1, travelClassId: IDS.travelClasses.first, coachLayoutId: IDS.coachLayouts.first },
+    { id: fixtureUuid(8, 7), trainId: IDS.trains.operationsRetry, position: 1, coachNumber: 1, travelClassId: IDS.travelClasses.first, coachLayoutId: IDS.coachLayouts.first },
   ] satisfies FixtureTrainCoach[],
 
   timetables: [
