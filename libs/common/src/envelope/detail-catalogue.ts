@@ -279,6 +279,106 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'اختر رحلة من نتائج البحث وافتح محطات توقفها مرة أخرى.',
     en: 'Pick a trip from the search results and open its stops again.',
   },
+  ISSUE_IDEMPOTENCY_KEY_REUSED: {
+    ar: 'مفتاح المعاملة هذا استُخدم بالفعل لطلب مختلف.',
+    en: 'This idempotency key was already used for a different request.',
+  },
+  ISSUE_IDEMPOTENCY_KEY_REQUIRED: {
+    ar: 'مفتاح المعاملة مطلوب لأي تغيير من المشغل.',
+    en: 'An idempotency key is required for an operator change.',
+  },
+  ISSUE_FARE_NOT_POSITIVE_PIASTRES: {
+    ar: 'الأجرة يجب أن تكون عدداً صحيحاً موجباً من القروش.',
+    en: 'A fare must be a positive whole number of piastres.',
+  },
+  ISSUE_FARE_BELOW_PAYMENT_MINIMUM: {
+    ar: 'هذه الأجرة أقل من الحد الأدنى الذي يمكن تحصيله.',
+    en: 'This fare is below the minimum amount payment can process.',
+  },
+  ISSUE_NOT_AN_INSTANT: {
+    ar: 'هذه ليست لحظة زمنية صالحة.',
+    en: 'This is not a valid point in time.',
+  },
+  ISSUE_INSTANT_IN_THE_PAST: {
+    ar: 'هذه اللحظة الزمنية قد مضت.',
+    en: 'This point in time has already passed.',
+  },
+  ISSUE_TRAVEL_CLASS_NOT_KNOWN: {
+    ar: 'درجة السفر هذه غير موجودة.',
+    en: 'This travel class does not exist.',
+  },
+  ISSUE_TRAIN_HAS_NO_PUBLISHED_ROUTE: {
+    ar: 'هذا القطار ليس له مسار منشور للتحقق من المحطتين.',
+    en: 'This train has no published route to check the station pair against.',
+  },
+  ISSUE_TRAIN_DOES_NOT_RUN_PAIR_IN_ORDER: {
+    ar: 'هذا القطار لا يزور هاتين المحطتين بهذا الترتيب.',
+    en: 'This train does not visit these two stations in this travel order.',
+  },
+  ISSUE_CALLER_ACCOUNT_MISSING: {
+    ar: 'وصل الطلب دون حساب مشغل.',
+    en: 'The request arrived without an operator account.',
+  },
+  ISSUE_FARE_BELOW_CONTAINED_SEGMENT: {
+    ar: 'هذه الأجرة أقل من أجرة الجزء الذي تتضمنه، وهي {{containedFarePiastres}} قرشاً.',
+    en: 'This fare is below the {{containedFarePiastres}} piastres charged for a segment it contains.',
+  },
+  ISSUE_FARE_ALREADY_EFFECTIVE_AT_INSTANT: {
+    ar: 'توجد أجرة لهذا القطار ودرجة السفر والمحطتين يبدأ سريانها في هذه اللحظة نفسها.',
+    en: 'A fare for this train, travel class and station pair already takes effect at this exact instant.',
+  },
+  ACTION_SEND_NEW_IDEMPOTENCY_KEY: {
+    ar: 'أرسل مفتاح معاملة جديداً لمحتوى طلب مختلف.',
+    en: 'Send a new idempotency key for a different request body.',
+  },
+  ACTION_SEND_IDEMPOTENCY_KEY: {
+    ar: 'أرسل مفتاح معاملة خاصاً بهذا الطلب.',
+    en: 'Send an idempotency key unique to this request.',
+  },
+  ACTION_SEND_POSITIVE_PIASTRES: {
+    ar: 'أرسل عدداً صحيحاً موجباً من القروش.',
+    en: 'Send a positive whole number of piastres.',
+  },
+  ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM: {
+    ar: 'ارفع الأجرة إلى الحد الأدنى القابل للتحصيل أو أكثر.',
+    en: 'Raise the fare to the minimum chargeable amount or more.',
+  },
+  ACTION_SEND_ISO_INSTANT: {
+    ar: 'أرسل وقت البدء على صورة ISO-8601.',
+    en: 'Send the effective time as an ISO-8601 instant.',
+  },
+  ACTION_PICK_INSTANT_NOW_OR_LATER: {
+    ar: 'اختر وقتاً هو الآن أو بعده.',
+    en: 'Choose a time that is now or later.',
+  },
+  ACTION_PICK_TRAIN_FROM_LIST: {
+    ar: 'اختر رقم قطار من قائمة القطارات.',
+    en: 'Choose a train number from the train list.',
+  },
+  ACTION_PICK_TRAVEL_CLASS_FROM_LIST: {
+    ar: 'اختر درجة سفر من قائمة درجات السفر.',
+    en: 'Choose a travel class from the travel class list.',
+  },
+  ACTION_PUBLISH_TIMETABLE_FIRST: {
+    ar: 'انشر جدولاً زمنياً لهذا القطار قبل تغيير أجرته.',
+    en: 'Publish a timetable for this train before changing its fares.',
+  },
+  ACTION_PICK_PAIR_IN_TRAVEL_ORDER: {
+    ar: 'اختر محطتي مغادرة ووصول يزورهما القطار بهذا الترتيب.',
+    en: 'Choose an origin and destination the train visits in that travel order.',
+  },
+  ACTION_SIGN_IN_AND_RETRY: {
+    ar: 'سجّل الدخول مرة أخرى وأعد المحاولة.',
+    en: 'Sign in again and retry the change.',
+  },
+  ACTION_RAISE_FARE_TO_CONTAINED_SEGMENT: {
+    ar: 'ارفع هذه الأجرة إلى {{containedFarePiastres}} قرشاً على الأقل حتى لا تكون أقل من أجرة جزء تتضمنه.',
+    en: 'Raise this fare to at least {{containedFarePiastres}} piastres so it is not cheaper than a segment it contains.',
+  },
+  ACTION_PICK_DIFFERENT_EFFECTIVE_INSTANT: {
+    ar: 'اختر وقت بدء مختلفاً، ولو بفارق جزء من ألف من الثانية.',
+    en: 'Choose a different effective time, even by one millisecond.',
+  },
 };
 
 export function resolveDetailText(

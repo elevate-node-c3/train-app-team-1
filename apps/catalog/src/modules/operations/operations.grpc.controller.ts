@@ -1,4 +1,4 @@
-import { Controller, UseInterceptors } from '@nestjs/common';
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { Metadata } from '@grpc/grpc-js';
 import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
@@ -9,11 +9,15 @@ import {
   ErrorCode,
   type CivilDateTime,
   type PublishTimetableRequest,
+  type ValidationIssueRef,
 } from '@app/contracts';
 
 import { toRpcException } from '../trips/to-rpc-exception.js';
 import { CatalogSearchError } from '../trips/catalog-search-error.js';
-import type { ChangeFareRequest, ChangeFareResult } from './fare-change.service.js';
+import type {
+  ChangeFareRequest,
+  ChangeFareResult,
+} from './fare-change.service.js';
 import { FareChangeService } from './fare-change.service.js';
 import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
 import type { OperationsAuditFilter } from './operations-audit.types.js';
@@ -158,6 +162,8 @@ function toAuditEntryRpc(entry: OperationsAuditEntity): AuditEntryRpc {
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
 export class OperationsGrpcController {
+  private readonly logger = new Logger(OperationsGrpcController.name);
+
   constructor(
     private readonly publish: TimetablePublishService,
     private readonly fareChange: FareChangeService,
@@ -253,22 +259,24 @@ export class OperationsGrpcController {
       IDEMPOTENCY_KEY_METADATA_KEY,
     );
 
-    const details = [];
+    const details: ValidationIssueRef[] = [];
     if (!actorAccountId) {
+      this.logger.error(
+        'Gateway did not forward a caller account ID for an operator change',
+      );
       details.push({
         field: 'callerAccountId',
         rejectedValue: undefined,
-        issue: 'no caller account id was forwarded with this request',
-        action:
-          'This is a gateway fault, not a client error -- the operator should retry once signed in again',
+        issueKey: 'ISSUE_CALLER_ACCOUNT_MISSING',
+        actionKey: 'ACTION_SIGN_IN_AND_RETRY',
       });
     }
     if (!idempotencyKey) {
       details.push({
         field: 'Idempotency-Key',
         rejectedValue: undefined,
-        issue: 'is required for an operator change',
-        action: 'Send an Idempotency-Key header unique to this request',
+        issueKey: 'ISSUE_IDEMPOTENCY_KEY_REQUIRED',
+        actionKey: 'ACTION_SEND_IDEMPOTENCY_KEY',
       });
     }
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ErrorCode, type EventEnvelope } from '@app/contracts';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
+import { DETAIL_CATALOGUE } from '@app/common/envelope/detail-catalogue.js';
 
 import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
 import type { StoredOperationsRequest } from './operations-request.types.js';
@@ -78,9 +79,12 @@ function makeRepository(
         travelClassId: string;
         stationIds: string[];
       }) => ({
-        train: params.trainNumber === Number(TRAIN_NUMBER) ? { id: TRAIN_ID } : null,
+        train:
+          params.trainNumber === Number(TRAIN_NUMBER) ? { id: TRAIN_ID } : null,
         travelClass:
-          params.travelClassId === FIRST_CLASS_AC ? { id: FIRST_CLASS_AC } : null,
+          params.travelClassId === FIRST_CLASS_AC
+            ? { id: FIRST_CLASS_AC }
+            : null,
         knownStationIds: new Set(
           params.stationIds.filter((id) => ROUTE.includes(id)),
         ),
@@ -89,7 +93,9 @@ function makeRepository(
 
     // Null when `asOfDate` is before the version's `effectiveFrom`.
     routeStationOrder: vi.fn(async (trainId: string, asOfDate: string) =>
-      trainId === TRAIN_ID && asOfDate >= routeEffectiveFrom ? [...ROUTE] : null,
+      trainId === TRAIN_ID && asOfDate >= routeEffectiveFrom
+        ? [...ROUTE]
+        : null,
     ),
 
     fareAmountAsOf: vi.fn(
@@ -110,7 +116,8 @@ function makeRepository(
         );
         if (rows.length === 0) return null;
         return rows.sort(
-          (left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime(),
+          (left, right) =>
+            right.effectiveFrom.getTime() - left.effectiveFrom.getTime(),
         )[0].amountPiastres;
       },
     ),
@@ -128,7 +135,10 @@ function makeRepository(
         const key = tupleKey(params);
         return store.fares
           .filter((row) => tupleKey(row) === key)
-          .sort((left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime());
+          .sort(
+            (left, right) =>
+              right.effectiveFrom.getTime() - left.effectiveFrom.getTime(),
+          );
       },
     ),
 
@@ -169,7 +179,10 @@ function makeRepository(
 export interface FareChangeHarness {
   service: FareChangeService;
   store: Store;
-  fareRowsFor: (pair: { originStationId: string; destinationStationId: string }) => FareRow[];
+  fareRowsFor: (pair: {
+    originStationId: string;
+    destinationStationId: string;
+  }) => FareRow[];
   auditCount: () => number;
   lastEvent: () => EventEnvelope;
   requestCount: () => number;
@@ -180,7 +193,9 @@ export interface FareChangeHarnessOptions {
   routeEffectiveFrom?: string;
 }
 
-function makeHarness(options: FareChangeHarnessOptions = {}): FareChangeHarness {
+function makeHarness(
+  options: FareChangeHarnessOptions = {},
+): FareChangeHarness {
   const store = emptyStore();
   const routeEffectiveFrom = options.routeEffectiveFrom ?? '2020-01-01';
 
@@ -214,13 +229,21 @@ function makeHarness(options: FareChangeHarnessOptions = {}): FareChangeHarness 
   } as never);
 
   const requests = {
-    find: vi.fn(async (idempotencyKey: string) =>
-      store.requests.find((row) => row.idempotencyKey === idempotencyKey) ?? null,
+    find: vi.fn(
+      async (idempotencyKey: string) =>
+        store.requests.find((row) => row.idempotencyKey === idempotencyKey) ??
+        null,
     ),
     record: vi.fn(
       async (ctx: TransactionContext, request: StoredOperationsRequest) => {
-        if (store.requests.some((row) => row.idempotencyKey === request.idempotencyKey)) {
-          throw Object.assign(new Error('duplicate key value'), { code: '23505' });
+        if (
+          store.requests.some(
+            (row) => row.idempotencyKey === request.idempotencyKey,
+          )
+        ) {
+          throw Object.assign(new Error('duplicate key value'), {
+            code: '23505',
+          });
         }
         stage(ctx, () => store.requests.push(request));
       },
@@ -271,7 +294,9 @@ function seedExistingFare(
   return row;
 }
 
-function request(overrides: Partial<ChangeFareRequest> = {}): ChangeFareRequest {
+function request(
+  overrides: Partial<ChangeFareRequest> = {},
+): ChangeFareRequest {
   return {
     trainNumber: TRAIN_NUMBER,
     travelClassId: FIRST_CLASS_AC,
@@ -325,14 +350,22 @@ describe('FareChangeService.changeFare', () => {
     );
 
     expect(
-      harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA }),
+      harness.fareRowsFor({
+        originStationId: CAIRO,
+        destinationStationId: ALEXANDRIA,
+      }),
     ).toHaveLength(2);
   });
 
   it('writes the fare, its audit entry and FareChanged in one transaction', async () => {
     await harness.service.changeFare(request(), 'k', OPERATOR);
 
-    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
+    expect(
+      harness.fareRowsFor({
+        originStationId: CAIRO,
+        destinationStationId: ALEXANDRIA,
+      }),
+    ).toHaveLength(1);
     expect(harness.auditCount()).toBe(1);
     expect(harness.lastEvent().type).toBe('catalog.fare.changed');
     expect(harness.requestCount()).toBe(1);
@@ -373,7 +406,10 @@ describe('FareChangeService.changeFare', () => {
   it('refuses a non-positive or non-integer amount', async () => {
     const rejection = await harness.service
       .changeFare(request({ amountPiastres: 0 }), 'k', OPERATOR)
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(rejection).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
@@ -382,31 +418,41 @@ describe('FareChangeService.changeFare', () => {
 
     const fractional = await harness.service
       .changeFare(request({ amountPiastres: 100.5 }), 'k-frac', OPERATOR)
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(fractional).toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
   });
 
-  it('refuses an amount below the Stripe minimum with the fee (§6.3)', async () => {
+  it('refuses an amount below the payment minimum without naming a vendor (§6.3)', async () => {
     const original = process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
     process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = '1000';
 
     try {
       const rejection = await harness.service
         .changeFare(request({ amountPiastres: 500 }), 'k', OPERATOR)
-        .then(() => null, (error: unknown) => error);
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
 
       expect(rejection).toMatchObject({
         code: ErrorCode.VALIDATION_ERROR,
         details: [
           expect.objectContaining({
             field: 'amountPiastres',
-            issue: expect.stringContaining('minimum'),
+            issueKey: 'ISSUE_FARE_BELOW_PAYMENT_MINIMUM',
+            actionKey: 'ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM',
           }),
         ],
       });
+      const action = DETAIL_CATALOGUE.ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM;
+      expect(`${action.en} ${action.ar}`).not.toMatch(/stripe/i);
     } finally {
-      if (original === undefined) delete process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
+      if (original === undefined)
+        delete process.env.STRIPE_MINIMUM_CHARGE_PIASTRES;
       else process.env.STRIPE_MINIMUM_CHARGE_PIASTRES = original;
     }
   });
@@ -414,23 +460,40 @@ describe('FareChangeService.changeFare', () => {
   it('refuses an unknown train, class or station pair', async () => {
     const unknownTrain = await harness.service
       .changeFare(request({ trainNumber: '999' }), 'k-train', OPERATOR)
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
     expect(unknownTrain).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
       details: [expect.objectContaining({ field: 'trainNumber' })],
     });
 
     const unknownClass = await harness.service
-      .changeFare(request({ travelClassId: UNKNOWN_CLASS }), 'k-class', OPERATOR)
-      .then(() => null, (error: unknown) => error);
+      .changeFare(
+        request({ travelClassId: UNKNOWN_CLASS }),
+        'k-class',
+        OPERATOR,
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
     expect(unknownClass).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
       details: [expect.objectContaining({ field: 'travelClassId' })],
     });
 
     const unknownStation = await harness.service
-      .changeFare(request({ destinationStationId: UNKNOWN_STATION }), 'k-station', OPERATOR)
-      .then(() => null, (error: unknown) => error);
+      .changeFare(
+        request({ destinationStationId: UNKNOWN_STATION }),
+        'k-station',
+        OPERATOR,
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
     expect(unknownStation).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
       details: [expect.objectContaining({ field: 'destinationStationId' })],
@@ -444,14 +507,18 @@ describe('FareChangeService.changeFare', () => {
         'k',
         OPERATOR,
       )
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(rejection).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
       details: [
         expect.objectContaining({
           field: 'destinationStationId',
-          issue: expect.stringContaining('does not run this pair in order'),
+          issueKey: 'ISSUE_TRAIN_DOES_NOT_RUN_PAIR_IN_ORDER',
+          actionKey: 'ACTION_PICK_PAIR_IN_TRAVEL_ORDER',
         }),
       ],
     });
@@ -474,26 +541,66 @@ describe('FareChangeService.changeFare', () => {
         'k',
         OPERATOR,
       )
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(rejection).toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
       details: [
         expect.objectContaining({
           field: 'amountPiastres',
-          issue: expect.stringContaining('segment it contains'),
+          issueKey: 'ISSUE_FARE_BELOW_CONTAINED_SEGMENT',
+          actionKey: 'ACTION_RAISE_FARE_TO_CONTAINED_SEGMENT',
+          params: { containedFarePiastres: '12000' },
         }),
       ],
     });
   });
 
   it('replays the first response for a repeated idempotency key', async () => {
-    const first = await harness.service.changeFare(request(), 'replay-key', OPERATOR);
-    const second = await harness.service.changeFare(request(), 'replay-key', OPERATOR);
+    const first = await harness.service.changeFare(
+      request(),
+      'replay-key',
+      OPERATOR,
+    );
+    const second = await harness.service.changeFare(
+      request(),
+      'replay-key',
+      OPERATOR,
+    );
 
     expect(second).toEqual(first);
-    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
+    expect(
+      harness.fareRowsFor({
+        originStationId: CAIRO,
+        destinationStationId: ALEXANDRIA,
+      }),
+    ).toHaveLength(1);
     expect(harness.auditCount()).toBe(1);
+  });
+
+  it('refuses a reused idempotency key with a language-free corrective ref', async () => {
+    await harness.service.changeFare(request(), 'reused-key', OPERATOR);
+
+    await expect(
+      harness.service.changeFare(
+        request({ amountPiastres: 21_000 }),
+        'reused-key',
+        OPERATOR,
+      ),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CONFLICT,
+      details: [
+        {
+          field: 'Idempotency-Key',
+          rejectedValue: 'reused-key',
+          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REUSED',
+          actionKey: 'ACTION_SEND_NEW_IDEMPOTENCY_KEY',
+        },
+      ],
+    });
   });
 
   // Both requests are real and recorded; the later effective_from wins. Row
@@ -520,7 +627,12 @@ describe('FareChangeService.changeFare', () => {
     ]);
 
     expect(harness.auditCount()).toBe(2);
-    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(2);
+    expect(
+      harness.fareRowsFor({
+        originStationId: CAIRO,
+        destinationStationId: ALEXANDRIA,
+      }),
+    ).toHaveLength(2);
   });
 
   // Probe with the fare's own effective date, not today, or a future-only
@@ -529,7 +641,9 @@ describe('FareChangeService.changeFare', () => {
     const futureHarness = makeHarness({ routeEffectiveFrom: '2026-07-01' });
 
     const result = await futureHarness.service.changeFare(
-      request({ effectiveFrom: new Date('2026-07-01T00:00:00.000Z').toISOString() }),
+      request({
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z').toISOString(),
+      }),
       'k',
       OPERATOR,
     );
@@ -554,12 +668,26 @@ describe('FareChangeService.changeFare', () => {
         'second-key',
         OPERATOR,
       )
-      .then(() => null, (error: unknown) => error);
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(rejection).toMatchObject({
       code: ErrorCode.CONFLICT,
-      details: [expect.objectContaining({ field: 'effectiveFrom' })],
+      details: [
+        expect.objectContaining({
+          field: 'effectiveFrom',
+          issueKey: 'ISSUE_FARE_ALREADY_EFFECTIVE_AT_INSTANT',
+          actionKey: 'ACTION_PICK_DIFFERENT_EFFECTIVE_INSTANT',
+        }),
+      ],
     });
-    expect(harness.fareRowsFor({ originStationId: CAIRO, destinationStationId: ALEXANDRIA })).toHaveLength(1);
+    expect(
+      harness.fareRowsFor({
+        originStationId: CAIRO,
+        destinationStationId: ALEXANDRIA,
+      }),
+    ).toHaveLength(1);
   });
 });
