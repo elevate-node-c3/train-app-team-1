@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
 import {
   BadRequestException,
   ExecutionContext,
+  Logger,
   NotFoundException,
+  type ArgumentsHost,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { ErrorCode } from '@app/contracts';
+import { ErrorCode, type ApiResponse } from '@app/contracts';
 import {
   resolveLanguage,
   resolveMessage,
@@ -14,6 +16,8 @@ import {
   HttpExceptionFilter,
   CORRELATION_ID_KEY,
 } from '@app/common';
+import { MESSAGE_CATALOGUE } from './catalogue.js';
+import { DETAIL_CATALOGUE } from './detail-catalogue.js';
 
 describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => {
   const clsMock = {
@@ -113,6 +117,169 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
 
   describe('HttpExceptionFilter (BR-57 & §2.4)', () => {
     const filter = new HttpExceptionFilter(clsMock);
+
+    beforeEach(() => {
+      vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function renderDetails(message: unknown, acceptLanguage?: string) {
+      let responseBody!: ApiResponse<null>;
+      const host = {
+        getType: () => 'http',
+        switchToHttp: () => ({
+          getRequest: () => ({
+            headers: { 'accept-language': acceptLanguage },
+          }),
+          getResponse: () => ({
+            status: () => ({
+              json: (body: ApiResponse<null>) => {
+                responseBody = body;
+              },
+            }),
+          }),
+        }),
+      } as unknown as ArgumentsHost;
+      filter.catch(new BadRequestException({ message }), host);
+      return responseBody;
+    }
+
+    it('resolves issueKey and actionKey into the request language', () => {
+      const body = renderDetails(
+        [
+          {
+            field: 'amountPiastres',
+            rejectedValue: 1,
+            issueKey: 'ISSUE_MUST_BE_UUID',
+            actionKey: 'ACTION_DEFAULT',
+          },
+        ],
+        'en',
+      );
+      expect(body.error?.details?.[0]).toEqual({
+        field: 'amountPiastres',
+        rejectedValue: 1,
+        issue: 'This value must be a valid identifier.',
+        action: "Send a value that meets this field's constraints.",
+      });
+    });
+
+    it('uses the localized default action when actionKey is absent', () => {
+      const body = renderDetails(
+        [{ field: 'id', rejectedValue: 'bad', issueKey: 'ISSUE_MUST_BE_UUID' }],
+        'ar',
+      );
+      expect(body.error?.details?.[0].action).toBe(
+        DETAIL_CATALOGUE.ACTION_DEFAULT.ar,
+      );
+    });
+
+    it('falls back to the generic issue for an unknown issueKey', () => {
+      const body = renderDetails(
+        [
+          {
+            field: 'id',
+            rejectedValue: 'bad',
+            issueKey: 'ISSUE_NEW_SERVICE_VERSION',
+          },
+        ],
+        'en',
+      );
+      expect(body.error?.details?.[0].issue).toBe(
+        DETAIL_CATALOGUE.ISSUE_VALIDATION_FAILED.en,
+      );
+      expect(JSON.stringify(body)).not.toContain('ISSUE_');
+    });
+
+    it.each([undefined, '*', 'fr-FR', 'ar-EG,en;q=0.9'])(
+      'resolves details and headline to Arabic for %s',
+      (header) => {
+        const body = renderDetails(
+          [{ field: 'id', rejectedValue: null, issueKey: 'ISSUE_REQUIRED' }],
+          header,
+        );
+        expect(body.error?.details?.[0].issue).toBe(
+          DETAIL_CATALOGUE.ISSUE_REQUIRED.ar,
+        );
+        expect(body.message).toBe(MESSAGE_CATALOGUE.VALIDATION_ERROR.ar);
+      },
+    );
+
+    it('resolves template params without exposing refs or internal objects', () => {
+      const body = renderDetails(
+        [
+          {
+            field: 'returnDate',
+            rejectedValue: '2026-11-30',
+            issueKey: 'ISSUE_REQUIRED',
+            actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+            params: { departureDate: '2026-12-01' },
+            target: { internalSecret: 'do-not-echo' },
+          },
+        ],
+        'en-US,en;q=0.9',
+      );
+      expect(body.error?.details?.[0].action).toBe(
+        'Pick a return date on or after 2026-12-01.',
+      );
+      expect(JSON.stringify(body)).not.toMatch(
+        /issueKey|actionKey|params|internalSecret|\{\{/,
+      );
+    });
+
+    it('echoes a non-primitive rejectedValue and Arabic-Indic digits verbatim', () => {
+      const rejectedValue = { nested: ['٠٦:٠٠'] };
+      const body = renderDetails(
+        [{ field: 'time', rejectedValue, issueKey: 'ISSUE_WRONG_FORMAT' }],
+        'ar',
+      );
+      expect(() => JSON.stringify(body)).not.toThrow();
+      expect(body.error?.details?.[0].rejectedValue).toEqual(rejectedValue);
+    });
+
+    it('uses the default action for an unknown actionKey', () => {
+      const body = renderDetails(
+        [
+          {
+            field: 'id',
+            issueKey: 'ISSUE_REQUIRED',
+            actionKey: 'ACTION_NEW_SERVICE_VERSION',
+          },
+        ],
+        'en',
+      );
+      expect(body.error?.details?.[0].action).toBe(
+        DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+      );
+    });
+
+    it('does not expose an unresolved template to the caller', () => {
+      const body = renderDetails(
+        [
+          {
+            field: 'returnDate',
+            issueKey: 'ISSUE_REQUIRED',
+            actionKey: 'ACTION_PICK_RETURN_DATE_ON_OR_AFTER',
+          },
+        ],
+        'en',
+      );
+      expect(body.error?.details?.[0].action).toBe(
+        DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+      );
+      expect(JSON.stringify(body)).not.toContain('{{');
+    });
+
+    it('still accepts a literal issue string during migration', () => {
+      const body = renderDetails(
+        [{ field: 'to', issue: 'legacy prose', action: 'legacy action' }],
+        'en',
+      );
+      expect(body.error?.details?.[0].issue).toBe('legacy prose');
+      expect(body.error?.details?.[0].action).toBe('legacy action');
+    });
 
     it('formats validation errors with field, rejectedValue, issue, and action (BR-57)', () => {
       let responseStatus = 0;
