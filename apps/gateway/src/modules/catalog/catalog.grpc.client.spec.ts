@@ -44,7 +44,10 @@ const RESPONSE: SearchOneWayTripsResponse = {
 function clientWith(
   searchOneWayTrips: CatalogGrpcClient['searchOneWayTrips'],
 ): CatalogGrpcClientService {
-  const cls = { get: () => undefined, set: () => undefined } as unknown as ClsService;
+  const cls = {
+    get: () => undefined,
+    set: () => undefined,
+  } as unknown as ClsService;
   // Only the one method: these specs call only `searchOneWayTrips`, and a stub
   // for the other three would suggest they are exercised here.
   return new CatalogGrpcClientService(
@@ -172,8 +175,8 @@ describe('calling catalog over gRPC', () => {
               {
                 field: 'to',
                 rejectedValue: 'x',
-                issue: 'is the same station as From',
-                action: 'Pick a different destination station',
+                issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+                actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
               },
             ],
           }),
@@ -189,10 +192,14 @@ describe('calling catalog over gRPC', () => {
         code: string;
         // Under `message`, because that is the channel the envelope filter
         // reads when turning an exception into error.details.
-        message: { field: string }[];
+        message: { field: string; issueKey: string; actionKey: string }[];
       };
       expect(body.code).toBe(ErrorCode.VALIDATION_ERROR);
       expect(body.message[0].field).toBe('to');
+      expect(body.message[0].issueKey).toBe('ISSUE_SAME_STATION_AS_ORIGIN');
+      expect(body.message[0].actionKey).toBe(
+        'ACTION_PICK_DIFFERENT_DESTINATION',
+      );
     });
 
     // The no-leak rule: an unrecognised code is not forwarded, and the call
@@ -254,12 +261,10 @@ describe('every catalog call', () => {
 
   it.each(METHODS)('carries a deadline on %s', async (name) => {
     const seen: CallOptions[] = [];
-    const service = clientForAll(
-      () => (_data, _metadata, options) => {
-        seen.push(options as CallOptions);
-        return of({});
-      },
-    );
+    const service = clientForAll(() => (_data, _metadata, options) => {
+      seen.push(options as CallOptions);
+      return of({});
+    });
     const before = Date.now();
 
     await invoke(service, name);

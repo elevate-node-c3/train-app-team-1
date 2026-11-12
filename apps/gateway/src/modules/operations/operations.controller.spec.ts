@@ -1,11 +1,7 @@
 import { STAFF_ROLE_KEY, createValidationPipe } from '@app/common';
-import { ErrorCode } from '@app/contracts';
+import { ErrorCode, type ValidationIssueRef } from '@app/contracts';
 import type { CallOptions } from '@grpc/grpc-js';
-import {
-  BadRequestException,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import type { ClsService } from 'nestjs-cls';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -138,9 +134,9 @@ describe('OperationsController', () => {
     expect(Reflect.getMetadata('path', OperationsController)).toBe(
       'operations',
     );
-    expect(
-      Reflect.getMetadata('path', handler('publishTimetable')),
-    ).toBe('timetables');
+    expect(Reflect.getMetadata('path', handler('publishTimetable'))).toBe(
+      'timetables',
+    );
     expect(Reflect.getMetadata('path', handler('changeFare'))).toBe('fares');
     expect(Reflect.getMetadata('path', handler('listAudit'))).toBe('audit');
   });
@@ -169,7 +165,9 @@ describe('OperationsController', () => {
     const changeFare = vi.fn();
     const controller = controllerWith({ changeFare });
 
-    await expect(controller.changeFare(fareBody(), undefined)).rejects.toMatchObject({
+    await expect(
+      controller.changeFare(fareBody(), undefined),
+    ).rejects.toMatchObject({
       status: HttpStatus.BAD_REQUEST,
     });
     expect(changeFare).not.toHaveBeenCalled();
@@ -215,8 +213,13 @@ describe('OperationsController', () => {
             {
               field: 'effectiveFrom',
               rejectedValue: '2026-06-20',
-              issue: 'overlaps the currently effective timetable version',
-              action: 'Choose a date after the active version ends',
+              issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION',
+              actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+              params: {
+                version: '1',
+                effectiveFrom: '2026-06-01',
+                effectiveUntil: '2026-06-30',
+              },
             },
           ],
         }),
@@ -234,11 +237,19 @@ describe('OperationsController', () => {
     expect(error.getStatus()).toBe(HttpStatus.CONFLICT);
     const body = error.getResponse() as {
       code: string;
-      message: { field: string; issue: string }[];
+      message: ValidationIssueRef[];
     };
     expect(body.code).toBe(ErrorCode.CONFLICT);
     expect(body.message[0].field).toBe('effectiveFrom');
-    expect(body.message[0].issue).toContain('overlaps');
+    expect(body.message[0]).toMatchObject({
+      issueKey: 'ISSUE_TIMETABLE_OVERLAPS_PUBLISHED_VERSION',
+      actionKey: 'ACTION_PICK_NON_OVERLAPPING_DATES',
+      params: {
+        version: '1',
+        effectiveFrom: '2026-06-01',
+        effectiveUntil: '2026-06-30',
+      },
+    });
   });
 
   it('returns created, changed and withdrawn counts', async () => {
@@ -319,11 +330,9 @@ describe('OperationsController', () => {
 describe('the gateway operations module', () => {
   it('registers the controller, both services and the resolved client token', () => {
     const controllers = Reflect.getMetadata('controllers', OperationsModule) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
     const providers = Reflect.getMetadata('providers', OperationsModule) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
 
     expect(controllers).toContain(OperationsController);
     expect(providers).toContain(OperationsService);

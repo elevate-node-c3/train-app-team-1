@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
-  type ValidationErrorDetail,
+  type ValidationIssueRef,
 } from '@app/contracts';
 
 /**
@@ -12,19 +12,27 @@ import {
 
 interface CatalogRefusal {
   code: ErrorCode;
-  details: ValidationErrorDetail[];
+  details: ValidationIssueRef[];
   /** Present only on a `DEPENDENCY_UNAVAILABLE` refusal: how long to wait before retrying. */
   retryAfterSeconds?: number;
 }
 
-function isValidationDetail(value: unknown): value is ValidationErrorDetail {
+function isValidationIssueRef(value: unknown): value is ValidationIssueRef {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Record<string, unknown>;
 
   return (
     typeof candidate.field === 'string' &&
-    typeof candidate.issue === 'string' &&
-    typeof candidate.action === 'string'
+    typeof candidate.issueKey === 'string' &&
+    (candidate.actionKey === undefined ||
+      typeof candidate.actionKey === 'string') &&
+    (candidate.params === undefined ||
+      (typeof candidate.params === 'object' &&
+        candidate.params !== null &&
+        !Array.isArray(candidate.params) &&
+        Object.values(candidate.params).every(
+          (param) => typeof param === 'string',
+        )))
   );
 }
 
@@ -52,7 +60,7 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
   return {
     code: record.code as ErrorCode,
     details: Array.isArray(record.details)
-      ? record.details.filter(isValidationDetail)
+      ? record.details.filter(isValidationIssueRef)
       : [],
     ...(typeof record.retryAfterSeconds === 'number'
       ? { retryAfterSeconds: record.retryAfterSeconds }
@@ -68,7 +76,9 @@ export function decodeCatalogRefusal(details: unknown): CatalogRefusal | null {
 export function parseCatalogBusinessError(
   error: unknown,
 ): HttpException | null {
-  const refusal = decodeCatalogRefusal((error as { details?: unknown })?.details);
+  const refusal = decodeCatalogRefusal(
+    (error as { details?: unknown })?.details,
+  );
   if (!refusal) return null;
 
   return new HttpException(
@@ -80,7 +90,6 @@ export function parseCatalogBusinessError(
         ? {}
         : { retryAfterSeconds: refusal.retryAfterSeconds }),
     },
-    HTTP_STATUS_BY_ERROR_CODE[refusal.code] ??
-      HttpStatus.INTERNAL_SERVER_ERROR,
+    HTTP_STATUS_BY_ERROR_CODE[refusal.code] ?? HttpStatus.INTERNAL_SERVER_ERROR,
   );
 }
