@@ -5,10 +5,13 @@ import { getInventoryProtoPath, INVENTORY_PACKAGE_NAME } from '@app/contracts';
 
 import { inventoryGrpcUrl } from '../../config/operations-settings.js';
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
+import { OperationsAuditEntity } from './entities/operations-audit.entity.js';
 import {
   INVENTORY_GRPC_CLIENT,
   InventorySeatUsageClient,
 } from './inventory-seat-usage.grpc.client.js';
+import { OperationsAuditRepository } from './operations-audit.repository.js';
+import { OperationsAuditService } from './operations-audit.service.js';
 import { TimetableVersionService } from './timetable-version.service.js';
 
 /**
@@ -38,7 +41,7 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TimetableEntity]),
+    TypeOrmModule.forFeature([TimetableEntity, OperationsAuditEntity]),
     ClientsModule.registerAsync([
       {
         name: INVENTORY_GRPC_CLIENT,
@@ -54,7 +57,16 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
       },
     ]),
   ],
-  providers: [InventorySeatUsageClient, TimetableVersionService],
-  exports: [InventorySeatUsageClient, TimetableVersionService],
+  providers: [
+    InventorySeatUsageClient,
+    TimetableVersionService,
+    OperationsAuditRepository,
+    OperationsAuditService,
+  ],
+  exports: [
+    InventorySeatUsageClient,
+    TimetableVersionService,
+    OperationsAuditService,
+  ],
 })
 export class OperationsModule {}
