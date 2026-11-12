@@ -155,12 +155,17 @@ export class SearchTripsDto {
   from!: string;
 
   @IsUUID()
-  @Validate(DifferentStations)
+  @Validate(DifferentStations, {
+    context: {
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+      actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+    },
+  })
   to!: string;
 
   /** A Cairo civil date. Whether it is bookable is catalog's to say. */
   @Matches(CIVIL_DATE_PATTERN, {
-    message: 'departureDate must be a date in YYYY-MM-DD form',
+    context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   departureDate!: string;
 
@@ -175,8 +180,8 @@ export class SearchTripsDto {
    */
   @ValidateIf((dto: SearchTripsDto) => dto.trainNumber !== undefined)
   @Transform(({ value }) => toAsciiDigits(value))
-  @IsInt({ message: 'trainNumber must be a whole number' })
-  @Min(1, { message: 'trainNumber must be 1 or greater' })
+  @IsInt({ context: { issueKey: 'ISSUE_TRAIN_NUMBER_NOT_A_NUMBER' } })
+  @Min(1, { context: { issueKey: 'ISSUE_TRAIN_NUMBER_TOO_SMALL' } })
   trainNumber?: number;
 
   /**
@@ -189,7 +194,7 @@ export class SearchTripsDto {
    */
   @ValidateIf((dto: SearchTripsDto) => dto.returnDate !== undefined)
   @Matches(CIVIL_DATE_PATTERN, {
-    message: 'returnDate must be a date in YYYY-MM-DD form',
+    context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   returnDate?: string;
 
@@ -199,7 +204,7 @@ export class SearchTripsDto {
    */
   @IsOptional()
   @IsIn(SEARCH_SORTS, {
-    message: `sort must be one of: ${SEARCH_SORTS.join(', ')}`,
+    context: { issueKey: 'ISSUE_SORT_NOT_OFFERED' },
   })
   sort?: (typeof SEARCH_SORTS)[number];
 
@@ -214,7 +219,7 @@ export class SearchTripsDto {
   @Transform(({ value }) => csvToArray(value))
   @IsUUID('all', {
     each: true,
-    message: 'trainTypeIds must be a comma-separated list of train type ids',
+    context: { issueKey: 'ISSUE_TRAIN_TYPE_LIST_MALFORMED' },
   })
   trainTypeIds?: string[];
 
@@ -227,14 +232,14 @@ export class SearchTripsDto {
    */
   @ValidateIf((dto: SearchTripsDto) => dto.departAfter !== undefined)
   @Transform(({ value }) => clockTimeToMinutes(value))
-  @IsInt({ message: 'departAfter must be a time of day in HH:mm form' })
+  @IsInt({ context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' } })
   @Min(0)
   @Max(MINUTES_IN_A_DAY - 1)
   departAfter?: number;
 
   @ValidateIf((dto: SearchTripsDto) => dto.departBefore !== undefined)
   @Transform(({ value }) => clockTimeToMinutes(value))
-  @IsInt({ message: 'departBefore must be a time of day in HH:mm form' })
+  @IsInt({ context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' } })
   @Min(0)
   @Max(MINUTES_IN_A_DAY - 1)
   departBefore?: number;
@@ -245,8 +250,8 @@ export class SearchTripsDto {
    */
   @ValidateIf((dto: SearchTripsDto) => dto.maxFare !== undefined)
   @Transform(({ value }) => toAsciiDigits(value))
-  @IsInt({ message: 'maxFare must be a whole number of piastres' })
-  @Min(0, { message: 'maxFare must be 0 or greater' })
+  @IsInt({ context: { issueKey: 'ISSUE_FARE_NOT_A_NUMBER' } })
+  @Min(0, { context: { issueKey: 'ISSUE_FARE_NEGATIVE' } })
   maxFare?: number;
 
   /**
@@ -255,7 +260,7 @@ export class SearchTripsDto {
    */
   @IsOptional()
   @Transform(({ value }) => toBoolean(value))
-  @IsBoolean({ message: 'excludeSoldOut must be true or false' })
+  @IsBoolean({ context: { issueKey: 'ISSUE_MUST_BE_YES_OR_NO' } })
   excludeSoldOut?: boolean;
 
   /**

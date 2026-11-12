@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { describe, expect, it } from 'vitest';
+import { createValidationPipe } from '@app/common';
 
 import { SearchReturnTripsDto } from './search-return-trips.dto.js';
 import { TripIdParamDto, TripStopsQueryDto } from './trip-stops.dto.js';
@@ -112,6 +113,73 @@ describe('the return-search query parameters', () => {
     ]);
     expect(validate(validQuery({ sort: 'cheapest' })).fields).toEqual(['sort']);
   });
+
+  it.each([
+    {
+      field: 'returnDate',
+      value: '25-06-2026',
+      issueKey: 'ISSUE_CIVIL_DATE_FORMAT',
+    },
+    { field: 'sort', value: 'cheapest', issueKey: 'ISSUE_SORT_NOT_OFFERED' },
+    {
+      field: 'trainTypeIds',
+      value: 'express',
+      issueKey: 'ISSUE_TRAIN_TYPE_LIST_MALFORMED',
+    },
+    {
+      field: 'departAfter',
+      value: '24:00',
+      issueKey: 'ISSUE_CLOCK_TIME_FORMAT',
+    },
+    {
+      field: 'departBefore',
+      value: '24:00',
+      issueKey: 'ISSUE_CLOCK_TIME_FORMAT',
+    },
+    { field: 'maxFare', value: 0.5, issueKey: 'ISSUE_FARE_NOT_A_NUMBER' },
+    { field: 'maxFare', value: -1, issueKey: 'ISSUE_FARE_NEGATIVE' },
+    {
+      field: 'excludeSoldOut',
+      value: 'yes',
+      issueKey: 'ISSUE_MUST_BE_YES_OR_NO',
+    },
+  ])(
+    '$field keeps $issueKey through the real pipe',
+    async ({ field, value, issueKey }) => {
+      await expect(
+        createValidationPipe().transform(validQuery({ [field]: value }), {
+          type: 'query',
+          metatype: SearchReturnTripsDto,
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          message: expect.arrayContaining([
+            expect.objectContaining({ field, issueKey }),
+          ]),
+        },
+      });
+    },
+  );
+
+  it('keeps the custom outbound same-station issue and corrective action through the real pipe', async () => {
+    await expect(
+      createValidationPipe().transform(validQuery({ outboundTo: RAMSIS }), {
+        type: 'query',
+        metatype: SearchReturnTripsDto,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        message: [
+          {
+            field: 'outboundTo',
+            rejectedValue: RAMSIS,
+            issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+            actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+          },
+        ],
+      },
+    });
+  });
 });
 
 describe('the stops parameters', () => {
@@ -127,6 +195,29 @@ describe('the stops parameters', () => {
     expect(
       validateAs(TripStopsQueryDto, { from: RAMSIS, to: RAMSIS }).fields,
     ).toEqual(['to']);
+  });
+
+  it('keeps the custom segment same-station issue and corrective action through the real pipe', async () => {
+    await expect(
+      createValidationPipe().transform(
+        { from: RAMSIS, to: RAMSIS },
+        {
+          type: 'query',
+          metatype: TripStopsQueryDto,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        message: [
+          {
+            field: 'to',
+            rejectedValue: RAMSIS,
+            issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+            actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+          },
+        ],
+      },
+    });
   });
 
   it('accepts a well-formed pair and an optional language', () => {

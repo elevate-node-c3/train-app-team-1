@@ -30,7 +30,9 @@ export class VerifyEmailDto {
   @IsEmail()
   email!: string;
 
-  @Matches(CODE_PATTERN, { message: 'code must be six digits' })
+  @Matches(CODE_PATTERN, {
+    context: { issueKey: 'ISSUE_VERIFICATION_CODE_FORMAT' },
+  })
   code!: string;
 
   @IsOptional()
@@ -80,7 +82,9 @@ export class ResetPasswordDto {
   @IsEmail()
   email!: string;
 
-  @Matches(CODE_PATTERN, { message: 'code must be six digits' })
+  @Matches(CODE_PATTERN, {
+    context: { issueKey: 'ISSUE_VERIFICATION_CODE_FORMAT' },
+  })
   code!: string;
 
   @IsString()

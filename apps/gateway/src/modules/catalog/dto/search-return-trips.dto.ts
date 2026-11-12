@@ -75,12 +75,17 @@ export class SearchReturnTripsDto {
   outboundFrom!: string;
 
   @IsUUID()
-  @Validate(DifferentOutboundStations)
+  @Validate(DifferentOutboundStations, {
+    context: {
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+      actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+    },
+  })
   outboundTo!: string;
 
   /** A Cairo civil date. BR-20's rules about it are catalog's to apply. */
   @Matches(CIVIL_DATE_PATTERN, {
-    message: 'returnDate must be a date in YYYY-MM-DD form',
+    context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   returnDate!: string;
 
@@ -90,7 +95,7 @@ export class SearchReturnTripsDto {
 
   @IsOptional()
   @IsIn(SEARCH_SORTS, {
-    message: `sort must be one of: ${SEARCH_SORTS.join(', ')}`,
+    context: { issueKey: 'ISSUE_SORT_NOT_OFFERED' },
   })
   sort?: (typeof SEARCH_SORTS)[number];
 
@@ -98,33 +103,33 @@ export class SearchReturnTripsDto {
   @Transform(({ value }) => csvToArray(value))
   @IsUUID('all', {
     each: true,
-    message: 'trainTypeIds must be a comma-separated list of train type ids',
+    context: { issueKey: 'ISSUE_TRAIN_TYPE_LIST_MALFORMED' },
   })
   trainTypeIds?: string[];
 
   @ValidateIf((dto: SearchReturnTripsDto) => dto.departAfter !== undefined)
   @Transform(({ value }) => clockTimeToMinutes(value))
-  @IsInt({ message: 'departAfter must be a time of day in HH:mm form' })
+  @IsInt({ context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' } })
   @Min(0)
   @Max(MINUTES_IN_A_DAY - 1)
   departAfter?: number;
 
   @ValidateIf((dto: SearchReturnTripsDto) => dto.departBefore !== undefined)
   @Transform(({ value }) => clockTimeToMinutes(value))
-  @IsInt({ message: 'departBefore must be a time of day in HH:mm form' })
+  @IsInt({ context: { issueKey: 'ISSUE_CLOCK_TIME_FORMAT' } })
   @Min(0)
   @Max(MINUTES_IN_A_DAY - 1)
   departBefore?: number;
 
   @ValidateIf((dto: SearchReturnTripsDto) => dto.maxFare !== undefined)
   @Transform(({ value }) => toAsciiDigits(value))
-  @IsInt({ message: 'maxFare must be a whole number of piastres' })
-  @Min(0, { message: 'maxFare must be 0 or greater' })
+  @IsInt({ context: { issueKey: 'ISSUE_FARE_NOT_A_NUMBER' } })
+  @Min(0, { context: { issueKey: 'ISSUE_FARE_NEGATIVE' } })
   maxFare?: number;
 
   @IsOptional()
   @Transform(({ value }) => toBoolean(value))
-  @IsBoolean({ message: 'excludeSoldOut must be true or false' })
+  @IsBoolean({ context: { issueKey: 'ISSUE_MUST_BE_YES_OR_NO' } })
   excludeSoldOut?: boolean;
 
   @IsOptional()

@@ -33,7 +33,12 @@ export class TripStopsQueryDto {
 
   /** Where they alight. */
   @IsUUID()
-  @Validate(DifferentStopStations)
+  @Validate(DifferentStopStations, {
+    context: {
+      issueKey: 'ISSUE_SAME_STATION_AS_ORIGIN',
+      actionKey: 'ACTION_PICK_DIFFERENT_DESTINATION',
+    },
+  })
   to!: string;
 
   @IsOptional()
