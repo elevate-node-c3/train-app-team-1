@@ -1,4 +1,4 @@
-import { ErrorCode, type ValidationErrorDetail } from '@app/contracts';
+import { ErrorCode, type ValidationIssueRef } from '@app/contracts';
 import { validateFullName } from './full-name.validator.js';
 import { normalizePhone } from './phone.validator.js';
 import { validateNationalId } from './national-id.validator.js';
@@ -17,7 +17,7 @@ export interface ProfileValidationReferences {
 }
 
 export interface ProfileValidationResult {
-  details: ValidationErrorDetail[];
+  details: ValidationIssueRef[];
   normalizedFullName: string;
   canonicalPhone: string;
   normalizedNationalId: string;
@@ -26,42 +26,42 @@ export interface ProfileValidationResult {
 export function nationalIdErrorToDetail(
   code: ErrorCode,
   rejectedValue: unknown,
-): ValidationErrorDetail {
+): ValidationIssueRef {
   switch (code) {
     case ErrorCode.INVALID_NATIONAL_ID_LENGTH:
       return {
         field: 'nationalId',
         rejectedValue,
-        issue: 'must be exactly 14 digits',
-        action: 'Enter a 14-digit Egyptian National ID',
+        issueKey: 'ISSUE_NATIONAL_ID_LENGTH',
+        actionKey: 'ACTION_SEND_14_DIGIT_NATIONAL_ID',
       };
     case ErrorCode.INVALID_NATIONAL_ID_CENTURY:
       return {
         field: 'nationalId',
         rejectedValue,
-        issue: 'century digit must be 2 (1900s) or 3 (2000s)',
-        action: 'Check the first digit of the National ID',
+        issueKey: 'ISSUE_NATIONAL_ID_CENTURY_DIGIT',
+        actionKey: 'ACTION_CHECK_NATIONAL_ID_CENTURY_DIGIT',
       };
     case ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE:
       return {
         field: 'nationalId',
         rejectedValue,
-        issue: 'birth date in National ID is not a valid date or is in the future',
-        action: 'Check digits 2 through 7 (YYMMDD) in the National ID',
+        issueKey: 'ISSUE_NATIONAL_ID_BIRTH_DATE',
+        actionKey: 'ACTION_CHECK_NATIONAL_ID_BIRTH_DATE',
       };
     case ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE:
       return {
         field: 'nationalId',
         rejectedValue,
-        issue: 'governorate code in National ID is not recognized',
-        action: 'Check digits 8 and 9 (governorate code) in the National ID',
+        issueKey: 'ISSUE_NATIONAL_ID_GOVERNORATE',
+        actionKey: 'ACTION_CHECK_NATIONAL_ID_GOVERNORATE',
       };
     default:
       return {
         field: 'nationalId',
         rejectedValue,
-        issue: 'National ID is invalid',
-        action: 'Enter a valid 14-digit Egyptian National ID',
+        issueKey: 'ISSUE_NATIONAL_ID_INVALID',
+        actionKey: 'ACTION_SEND_14_DIGIT_NATIONAL_ID',
       };
   }
 }
@@ -75,15 +75,15 @@ export function validateProfile(
   now: Date,
   references: ProfileValidationReferences,
 ): ProfileValidationResult {
-  const details: ValidationErrorDetail[] = [];
+  const details: ValidationIssueRef[] = [];
 
   const nameResult = validateFullName(input.fullName);
   if (!nameResult.valid) {
     details.push({
       field: 'fullName',
       rejectedValue: input.fullName,
-      issue: 'is not a valid full name (at least first and family name with Arabic or Latin letters, up to 50 characters)',
-      action: 'Enter a valid full name with at least first and family name',
+      issueKey: 'ISSUE_FULL_NAME_INVALID',
+      actionKey: 'ACTION_SEND_FIRST_AND_FAMILY_NAME',
     });
   }
 
@@ -92,8 +92,8 @@ export function validateProfile(
     details.push({
       field: 'phoneNumber',
       rejectedValue: input.phoneNumber,
-      issue: 'is not a valid Egyptian mobile number',
-      action: 'Enter an 11-digit Egyptian mobile number starting with 010, 011, 012, or 015',
+      issueKey: 'ISSUE_PHONE_NOT_EGYPTIAN_MOBILE',
+      actionKey: 'ACTION_SEND_EGYPTIAN_MOBILE',
     });
   }
 
@@ -108,8 +108,8 @@ export function validateProfile(
     details.push({
       field: 'profileType',
       rejectedValue: input.profileType,
-      issue: 'is not an accepted profile type',
-      action: 'Choose an accepted profile type from the options list',
+      issueKey: 'ISSUE_PROFILE_TYPE_NOT_ACCEPTED',
+      actionKey: 'ACTION_PICK_PROFILE_TYPE_FROM_OPTIONS',
     });
   }
 
@@ -117,8 +117,8 @@ export function validateProfile(
     details.push({
       field: 'nationality',
       rejectedValue: input.nationality,
-      issue: 'is not an accepted nationality',
-      action: 'Choose an accepted nationality from the options list',
+      issueKey: 'ISSUE_NATIONALITY_NOT_ACCEPTED',
+      actionKey: 'ACTION_PICK_NATIONALITY_FROM_OPTIONS',
     });
   }
 

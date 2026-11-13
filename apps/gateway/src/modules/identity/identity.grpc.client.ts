@@ -13,8 +13,8 @@ import * as grpc from '@grpc/grpc-js';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
-  isValidationErrorDetail,
-  type ValidationErrorDetail,
+  isValidationIssueRef,
+  type ValidationIssueRef,
   type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
@@ -250,7 +250,7 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
   ): {
     code: ErrorCode;
     retryAfterSeconds?: number;
-    details?: ValidationErrorDetail[];
+    details?: ValidationIssueRef[];
   } | null {
     if (typeof details !== 'string' || details.length === 0) return null;
     try {
@@ -265,7 +265,7 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       }
       const retry = record.retryAfterSeconds;
       const validationDetails = Array.isArray(record.details)
-        ? (record.details.filter(isValidationErrorDetail) as ValidationErrorDetail[])
+        ? record.details.filter(isValidationIssueRef)
         : undefined;
       return {
         code: record.code as ErrorCode,

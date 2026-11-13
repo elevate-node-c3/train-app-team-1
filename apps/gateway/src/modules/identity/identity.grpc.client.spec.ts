@@ -457,14 +457,14 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
       {
         field: 'fullName',
         rejectedValue: 'Single',
-        issue: 'is not a valid full name',
-        action: 'Enter a valid full name',
+        issueKey: 'ISSUE_FULL_NAME_INVALID',
+        actionKey: 'ACTION_SEND_FIRST_AND_FAMILY_NAME',
       },
       {
         field: 'phoneNumber',
         rejectedValue: '123',
-        issue: 'is not a valid Egyptian mobile number',
-        action: 'Enter an 11-digit Egyptian mobile number',
+        issueKey: 'ISSUE_PHONE_NOT_EGYPTIAN_MOBILE',
+        actionKey: 'ACTION_SEND_EGYPTIAN_MOBILE',
       },
     ];
 

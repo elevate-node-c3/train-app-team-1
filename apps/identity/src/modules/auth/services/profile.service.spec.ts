@@ -130,7 +130,9 @@ describe('ProfileService', () => {
       expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
       expect(
         error.details.some(
-          (d: any) => d.field === 'nationalId' && d.issue.includes('14 digits'),
+          (d: any) =>
+            d.field === 'nationalId' &&
+            d.issueKey === 'ISSUE_NATIONAL_ID_LENGTH',
         ),
       ).toBe(true);
     });

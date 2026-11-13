@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DETAIL_CATALOGUE } from '@app/common/envelope/detail-catalogue.js';
 import { validateProfile } from './profile-validation.js';
 
 describe('validateProfile', () => {
@@ -45,11 +46,11 @@ describe('validateProfile', () => {
     expect(fields).toContain('profileType');
     expect(fields).toContain('nationality');
 
-    // Every detail must provide field, issue, and action (BR-57)
+    // Every detail must name a field and the keys the gateway resolves (BR-57)
     for (const detail of result.details) {
       expect(detail.field.length).toBeGreaterThan(0);
-      expect(detail.issue.length).toBeGreaterThan(0);
-      expect(detail.action.length).toBeGreaterThan(0);
+      expect(DETAIL_CATALOGUE).toHaveProperty(detail.issueKey);
+      expect(DETAIL_CATALOGUE).toHaveProperty(String(detail.actionKey));
     }
   });
 
@@ -66,8 +67,9 @@ describe('validateProfile', () => {
 
     const nidDetails = result.details.filter((d) => d.field === 'nationalId');
     expect(nidDetails.length).toBe(2);
-    const issues = nidDetails.map((d) => d.issue);
-    expect(issues.some((i) => i.includes('birth date'))).toBe(true);
-    expect(issues.some((i) => i.includes('governorate code'))).toBe(true);
+    expect(nidDetails.map((d) => d.issueKey)).toEqual([
+      'ISSUE_NATIONAL_ID_BIRTH_DATE',
+      'ISSUE_NATIONAL_ID_GOVERNORATE',
+    ]);
   });
 });
