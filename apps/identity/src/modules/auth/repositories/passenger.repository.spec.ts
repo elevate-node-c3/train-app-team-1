@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DataSource, EntityManager, Repository, SelectQueryBuilder } from 'typeorm';
+import type {
+  DataSource,
+  EntityManager,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 import { PassengerEntity } from '../entities/passenger.entity.js';
 import { PassengerRepository } from './passenger.repository.js';
@@ -9,7 +14,9 @@ import {
 } from '../booking-ticket-check.adapter.js';
 
 vi.mock('@app/common/persistence/typeorm-unit-of-work.js', () => ({
-  entityManagerOf: vi.fn((ctx: TransactionContext) => (ctx as any).manager ?? ctx),
+  entityManagerOf: vi.fn(
+    (ctx: TransactionContext) => (ctx as any).manager ?? ctx,
+  ),
 }));
 
 describe('PassengerRepository', () => {
@@ -67,25 +74,49 @@ describe('PassengerRepository', () => {
 
       const result = await repository.findAllByAccountId(mockCtx, 'acc-1');
 
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(PassengerEntity);
-      expect(mockEntityRepository.createQueryBuilder).toHaveBeenCalledWith('passenger');
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('passenger.account_id = :accountId', {
-        accountId: 'acc-1',
-      });
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('passenger.is_self', 'DESC');
-      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith('passenger.created_at', 'ASC');
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
+      expect(mockEntityRepository.createQueryBuilder).toHaveBeenCalledWith(
+        'passenger',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'passenger.account_id = :accountId',
+        {
+          accountId: 'acc-1',
+        },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'passenger.is_self',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'passenger.created_at',
+        'ASC',
+      );
       expect(result).toEqual(passengers);
     });
 
     it('uses dataSource when context is null', async () => {
       await repository.findAllByAccountId(null, 'acc-1');
 
-      expect(mockDataSource.getRepository).toHaveBeenCalledWith(PassengerEntity);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('passenger.account_id = :accountId', {
-        accountId: 'acc-1',
-      });
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith('passenger.is_self', 'DESC');
-      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith('passenger.created_at', 'ASC');
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'passenger.account_id = :accountId',
+        {
+          accountId: 'acc-1',
+        },
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'passenger.is_self',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'passenger.created_at',
+        'ASC',
+      );
     });
   });
 
@@ -94,14 +125,28 @@ describe('PassengerRepository', () => {
       const passenger = { id: 'p1', accountId: 'acc-1' } as PassengerEntity;
       (mockQueryBuilder.getOne as any).mockResolvedValue(passenger);
 
-      const result = await repository.findByIdAndAccountId(mockCtx, 'p1', 'acc-1');
+      const result = await repository.findByIdAndAccountId(
+        mockCtx,
+        'p1',
+        'acc-1',
+      );
 
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(PassengerEntity);
-      expect(mockEntityRepository.createQueryBuilder).toHaveBeenCalledWith('passenger');
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('passenger.id = :id', { id: 'p1' });
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('passenger.account_id = :accountId', {
-        accountId: 'acc-1',
-      });
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
+      expect(mockEntityRepository.createQueryBuilder).toHaveBeenCalledWith(
+        'passenger',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'passenger.id = :id',
+        { id: 'p1' },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'passenger.account_id = :accountId',
+        {
+          accountId: 'acc-1',
+        },
+      );
       expect(mockQueryBuilder.setLock).not.toHaveBeenCalled();
       expect(result).toEqual(passenger);
     });
@@ -110,11 +155,18 @@ describe('PassengerRepository', () => {
       const passenger = { id: 'p1', accountId: 'acc-1' } as PassengerEntity;
       (mockQueryBuilder.getOne as any).mockResolvedValue(passenger);
 
-      const result = await repository.findByIdAndAccountId(mockCtx, 'p1', 'acc-1', {
-        forUpdate: true,
-      });
+      const result = await repository.findByIdAndAccountId(
+        mockCtx,
+        'p1',
+        'acc-1',
+        {
+          forUpdate: true,
+        },
+      );
 
-      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(mockQueryBuilder.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
       expect(result).toEqual(passenger);
     });
 
@@ -123,24 +175,38 @@ describe('PassengerRepository', () => {
         forUpdate: true,
       });
 
-      expect(mockDataSource.getRepository).toHaveBeenCalledWith(PassengerEntity);
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
       expect(mockQueryBuilder.setLock).not.toHaveBeenCalled();
     });
 
     it('uses dataSource when context is null', async () => {
       await repository.findByIdAndAccountId(null, 'p1', 'acc-1');
 
-      expect(mockDataSource.getRepository).toHaveBeenCalledWith(PassengerEntity);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('passenger.id = :id', { id: 'p1' });
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('passenger.account_id = :accountId', {
-        accountId: 'acc-1',
-      });
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'passenger.id = :id',
+        { id: 'p1' },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'passenger.account_id = :accountId',
+        {
+          accountId: 'acc-1',
+        },
+      );
     });
 
     it('returns null when passenger is not found', async () => {
       (mockQueryBuilder.getOne as any).mockResolvedValue(null);
 
-      const result = await repository.findByIdAndAccountId(null, 'p-missing', 'acc-1');
+      const result = await repository.findByIdAndAccountId(
+        null,
+        'p-missing',
+        'acc-1',
+      );
       expect(result).toBeNull();
     });
   });
@@ -149,7 +215,9 @@ describe('PassengerRepository', () => {
     it('deletes passenger by id with context', async () => {
       await repository.delete(mockCtx, 'p1');
 
-      expect(mockEntityManager.delete).toHaveBeenCalledWith(PassengerEntity, { id: 'p1' });
+      expect(mockEntityManager.delete).toHaveBeenCalledWith(PassengerEntity, {
+        id: 'p1',
+      });
     });
 
     it('deletes passenger using dataSource when context is null', async () => {
@@ -163,9 +231,14 @@ describe('PassengerRepository', () => {
     it('filters by accountId and isSelf: false with context', async () => {
       (mockEntityRepository.count as any).mockResolvedValue(3);
 
-      const count = await repository.countCompanionsByAccountId(mockCtx, 'acc-1');
+      const count = await repository.countCompanionsByAccountId(
+        mockCtx,
+        'acc-1',
+      );
 
-      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(PassengerEntity);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
       expect(mockEntityRepository.count).toHaveBeenCalledWith({
         where: {
           accountId: 'acc-1',
@@ -178,9 +251,14 @@ describe('PassengerRepository', () => {
     it('uses dataSource when context is null', async () => {
       (mockEntityRepository.count as any).mockResolvedValue(2);
 
-      const count = await repository.countCompanionsByAccountId(null as any, 'acc-1');
+      const count = await repository.countCompanionsByAccountId(
+        null as any,
+        'acc-1',
+      );
 
-      expect(mockDataSource.getRepository).toHaveBeenCalledWith(PassengerEntity);
+      expect(mockDataSource.getRepository).toHaveBeenCalledWith(
+        PassengerEntity,
+      );
       expect(mockEntityRepository.count).toHaveBeenCalledWith({
         where: {
           accountId: 'acc-1',

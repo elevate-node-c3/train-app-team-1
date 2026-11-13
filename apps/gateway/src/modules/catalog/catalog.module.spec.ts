@@ -23,11 +23,9 @@ function filesUnder(directory: string): string[] {
 describe('the gateway catalog module', () => {
   it('declares the controller and both services', () => {
     const controllers = Reflect.getMetadata('controllers', CatalogModule) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
     const providers = Reflect.getMetadata('providers', CatalogModule) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
 
     expect(controllers).toContain(CatalogController);
     expect(providers).toContain(CatalogService);

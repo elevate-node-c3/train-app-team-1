@@ -4,7 +4,11 @@ import type {
   ProfileOptionsResponseDto,
   ProfileResponseDto,
 } from '@app/contracts';
-import { ACCESS_LEVEL_KEY, RATE_LIMIT_KEY, type RateLimitOptions } from '@app/common';
+import {
+  ACCESS_LEVEL_KEY,
+  RATE_LIMIT_KEY,
+  type RateLimitOptions,
+} from '@app/common';
 import { ProfileController } from './profile.controller.js';
 import type { IdentityService } from '../identity.service.js';
 
@@ -118,10 +122,11 @@ describe('ProfileController', () => {
       expect(
         Reflect.getMetadata(
           RATE_LIMIT_KEY,
-          ProfileController.prototype[route as keyof ProfileController] as Function,
+          ProfileController.prototype[
+            route as keyof ProfileController
+          ] as Function,
         ),
       ).toEqual(options);
     }
   });
 });
-

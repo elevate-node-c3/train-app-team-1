@@ -134,9 +134,7 @@ const FARE_AMOUNTS: Record<string, number> = {
   [`${BENI_SUEF}|${ASYUT}`]: 6000,
 };
 
-function faresFor(
-  stationIds: string[],
-): PublishTimetableRequest['fares'] {
+function faresFor(stationIds: string[]): PublishTimetableRequest['fares'] {
   const fares: PublishTimetableRequest['fares'] = [];
 
   // Include both classes for the two-coach harness; unused fares are ignored.
@@ -321,7 +319,10 @@ export interface PublishHarness {
   tripOn: (serviceDate: string) => Promise<DatedTripEntity>;
   stopStationIdsOn: (serviceDate: string) => Promise<string[]>;
   /** Set inventory's response for one trip. */
-  answerSeatUsage: (tripId: string, usage: Omit<TripSeatUsage, 'tripId'>) => void;
+  answerSeatUsage: (
+    tripId: string,
+    usage: Omit<TripSeatUsage, 'tripId'>,
+  ) => void;
   /** Fail all inventory lookups with the same error. */
   rejectSeatUsage: (error: Error) => void;
   /** Trip ID batches sent to inventory, in call order. */
@@ -437,12 +438,11 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
   };
 
   const versions = {
-    latestVersionNumber: vi.fn(
-      async () =>
-        store.timetables.reduce(
-          (highest, timetable) => Math.max(highest, timetable.version),
-          0,
-        ),
+    latestVersionNumber: vi.fn(async () =>
+      store.timetables.reduce(
+        (highest, timetable) => Math.max(highest, timetable.version),
+        0,
+      ),
     ),
     supersede: vi.fn(
       async (ctx: TransactionContext, _trainId: string, from: string) => {

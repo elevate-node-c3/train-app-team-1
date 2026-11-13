@@ -38,7 +38,10 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
   });
 
   it('invalidates 100 search combinations in O(1) via route version without KEYS', async () => {
-    const v1 = await routeVersion.getRouteVersion(originStationId, destinationStationId);
+    const v1 = await routeVersion.getRouteVersion(
+      originStationId,
+      destinationStationId,
+    );
 
     // Use distinct dates under one route version.
     for (let day = 1; day <= 100; day++) {
@@ -51,7 +54,11 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
         trainNumber: null,
         routeVersion: v1,
       });
-      await cache.set(key, [{ tripId: `trip-${day}`, farePiastres: 10000 }], 300);
+      await cache.set(
+        key,
+        [{ tripId: `trip-${day}`, farePiastres: 10000 }],
+        300,
+      );
     }
 
     const key50v1 = searchCacheKey({
@@ -64,7 +71,10 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
     });
     expect(await cache.get(key50v1)).not.toBeNull();
 
-    const v2 = await routeVersion.incrementRouteVersion(originStationId, destinationStationId);
+    const v2 = await routeVersion.incrementRouteVersion(
+      originStationId,
+      destinationStationId,
+    );
     expect(v2).toBe(v1 + 1);
 
     const key50v2 = searchCacheKey({
@@ -92,11 +102,17 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
 
   it('guarantees slow rebuild interleaving does not poison the new route version', async () => {
     // Model invalidation arriving before a slow rebuild writes.
-    const vStart = await routeVersion.getRouteVersion(originStationId, destinationStationId);
+    const vStart = await routeVersion.getRouteVersion(
+      originStationId,
+      destinationStationId,
+    );
 
     const staleData = [{ tripId: 'trip-slow', farePiastres: 10000 }];
 
-    const vNew = await routeVersion.incrementRouteVersion(originStationId, destinationStationId);
+    const vNew = await routeVersion.incrementRouteVersion(
+      originStationId,
+      destinationStationId,
+    );
     expect(vNew).toBeGreaterThan(vStart);
 
     // A late rebuild must write under its captured version, not the current one.
@@ -123,4 +139,3 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
     expect(result).toBeNull();
   });
 });
-

@@ -6,4 +6,3 @@ import { RouteVersionService } from './route-version.service.js';
   exports: [RouteVersionService],
 })
 export class CatalogCacheModule {}
-

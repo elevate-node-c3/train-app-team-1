@@ -15,11 +15,21 @@ import { OperationsRequestEntity } from '../operations/entities/operations-reque
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([GovernorateEntity, CityEntity, StationEntity, OperationsRequestEntity]),
+    TypeOrmModule.forFeature([
+      GovernorateEntity,
+      CityEntity,
+      StationEntity,
+      OperationsRequestEntity,
+    ]),
     OutboxModule,
   ],
   controllers: [StationsGrpcController, StationsManagementGrpcController],
-  providers: [StationsRepository, StationsService, StationsManagementService, OperationsRequestRepository],
+  providers: [
+    StationsRepository,
+    StationsService,
+    StationsManagementService,
+    OperationsRequestRepository,
+  ],
   exports: [StationsRepository, StationsService, StationsManagementService],
 })
 export class StationsModule {}

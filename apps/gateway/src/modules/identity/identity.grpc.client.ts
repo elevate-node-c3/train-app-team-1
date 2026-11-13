@@ -280,9 +280,7 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
     return grpcStatusException(error.code);
   }
 
-  private parseBusinessError(
-    details: unknown,
-  ): {
+  private parseBusinessError(details: unknown): {
     code: ErrorCode;
     retryAfterSeconds?: number;
     details?: ValidationIssueRef[];

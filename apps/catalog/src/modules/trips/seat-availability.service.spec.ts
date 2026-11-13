@@ -68,9 +68,7 @@ describe('seat availability', () => {
 
   it('can report zero, which the caller must surface as sold out', async () => {
     const soldOut = new SeatAvailabilityService();
-    vi.spyOn(soldOut, 'availabilityFor').mockResolvedValue(
-      new Map([['a', 0]]),
-    );
+    vi.spyOn(soldOut, 'availabilityFor').mockResolvedValue(new Map([['a', 0]]));
 
     const result = await soldOut.availabilityFor([segment('a', 40)]);
 

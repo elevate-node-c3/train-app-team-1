@@ -6,7 +6,11 @@ import { TravellerProfileEntity } from './entities/traveller-profile.entity.js';
 export class TravellerProfileRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  async upsert(accountId: string, fullName: string, now: Date = new Date()): Promise<void> {
+  async upsert(
+    accountId: string,
+    fullName: string,
+    now: Date = new Date(),
+  ): Promise<void> {
     await this.dataSource
       .getRepository(TravellerProfileEntity)
       .createQueryBuilder()
@@ -22,10 +26,11 @@ export class TravellerProfileRepository {
       .execute();
   }
 
-  async findByAccountId(accountId: string): Promise<TravellerProfileEntity | null> {
+  async findByAccountId(
+    accountId: string,
+  ): Promise<TravellerProfileEntity | null> {
     return this.dataSource
       .getRepository(TravellerProfileEntity)
       .findOne({ where: { accountId } });
   }
 }
-

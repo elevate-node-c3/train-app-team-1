@@ -108,4 +108,3 @@ export class CreateProfilePassengers1761314700000 implements MigrationInterface 
     `);
   }
 }
-

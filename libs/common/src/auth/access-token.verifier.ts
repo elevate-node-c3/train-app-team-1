@@ -55,10 +55,7 @@ export class JwtAccessTokenVerifier {
     const keys = new Map<string, PublicKey>();
     for (const entry of [config.active, config.previous]) {
       if (!entry) continue;
-      keys.set(
-        entry.kid,
-        await importSPKI(entry.publicKeyPem, JWT_ALGORITHM),
-      );
+      keys.set(entry.kid, await importSPKI(entry.publicKeyPem, JWT_ALGORITHM));
     }
 
     return new JwtAccessTokenVerifier(

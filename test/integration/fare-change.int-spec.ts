@@ -109,7 +109,9 @@ describe('changing a fare', () => {
     await closeCatalogDataSource();
   });
 
-  function request(overrides: Partial<ChangeFareRequest> = {}): ChangeFareRequest {
+  function request(
+    overrides: Partial<ChangeFareRequest> = {},
+  ): ChangeFareRequest {
     return {
       trainNumber: TRAIN_NUMBER,
       travelClassId: IDS.travelClass,
@@ -137,7 +139,11 @@ describe('changing a fare', () => {
 
   describe('a fare change that commits', () => {
     it('writes the fare, its audit entry, its event and its key', async () => {
-      const result = await service.changeFare(request(), 'commit-key', OPERATOR);
+      const result = await service.changeFare(
+        request(),
+        'commit-key',
+        OPERATOR,
+      );
 
       expect(result).toMatchObject({
         previousAmountPiastres: null,
@@ -162,7 +168,11 @@ describe('changing a fare', () => {
     });
 
     it('keeps the previous fare row in the history (CAT-2, BR-30)', async () => {
-      await service.changeFare(request({ amountPiastres: 15_000 }), 'first', OPERATOR);
+      await service.changeFare(
+        request({ amountPiastres: 15_000 }),
+        'first',
+        OPERATOR,
+      );
       await service.changeFare(
         request({
           amountPiastres: 20_000,
@@ -239,7 +249,10 @@ describe('changing a fare', () => {
     it('refuses a pair the train does not run in order', async () => {
       const rejection = await service
         .changeFare(
-          request({ originStationId: IDS.alexandria, destinationStationId: IDS.cairo }),
+          request({
+            originStationId: IDS.alexandria,
+            destinationStationId: IDS.cairo,
+          }),
           'order-key',
           OPERATOR,
         )
@@ -255,14 +268,22 @@ describe('changing a fare', () => {
     it('refuses an amount that would price a segment below one it contains (CAT-2)', async () => {
       // Cairo -> Alexandria must not undercut Cairo -> Giza's 12,000 fare.
       await service.changeFare(
-        request({ originStationId: IDS.cairo, destinationStationId: IDS.giza, amountPiastres: 12_000 }),
+        request({
+          originStationId: IDS.cairo,
+          destinationStationId: IDS.giza,
+          amountPiastres: 12_000,
+        }),
         'inner-key',
         OPERATOR,
       );
 
       const rejection = await service
         .changeFare(
-          request({ originStationId: IDS.cairo, destinationStationId: IDS.alexandria, amountPiastres: 10_000 }),
+          request({
+            originStationId: IDS.cairo,
+            destinationStationId: IDS.alexandria,
+            amountPiastres: 10_000,
+          }),
           'outer-key',
           OPERATOR,
         )
@@ -284,7 +305,9 @@ describe('changing a fare', () => {
       const result = await service.changeFare(
         request({
           trainNumber: FUTURE_TRAIN_NUMBER,
-          effectiveFrom: new Date(`${FUTURE_ROUTE_EFFECTIVE_FROM}T00:00:00.000Z`).toISOString(),
+          effectiveFrom: new Date(
+            `${FUTURE_ROUTE_EFFECTIVE_FROM}T00:00:00.000Z`,
+          ).toISOString(),
         }),
         'future-route-key',
         OPERATOR,
@@ -300,19 +323,28 @@ describe('changing a fare', () => {
   describe('the lock two concurrent changes take', () => {
     it('serialises two changes to the same class and pair', async () => {
       await service.changeFare(
-        request({ amountPiastres: 15_000, effectiveFrom: new Date(Date.now() + 10_000).toISOString() }),
+        request({
+          amountPiastres: 15_000,
+          effectiveFrom: new Date(Date.now() + 10_000).toISOString(),
+        }),
         'seed-key',
         OPERATOR,
       );
 
       const [resultA, resultB] = await Promise.all([
         service.changeFare(
-          request({ amountPiastres: 20_000, effectiveFrom: new Date(Date.now() + 20_000).toISOString() }),
+          request({
+            amountPiastres: 20_000,
+            effectiveFrom: new Date(Date.now() + 20_000).toISOString(),
+          }),
           'concurrent-a',
           OPERATOR,
         ),
         service.changeFare(
-          request({ amountPiastres: 30_000, effectiveFrom: new Date(Date.now() + 30_000).toISOString() }),
+          request({
+            amountPiastres: 30_000,
+            effectiveFrom: new Date(Date.now() + 30_000).toISOString(),
+          }),
           'concurrent-b',
           OPERATOR,
         ),
@@ -323,7 +355,8 @@ describe('changing a fare', () => {
 
       // The first lock holder sees the seed fare; the second must see the first
       // change's committed amount as its previous fare.
-      const winner = resultA.previousAmountPiastres === 15_000 ? resultA : resultB;
+      const winner =
+        resultA.previousAmountPiastres === 15_000 ? resultA : resultB;
       const loser = winner === resultA ? resultB : resultA;
 
       expect(winner.previousAmountPiastres).toBe(15_000);
@@ -333,12 +366,20 @@ describe('changing a fare', () => {
     it('lets two changes on different pairs of the same train proceed without blocking', async () => {
       const [resultA, resultB] = await Promise.all([
         service.changeFare(
-          request({ originStationId: IDS.cairo, destinationStationId: IDS.giza, amountPiastres: 12_000 }),
+          request({
+            originStationId: IDS.cairo,
+            destinationStationId: IDS.giza,
+            amountPiastres: 12_000,
+          }),
           'pair-a',
           OPERATOR,
         ),
         service.changeFare(
-          request({ originStationId: IDS.giza, destinationStationId: IDS.alexandria, amountPiastres: 7_000 }),
+          request({
+            originStationId: IDS.giza,
+            destinationStationId: IDS.alexandria,
+            amountPiastres: 7_000,
+          }),
           'pair-b',
           OPERATOR,
         ),
@@ -355,10 +396,18 @@ describe('changing a fare', () => {
     it('refuses a same-instant resubmission under a new key as a conflict, not a 500', async () => {
       const effectiveFrom = new Date(Date.now() + 60_000).toISOString();
 
-      await service.changeFare(request({ amountPiastres: 20_000, effectiveFrom }), 'first-key', OPERATOR);
+      await service.changeFare(
+        request({ amountPiastres: 20_000, effectiveFrom }),
+        'first-key',
+        OPERATOR,
+      );
 
       const rejection = await service
-        .changeFare(request({ amountPiastres: 21_000, effectiveFrom }), 'second-key', OPERATOR)
+        .changeFare(
+          request({ amountPiastres: 21_000, effectiveFrom }),
+          'second-key',
+          OPERATOR,
+        )
         .then(
           () => null,
           (error: unknown) => error,
@@ -444,7 +493,14 @@ async function seedCatalogue(source: DataSource): Promise<void> {
     await source.query(
       `INSERT INTO timetable_stop (id, timetable_id, station_id, position, day_offset, arrival_time, departure_time)
          VALUES ($1, $2, $3, $4, 0, $5, $6)`,
-      [randomUUID(), IDS.futureTimetable, stationId, position, arrival, departure],
+      [
+        randomUUID(),
+        IDS.futureTimetable,
+        stationId,
+        position,
+        arrival,
+        departure,
+      ],
     );
   }
 }

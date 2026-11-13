@@ -43,7 +43,10 @@ describe('ProfileCompletedConsumer and Parser', () => {
       expect(() =>
         parseProfileCompletedPayload({
           ...validEnvelope,
-          payload: { fullName: 'Ahmed', completedAt: '2026-10-28T12:00:00.000Z' },
+          payload: {
+            fullName: 'Ahmed',
+            completedAt: '2026-10-28T12:00:00.000Z',
+          },
         }),
       ).toThrow(InvalidEventPayloadError);
     });
@@ -52,7 +55,10 @@ describe('ProfileCompletedConsumer and Parser', () => {
       expect(() =>
         parseProfileCompletedPayload({
           ...validEnvelope,
-          payload: { accountId: 'acc-1', completedAt: '2026-10-28T12:00:00.000Z' },
+          payload: {
+            accountId: 'acc-1',
+            completedAt: '2026-10-28T12:00:00.000Z',
+          },
         }),
       ).toThrow(InvalidEventPayloadError);
     });
@@ -61,7 +67,11 @@ describe('ProfileCompletedConsumer and Parser', () => {
       expect(() =>
         parseProfileCompletedPayload({
           ...validEnvelope,
-          payload: { accountId: 'acc-1', fullName: 'Ahmed', completedAt: 'invalid-date' },
+          payload: {
+            accountId: 'acc-1',
+            fullName: 'Ahmed',
+            completedAt: 'invalid-date',
+          },
         }),
       ).toThrow(InvalidEventPayloadError);
     });
@@ -84,4 +94,3 @@ describe('ProfileCompletedConsumer and Parser', () => {
     });
   });
 });
-

@@ -118,10 +118,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
       }),
       prefetch: vi.fn(async () => {}),
       consume: vi.fn(
-        async (
-          _queue: string,
-          callback: (message: ConsumeMessage) => void,
-        ) => {
+        async (_queue: string, callback: (message: ConsumeMessage) => void) => {
           consumeCallback = callback;
           return { consumerTag: 'tag-1' };
         },
@@ -132,7 +129,13 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
     };
     const confirmChannel = {
       publish: vi.fn(
-        (_exchange: string, _routingKey: string, _body: Buffer, _opts: unknown, cb: any) => {
+        (
+          _exchange: string,
+          _routingKey: string,
+          _body: Buffer,
+          _opts: unknown,
+          cb: any,
+        ) => {
           cb(null);
           return true;
         },
@@ -198,9 +201,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
     await amqp.onApplicationShutdown(); // step 4
 
     expect(events).toEqual(['cancel', 'ack', 'dispose', 'channel-close']);
-    expect(events.indexOf('ack')).toBeLessThan(
-      events.indexOf('channel-close'),
-    );
+    expect(events.indexOf('ack')).toBeLessThan(events.indexOf('channel-close'));
   });
 });
 

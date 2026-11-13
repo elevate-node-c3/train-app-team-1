@@ -11,4 +11,3 @@ export class ProfileTypeEntity {
   @Column({ name: 'name_en', type: 'text' })
   nameEn!: string;
 }
-

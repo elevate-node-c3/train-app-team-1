@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { CacheMetrics } from '../../libs/common/src/cache/cache-metrics.js';
 import { RedisClientService } from '../../libs/common/src/cache/redis-client.service.js';
@@ -77,17 +85,27 @@ describe('Cache resilience and metrics (§2.3 rule 7 & rule 8)', () => {
       });
 
       expect(typeof unsubscribe).toBe('function');
-      const warnSpy = vi.spyOn((redis as unknown as { logger: { warn: (msg: string) => void } }).logger, 'warn');
+      const warnSpy = vi.spyOn(
+        (redis as unknown as { logger: { warn: (msg: string) => void } })
+          .logger,
+        'warn',
+      );
 
-      (redis as unknown as { handleConnectionError: (err: Error) => void }).handleConnectionError(new Error('ECONNREFUSED'));
-      (redis as unknown as { handleConnectionError: (err: Error) => void }).handleConnectionError(new Error('ECONNREFUSED'));
+      (
+        redis as unknown as { handleConnectionError: (err: Error) => void }
+      ).handleConnectionError(new Error('ECONNREFUSED'));
+      (
+        redis as unknown as { handleConnectionError: (err: Error) => void }
+      ).handleConnectionError(new Error('ECONNREFUSED'));
 
       const outageLogs = warnSpy.mock.calls.filter((call) =>
         call[0].includes('Operating in degraded cache mode'),
       );
       expect(outageLogs.length).toBe(1);
 
-      (redis as unknown as { handleConnectionReady: () => void }).handleConnectionReady();
+      (
+        redis as unknown as { handleConnectionReady: () => void }
+      ).handleConnectionReady();
       expect(redis.isAvailable()).toBe(true);
 
       unsubscribe();

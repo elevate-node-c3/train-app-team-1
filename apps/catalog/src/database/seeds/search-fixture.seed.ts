@@ -47,7 +47,10 @@ async function insertAll(
     .map(
       (_, rowIndex) =>
         `(${columns
-          .map((_column, columnIndex) => `$${rowIndex * columns.length + columnIndex + 1}`)
+          .map(
+            (_column, columnIndex) =>
+              `$${rowIndex * columns.length + columnIndex + 1}`,
+          )
           .join(', ')})`,
     )
     .join(', ');
@@ -134,7 +137,11 @@ async function seed(source?: DataSource): Promise<void> {
         target,
         'train_type',
         ['id', 'name_ar', 'name_en'],
-        SEARCH_FIXTURE.trainTypes.map((row) => [row.id, row.nameAr, row.nameEn]),
+        SEARCH_FIXTURE.trainTypes.map((row) => [
+          row.id,
+          row.nameAr,
+          row.nameEn,
+        ]),
       ),
     ]);
 
@@ -315,7 +322,14 @@ async function seed(source?: DataSource): Promise<void> {
       await insertAll(
         target,
         'trip_stop',
-        ['id', 'trip_id', 'station_id', 'position', 'arrival_at', 'departure_at'],
+        [
+          'id',
+          'trip_id',
+          'station_id',
+          'position',
+          'arrival_at',
+          'departure_at',
+        ],
         SEARCH_FIXTURE.tripStops.map((row) => [
           row.id,
           row.tripId,

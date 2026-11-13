@@ -10,15 +10,7 @@ import { HealthRegistryModule } from './health-registry.module.js';
 @Module({
   imports: [HealthRegistryModule, RedisModule],
   controllers: [HealthController, HealthGrpcController],
-  providers: [
-    GracefulShutdownService,
-    RedisHealthService,
-    HealthService,
-  ],
-  exports: [
-    GracefulShutdownService,
-    RedisHealthService,
-    HealthService,
-  ],
+  providers: [GracefulShutdownService, RedisHealthService, HealthService],
+  exports: [GracefulShutdownService, RedisHealthService, HealthService],
 })
 export class HealthModule {}

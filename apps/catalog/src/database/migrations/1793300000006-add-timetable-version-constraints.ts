@@ -6,9 +6,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * published rows are constrained; withdrawn history may overlap.
  * `EXCLUDE` needs `btree_gist` for uuid equality.
  */
-export class AddTimetableVersionConstraints1793300000006
-  implements MigrationInterface
-{
+export class AddTimetableVersionConstraints1793300000006 implements MigrationInterface {
   name = 'AddTimetableVersionConstraints1793300000006';
 
   async up(queryRunner: QueryRunner): Promise<void> {

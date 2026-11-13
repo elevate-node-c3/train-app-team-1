@@ -10,11 +10,14 @@ describe('resolveStopTimes', () => {
 
     // Departs 23:00 on 23 April (+02:00), arrives 04:10 on the 24th, after
     // the clocks jumped forward (+03:00).
-    expect(departure.departureAt?.toISOString()).toBe('2026-04-23T21:00:00.000Z');
+    expect(departure.departureAt?.toISOString()).toBe(
+      '2026-04-23T21:00:00.000Z',
+    );
     expect(arrival.arrivalAt?.toISOString()).toBe('2026-04-24T01:10:00.000Z');
 
     const minutes =
-      (arrival.arrivalAt!.getTime() - departure.departureAt!.getTime()) / 60_000;
+      (arrival.arrivalAt!.getTime() - departure.departureAt!.getTime()) /
+      60_000;
     expect(minutes).toBe(250);
   });
 

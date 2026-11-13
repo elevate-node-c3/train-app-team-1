@@ -6,7 +6,10 @@ import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-uni
 
 import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/operations-request.repository.js';
 
-import { catalogDataSource, closeCatalogDataSource } from './support/catalog-database.js';
+import {
+  catalogDataSource,
+  closeCatalogDataSource,
+} from './support/catalog-database.js';
 
 /**
  * Use real TypeOrmUnitOfWork transactions and Postgres primary-key enforcement;

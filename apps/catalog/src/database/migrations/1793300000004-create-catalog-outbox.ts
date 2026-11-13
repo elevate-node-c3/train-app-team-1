@@ -1,8 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateCatalogOutbox1793300000004
-  implements MigrationInterface
-{
+export class CreateCatalogOutbox1793300000004 implements MigrationInterface {
   name = 'CreateCatalogOutbox1793300000004';
 
   async up(queryRunner: QueryRunner): Promise<void> {

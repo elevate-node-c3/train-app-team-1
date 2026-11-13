@@ -82,10 +82,7 @@ export class GrpcCorrelationInterceptor implements NestInterceptor {
     if (sessionId) this.cls.set(CALLER_SESSION_ID_KEY, sessionId);
     if (jti) this.cls.set(CALLER_JTI_KEY, jti);
     if (roles !== undefined) {
-      this.cls.set(
-        CALLER_ROLES_KEY,
-        roles.length > 0 ? roles.split(',') : [],
-      );
+      this.cls.set(CALLER_ROLES_KEY, roles.length > 0 ? roles.split(',') : []);
     }
     if (bookable === 'true' || bookable === 'false') {
       this.cls.set(CALLER_BOOKABLE_KEY, bookable === 'true');

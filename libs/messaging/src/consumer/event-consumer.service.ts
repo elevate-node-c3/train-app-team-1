@@ -9,7 +9,10 @@ import { ClsService } from 'nestjs-cls';
 import type { Channel, ConsumeMessage } from 'amqplib';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import type { EventEnvelope } from '@app/contracts';
-import { AmqpClientService, type AmqpLiveness } from '../amqp-client.service.js';
+import {
+  AmqpClientService,
+  type AmqpLiveness,
+} from '../amqp-client.service.js';
 import { consumerTopology, declareTopology } from '../amqp-topology.js';
 import { messageOf } from '../error-message.js';
 import { withTimeout } from '../with-timeout.js';

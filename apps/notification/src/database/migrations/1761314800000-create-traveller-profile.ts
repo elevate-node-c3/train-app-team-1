@@ -18,4 +18,3 @@ export class CreateTravellerProfile1761314800000 implements MigrationInterface {
     await queryRunner.query('DROP TABLE traveller_profile');
   }
 }
-

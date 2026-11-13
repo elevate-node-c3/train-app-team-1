@@ -46,8 +46,7 @@ export interface TripPublishedPayloadV1 {
   coaches: TripPublishedCoachV1[];
 }
 
-export const TRIP_PUBLISHED_EVENT_TYPE =
-  EVENT_TYPES.tripPublished;
+export const TRIP_PUBLISHED_EVENT_TYPE = EVENT_TYPES.tripPublished;
 
 export const TRIP_PUBLISHED_VERSION = 1;
 
@@ -68,13 +67,11 @@ export type TripPublishedEvent = EventEnvelope<
   TripPublishedPayloadV1
 >;
 
-
 export interface TripWithdrawnPayloadV1 {
   tripId: string;
 }
 
-export const TRIP_WITHDRAWN_EVENT_TYPE =
-  EVENT_TYPES.tripWithdrawn;
+export const TRIP_WITHDRAWN_EVENT_TYPE = EVENT_TYPES.tripWithdrawn;
 
 export const TRIP_WITHDRAWN_VERSION = 1;
 

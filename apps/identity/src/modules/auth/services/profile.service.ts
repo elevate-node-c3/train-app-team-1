@@ -7,7 +7,6 @@ import {
   type ProfileOptionsResponseDto,
   type ProfileResponseDto,
 } from '@app/contracts';
-import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 import {
   UNIT_OF_WORK,
   type UnitOfWorkPort,
@@ -245,4 +244,3 @@ export class ProfileService {
     };
   }
 }
-

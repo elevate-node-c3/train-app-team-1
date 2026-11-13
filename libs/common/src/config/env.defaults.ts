@@ -21,4 +21,6 @@ export const NOTIFICATION_DEFAULTS = {
 } as const;
 
 /** Parsed form of the default `EVENT_RETRY_DELAYS_MS`. */
-export const DEFAULT_EVENT_RETRY_DELAYS_MS: readonly number[] = [1000, 3000, 9000];
+export const DEFAULT_EVENT_RETRY_DELAYS_MS: readonly number[] = [
+  1000, 3000, 9000,
+];

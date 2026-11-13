@@ -109,7 +109,10 @@ describe('Health, Readiness & Degraded Operation (§2.3 rule 7, AUTH-1)', () => 
         healthService.checkReadiness('notification'),
       ).rejects.toThrowError(ServiceUnavailableException);
 
-      registry.register({ name: 'broker', check: async () => ({ ready: true }) });
+      registry.register({
+        name: 'broker',
+        check: async () => ({ ready: true }),
+      });
       const report = await healthService.checkReadiness('notification');
       expect(report.dependencies.broker.status).toBe('ready');
     });

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ErrorCode } from '@app/contracts';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
-import { AuthError } from '../auth-error.js';
 import { AccountEntity } from '../entities/account.entity.js';
 import { PassengerEntity } from '../entities/passenger.entity.js';
 import { ProfileTypeEntity } from '../entities/profile-type.entity.js';
@@ -39,7 +38,9 @@ describe('PassengersService', () => {
     return acc;
   };
 
-  const createPassengerEntity = (overrides: Partial<PassengerEntity> = {}): PassengerEntity => {
+  const createPassengerEntity = (
+    overrides: Partial<PassengerEntity> = {},
+  ): PassengerEntity => {
     const p = new PassengerEntity();
     p.id = overrides.id ?? 'pass-1';
     p.accountId = overrides.accountId ?? 'acc-123';
@@ -55,8 +56,9 @@ describe('PassengersService', () => {
 
   beforeEach(() => {
     mockUnitOfWork = {
-      withTransaction: vi.fn(async (work: (ctx: TransactionContext) => Promise<any>) =>
-        work({ driver: 'mock' } as TransactionContext),
+      withTransaction: vi.fn(
+        async (work: (ctx: TransactionContext) => Promise<any>) =>
+          work({ driver: 'mock' } as TransactionContext),
       ),
     };
 
@@ -91,9 +93,11 @@ describe('PassengersService', () => {
         }
         return null;
       }),
-      findAll: vi.fn().mockResolvedValue([
-        { code: 'Regular', nameAr: 'كوامل', nameEn: 'Regular' },
-      ]),
+      findAll: vi
+        .fn()
+        .mockResolvedValue([
+          { code: 'Regular', nameAr: 'كوامل', nameEn: 'Regular' },
+        ]),
     };
 
     service = new PassengersService(
@@ -138,7 +142,10 @@ describe('PassengersService', () => {
 
       const result = await service.listPassengers('acc-123', 'ar');
 
-      expect(mockPassengers.findAllByAccountId).toHaveBeenCalledWith(null, 'acc-123');
+      expect(mockPassengers.findAllByAccountId).toHaveBeenCalledWith(
+        null,
+        'acc-123',
+      );
       expect(result).toHaveLength(3);
       expect(result[0].id).toBe('pass-self');
       expect(result[0].isSelf).toBe(true);
@@ -316,9 +323,11 @@ describe('PassengersService', () => {
     it('rejects with UNAUTHORIZED if account is not found', async () => {
       mockAccounts.findByIdForUpdate.mockResolvedValue(null);
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.UNAUTHORIZED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.UNAUTHORIZED,
+        },
+      );
     });
 
     it('rejects with ACCOUNT_DISABLED if account is disabled', async () => {
@@ -326,9 +335,11 @@ describe('PassengersService', () => {
       disabledAccount.status = 'disabled';
       mockAccounts.findByIdForUpdate.mockResolvedValue(disabledAccount);
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.ACCOUNT_DISABLED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.ACCOUNT_DISABLED,
+        },
+      );
     });
 
     it('rejects invalid full name with INVALID_FULL_NAME (single word)', async () => {
@@ -367,7 +378,10 @@ describe('PassengersService', () => {
     it('rejects invalid National ID century with INVALID_NATIONAL_ID_CENTURY', async () => {
       // Starts with 4
       await expect(
-        service.addPassenger({ ...validAddCommand, nationalId: '48505150101235' }),
+        service.addPassenger({
+          ...validAddCommand,
+          nationalId: '48505150101235',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_NATIONAL_ID_CENTURY,
       });
@@ -376,7 +390,10 @@ describe('PassengersService', () => {
     it('rejects invalid National ID birth date with INVALID_NATIONAL_ID_BIRTH_DATE', async () => {
       // Month 13
       await expect(
-        service.addPassenger({ ...validAddCommand, nationalId: '28513150101235' }),
+        service.addPassenger({
+          ...validAddCommand,
+          nationalId: '28513150101235',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE,
       });
@@ -385,7 +402,10 @@ describe('PassengersService', () => {
     it('rejects invalid National ID governorate with INVALID_NATIONAL_ID_GOVERNORATE', async () => {
       // Gov 99 does not exist
       await expect(
-        service.addPassenger({ ...validAddCommand, nationalId: '28505159901235' }),
+        service.addPassenger({
+          ...validAddCommand,
+          nationalId: '28505159901235',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE,
       });
@@ -393,7 +413,10 @@ describe('PassengersService', () => {
 
     it('rejects invalid profile type with INVALID_PROFILE_TYPE', async () => {
       await expect(
-        service.addPassenger({ ...validAddCommand, profileType: 'NonExistent' }),
+        service.addPassenger({
+          ...validAddCommand,
+          profileType: 'NonExistent',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_PROFILE_TYPE,
       });
@@ -403,31 +426,41 @@ describe('PassengersService', () => {
       const existingPassenger = createPassengerEntity({
         nationalId: validCompanionNid1,
       });
-      mockPassengers.findByAccountAndNationalId.mockResolvedValue(existingPassenger);
+      mockPassengers.findByAccountAndNationalId.mockResolvedValue(
+        existingPassenger,
+      );
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+        },
+      );
     });
 
     it('rejects 11th companion with PASSENGER_LIMIT_REACHED (preemptive check)', async () => {
       mockPassengers.countCompanionsByAccountId.mockResolvedValue(10);
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.PASSENGER_LIMIT_REACHED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.PASSENGER_LIMIT_REACHED,
+        },
+      );
       expect(mockPassengers.save).not.toHaveBeenCalled();
     });
 
     it('catches DB trigger exception and maps to PASSENGER_LIMIT_REACHED', async () => {
       mockPassengers.countCompanionsByAccountId.mockResolvedValue(9);
       mockPassengers.save.mockRejectedValue(
-        new Error('Account companion passenger limit of 10 reached: PASSENGER_LIMIT_REACHED'),
+        new Error(
+          'Account companion passenger limit of 10 reached: PASSENGER_LIMIT_REACHED',
+        ),
       );
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.PASSENGER_LIMIT_REACHED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.PASSENGER_LIMIT_REACHED,
+        },
+      );
     });
 
     it('catches DB unique violation on national_id and maps to NATIONAL_ID_ALREADY_REGISTERED', async () => {
@@ -436,9 +469,11 @@ describe('PassengersService', () => {
         constraint: 'uq_passenger_nid_account',
       });
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+        },
+      );
     });
 
     it('catches DB unique violation wrapped in driverError and maps to NATIONAL_ID_ALREADY_REGISTERED', async () => {
@@ -449,9 +484,11 @@ describe('PassengersService', () => {
         },
       });
 
-      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject({
-        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
-      });
+      await expect(service.addPassenger(validAddCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+        },
+      );
     });
   });
 
@@ -499,7 +536,9 @@ describe('PassengersService', () => {
     it('rejects with PASSENGER_NOT_FOUND (404) if passenger ID does not exist', async () => {
       mockPassengers.findByIdAndAccountId.mockResolvedValue(null);
 
-      await expect(service.updatePassenger(validUpdateCommand)).rejects.toMatchObject({
+      await expect(
+        service.updatePassenger(validUpdateCommand),
+      ).rejects.toMatchObject({
         code: ErrorCode.PASSENGER_NOT_FOUND,
       });
     });
@@ -508,7 +547,10 @@ describe('PassengersService', () => {
       mockPassengers.findByIdAndAccountId.mockResolvedValue(null);
 
       await expect(
-        service.updatePassenger({ ...validUpdateCommand, accountId: 'other-acc' }),
+        service.updatePassenger({
+          ...validUpdateCommand,
+          accountId: 'other-acc',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.PASSENGER_NOT_FOUND,
       });
@@ -529,9 +571,13 @@ describe('PassengersService', () => {
         accountId: 'acc-123',
         nationalId: validCompanionNid2,
       });
-      mockPassengers.findByAccountAndNationalId.mockResolvedValue(existingPassenger);
+      mockPassengers.findByAccountAndNationalId.mockResolvedValue(
+        existingPassenger,
+      );
 
-      await expect(service.updatePassenger(validUpdateCommand)).rejects.toMatchObject({
+      await expect(
+        service.updatePassenger(validUpdateCommand),
+      ).rejects.toMatchObject({
         code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
       });
     });
@@ -603,7 +649,9 @@ describe('PassengersService', () => {
         code: ErrorCode.NATIONAL_ID_LOCKED,
       });
 
-      expect(mockBookingTicketCheck.hasIssuedTickets).toHaveBeenCalledWith(validSelfNid);
+      expect(mockBookingTicketCheck.hasIssuedTickets).toHaveBeenCalledWith(
+        validSelfNid,
+      );
       expect(mockAccounts.update).not.toHaveBeenCalled();
       expect(mockPassengers.update).not.toHaveBeenCalled();
     });
@@ -630,7 +678,9 @@ describe('PassengersService', () => {
 
       const result = await service.updatePassenger(command);
 
-      expect(mockBookingTicketCheck.hasIssuedTickets).toHaveBeenCalledWith(validSelfNid);
+      expect(mockBookingTicketCheck.hasIssuedTickets).toHaveBeenCalledWith(
+        validSelfNid,
+      );
       expect(mockAccounts.update).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -731,7 +781,10 @@ describe('PassengersService', () => {
 
     it('rejects invalid full name on update with INVALID_FULL_NAME', async () => {
       await expect(
-        service.updatePassenger({ ...validUpdateCommand, fullName: 'SingleWord' }),
+        service.updatePassenger({
+          ...validUpdateCommand,
+          fullName: 'SingleWord',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_FULL_NAME,
       });
@@ -747,7 +800,10 @@ describe('PassengersService', () => {
 
     it('rejects invalid profile type on update with INVALID_PROFILE_TYPE', async () => {
       await expect(
-        service.updatePassenger({ ...validUpdateCommand, profileType: 'InvalidType' }),
+        service.updatePassenger({
+          ...validUpdateCommand,
+          profileType: 'InvalidType',
+        }),
       ).rejects.toMatchObject({
         code: ErrorCode.INVALID_PROFILE_TYPE,
       });
@@ -805,7 +861,9 @@ describe('PassengersService', () => {
     it('rejects with PASSENGER_NOT_FOUND (404) if passenger does not exist', async () => {
       mockPassengers.findByIdAndAccountId.mockResolvedValue(null);
 
-      await expect(service.deletePassenger(validDeleteCommand)).rejects.toMatchObject({
+      await expect(
+        service.deletePassenger(validDeleteCommand),
+      ).rejects.toMatchObject({
         code: ErrorCode.PASSENGER_NOT_FOUND,
       });
 

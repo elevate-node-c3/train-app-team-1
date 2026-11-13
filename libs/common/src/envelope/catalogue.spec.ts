@@ -92,11 +92,9 @@ describe('the search message catalogue', () => {
 
     it('leaves a message with no placeholders untouched', () => {
       expect(
-        resolveMessageWithParams(
-          'SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED',
-          'en',
-          { lastBookableDate: '2026-07-14' },
-        ),
+        resolveMessageWithParams('SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED', 'en', {
+          lastBookableDate: '2026-07-14',
+        }),
       ).toBe(resolveMessage('SEARCH_EMPTY_REASON_ROUTE_NOT_SERVED', 'en'));
     });
 

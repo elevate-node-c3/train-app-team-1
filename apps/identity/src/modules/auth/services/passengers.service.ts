@@ -1,9 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import {
-  ErrorCode,
-  type PassengerDto,
-} from '@app/contracts';
+import { ErrorCode, type PassengerDto } from '@app/contracts';
 import {
   UNIT_OF_WORK,
   type UnitOfWorkPort,
@@ -52,8 +49,12 @@ function isUniqueViolation(error: unknown): boolean {
 
 function constraintOf(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
-    const err = error as { constraint?: unknown; driverError?: { constraint?: unknown } };
-    return String(err.constraint || err.driverError?.constraint || '');
+    const err = error as {
+      constraint?: unknown;
+      driverError?: { constraint?: unknown };
+    };
+    const constraint = err.constraint ?? err.driverError?.constraint;
+    return typeof constraint === 'string' ? constraint : '';
   }
   return '';
 }
@@ -104,7 +105,9 @@ export class PassengersService {
     return passengers.map((p) => {
       const typeRecord = typeMap.get(p.profileType);
       const typeName = typeRecord
-        ? (lang === 'en' ? typeRecord.nameEn : typeRecord.nameAr)
+        ? lang === 'en'
+          ? typeRecord.nameEn
+          : typeRecord.nameAr
         : p.profileType;
 
       return {
@@ -166,8 +169,10 @@ export class PassengersService {
           throw new AuthError(ErrorCode.NATIONAL_ID_ALREADY_REGISTERED);
         }
 
-        const companionCount =
-          await this.passengers.countCompanionsByAccountId(ctx, account.id);
+        const companionCount = await this.passengers.countCompanionsByAccountId(
+          ctx,
+          account.id,
+        );
         if (companionCount >= 10) {
           throw new AuthError(ErrorCode.PASSENGER_LIMIT_REACHED);
         }
@@ -218,7 +223,9 @@ export class PassengersService {
     }
   }
 
-  async updatePassenger(command: UpdatePassengerCommand): Promise<PassengerDto> {
+  async updatePassenger(
+    command: UpdatePassengerCommand,
+  ): Promise<PassengerDto> {
     if (!command.accountId) {
       throw new AuthError(ErrorCode.UNAUTHORIZED);
     }

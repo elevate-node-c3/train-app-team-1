@@ -3,10 +3,7 @@
  * The fixed June fixture requires a frozen clock; this seed uses relative dates.
  * Fixed IDs and ignored conflicts make reruns safe.
  */
-import {
-  clearRecentSearches,
-  seedSearchE2e,
-} from './today-trips.js';
+import { clearRecentSearches, seedSearchE2e } from './today-trips.js';
 
 async function main(): Promise<void> {
   const fixture = await seedSearchE2e();

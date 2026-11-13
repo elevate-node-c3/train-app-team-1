@@ -45,7 +45,9 @@ async function addManyTrips(source: DataSource, count: number): Promise<void> {
       coachLayout: {
         id: IDS.coachLayouts.first,
         layoutName: 'load-2-2-1',
-        rows: [{ rowNumber: 1, leftSeats: ['L1', 'L2'], rightSeats: ['R1', 'R2'] }],
+        rows: [
+          { rowNumber: 1, leftSeats: ['L1', 'L2'], rightSeats: ['R1', 'R2'] },
+        ],
       },
     },
   ]);

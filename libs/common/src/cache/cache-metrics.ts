@@ -43,14 +43,20 @@ export class CacheMetrics {
   recordHit(family: CacheFamily): void {
     this.hits[family] = (this.hits[family] ?? 0) + 1;
     if (this.redis?.isAvailable()) {
-      this.redis.getClient()?.hincrby('catalog:metrics:v1:hits', family, 1).catch(() => {});
+      this.redis
+        .getClient()
+        ?.hincrby('catalog:metrics:v1:hits', family, 1)
+        .catch(() => {});
     }
   }
 
   recordMiss(family: CacheFamily): void {
     this.misses[family] = (this.misses[family] ?? 0) + 1;
     if (this.redis?.isAvailable()) {
-      this.redis.getClient()?.hincrby('catalog:metrics:v1:misses', family, 1).catch(() => {});
+      this.redis
+        .getClient()
+        ?.hincrby('catalog:metrics:v1:misses', family, 1)
+        .catch(() => {});
     }
   }
 
@@ -58,12 +64,18 @@ export class CacheMetrics {
     const hits = this.hits[family] ?? 0;
     const misses = this.misses[family] ?? 0;
     const total = hits + misses;
-    const hitRate = total === 0 ? 0 : Math.round((hits / total) * 10000) / 10000;
+    const hitRate =
+      total === 0 ? 0 : Math.round((hits / total) * 10000) / 10000;
     return { hits, misses, total, hitRate };
   }
 
   getSnapshot(): MetricsSnapshot {
-    const families: CacheFamily[] = ['search', 'trip-stops', 'stations', 'availability'];
+    const families: CacheFamily[] = [
+      'search',
+      'trip-stops',
+      'stations',
+      'availability',
+    ];
     let totalHits = 0;
     let totalMisses = 0;
 
@@ -78,7 +90,9 @@ export class CacheMetrics {
 
     const overallTotal = totalHits + totalMisses;
     const overallHitRate =
-      overallTotal === 0 ? 0 : Math.round((totalHits / overallTotal) * 10000) / 10000;
+      overallTotal === 0
+        ? 0
+        : Math.round((totalHits / overallTotal) * 10000) / 10000;
 
     return {
       search: result.search!,
@@ -106,9 +120,15 @@ export class CacheMetrics {
           if (
             hitsRaw &&
             missesRaw &&
-            (Object.keys(hitsRaw).length > 0 || Object.keys(missesRaw).length > 0)
+            (Object.keys(hitsRaw).length > 0 ||
+              Object.keys(missesRaw).length > 0)
           ) {
-            const families: CacheFamily[] = ['search', 'trip-stops', 'stations', 'availability'];
+            const families: CacheFamily[] = [
+              'search',
+              'trip-stops',
+              'stations',
+              'availability',
+            ];
             let totalHits = 0;
             let totalMisses = 0;
             const result: Partial<MetricsSnapshot> = {};
@@ -117,7 +137,8 @@ export class CacheMetrics {
               const h = parseInt(hitsRaw[fam] || '0', 10) || 0;
               const m = parseInt(missesRaw[fam] || '0', 10) || 0;
               const tot = h + m;
-              const rate = tot === 0 ? 0 : Math.round((h / tot) * 10000) / 10000;
+              const rate =
+                tot === 0 ? 0 : Math.round((h / tot) * 10000) / 10000;
               result[fam] = { hits: h, misses: m, total: tot, hitRate: rate };
               totalHits += h;
               totalMisses += m;
@@ -125,7 +146,9 @@ export class CacheMetrics {
 
             const overallTotal = totalHits + totalMisses;
             const overallRate =
-              overallTotal === 0 ? 0 : Math.round((totalHits / overallTotal) * 10000) / 10000;
+              overallTotal === 0
+                ? 0
+                : Math.round((totalHits / overallTotal) * 10000) / 10000;
 
             return {
               search: result.search!,

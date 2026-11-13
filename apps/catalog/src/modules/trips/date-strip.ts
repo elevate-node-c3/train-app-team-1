@@ -10,11 +10,17 @@ export const DATE_STRIP_LENGTH = 5;
  * allows. Choosing a day starts another search.
  * Never cache the strip: tomorrow's response must not offer yesterday.
  */
-export function buildDateStrip(selectedDate: string, now: Date): DateStripDay[] {
+export function buildDateStrip(
+  selectedDate: string,
+  now: Date,
+): DateStripDay[] {
   const { firstBookableDate, lastBookableDate } = bookingWindowFor(now);
   const today = cairoToday(now);
 
-  const centred = addCivilDays(selectedDate, -Math.floor(DATE_STRIP_LENGTH / 2));
+  const centred = addCivilDays(
+    selectedDate,
+    -Math.floor(DATE_STRIP_LENGTH / 2),
+  );
   const latestStart = addCivilDays(lastBookableDate, -(DATE_STRIP_LENGTH - 1));
 
   // Clamp the start, not each day, to slide the strip without duplicates.

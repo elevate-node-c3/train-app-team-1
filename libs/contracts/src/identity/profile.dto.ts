@@ -39,4 +39,3 @@ export interface ProfileOptionsResponseDto {
   profileTypes: ProfileTypeDto[];
   nationalities: NationalityDto[];
 }
-
