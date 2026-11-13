@@ -65,4 +65,3 @@ function instant(record: Record<string, unknown>, key: string): Date {
   }
   return new Date(timestamp);
 }
-

@@ -59,4 +59,3 @@ export function createProfileCompletedSubscriptions(
   exports: [ProfileCompletedConsumer],
 })
 export class ProfileCompletedModule {}
-

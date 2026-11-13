@@ -6,7 +6,10 @@ import { AccountEntity } from '../entities/account.entity.js';
 import { PassengerEntity } from '../entities/passenger.entity.js';
 import { ProfileTypeEntity } from '../entities/profile-type.entity.js';
 import { NationalityEntity } from '../entities/nationality.entity.js';
-import { ProfileService, type CompleteProfileCommand } from './profile.service.js';
+import {
+  ProfileService,
+  type CompleteProfileCommand,
+} from './profile.service.js';
 
 describe('ProfileService', () => {
   let service: ProfileService;
@@ -30,8 +33,9 @@ describe('ProfileService', () => {
 
   beforeEach(() => {
     mockUnitOfWork = {
-      withTransaction: vi.fn(async (work: (ctx: TransactionContext) => Promise<any>) =>
-        work({ driver: 'mock' } as TransactionContext),
+      withTransaction: vi.fn(
+        async (work: (ctx: TransactionContext) => Promise<any>) =>
+          work({ driver: 'mock' } as TransactionContext),
       ),
     };
     mockOutbox = {
@@ -58,9 +62,11 @@ describe('ProfileService', () => {
         }
         return null;
       }),
-      findAll: vi.fn().mockResolvedValue([
-        { code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' },
-      ]),
+      findAll: vi
+        .fn()
+        .mockResolvedValue([
+          { code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' },
+        ]),
     };
     mockNationalities = {
       findByCode: vi.fn().mockImplementation(async (code: string) => {
@@ -73,9 +79,11 @@ describe('ProfileService', () => {
         }
         return null;
       }),
-      findAll: vi.fn().mockResolvedValue([
-        { code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' },
-      ]),
+      findAll: vi
+        .fn()
+        .mockResolvedValue([
+          { code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' },
+        ]),
     };
     mockSessions = {
       issue: vi.fn().mockResolvedValue({
@@ -120,7 +128,9 @@ describe('ProfileService', () => {
         .completeProfile({ ...validCommand, phoneNumber: '12345' })
         .catch((err) => err);
       expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
-      expect(error.details.some((d: any) => d.field === 'phoneNumber')).toBe(true);
+      expect(error.details.some((d: any) => d.field === 'phoneNumber')).toBe(
+        true,
+      );
     });
 
     it('rejects invalid NID naming the field and length issue', async () => {
@@ -142,7 +152,9 @@ describe('ProfileService', () => {
         .completeProfile({ ...validCommand, profileType: 'VIP' })
         .catch((err) => err);
       expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
-      expect(error.details.some((d: any) => d.field === 'profileType')).toBe(true);
+      expect(error.details.some((d: any) => d.field === 'profileType')).toBe(
+        true,
+      );
     });
 
     it('rejects invalid nationality naming the field', async () => {
@@ -150,7 +162,9 @@ describe('ProfileService', () => {
         .completeProfile({ ...validCommand, nationality: 'French' })
         .catch((err) => err);
       expect(error.code).toBe(ErrorCode.VALIDATION_ERROR);
-      expect(error.details.some((d: any) => d.field === 'nationality')).toBe(true);
+      expect(error.details.some((d: any) => d.field === 'nationality')).toBe(
+        true,
+      );
     });
 
     it('collects all failures across name, phone, NID and lookups in a single refusal (BR-57)', async () => {
@@ -181,9 +195,11 @@ describe('ProfileService', () => {
       account.status = 'pending';
       mockAccounts.findByIdForUpdate.mockResolvedValue(account);
 
-      await expect(service.completeProfile(validCommand)).rejects.toMatchObject({
-        code: ErrorCode.EMAIL_NOT_VERIFIED,
-      });
+      await expect(service.completeProfile(validCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.EMAIL_NOT_VERIFIED,
+        },
+      );
     });
 
     it('rejects disabled account with ACCOUNT_DISABLED', async () => {
@@ -194,9 +210,11 @@ describe('ProfileService', () => {
       account.status = 'disabled';
       mockAccounts.findByIdForUpdate.mockResolvedValue(account);
 
-      await expect(service.completeProfile(validCommand)).rejects.toMatchObject({
-        code: ErrorCode.ACCOUNT_DISABLED,
-      });
+      await expect(service.completeProfile(validCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.ACCOUNT_DISABLED,
+        },
+      );
     });
 
     it('rejects already completed profile with PROFILE_ALREADY_COMPLETE', async () => {
@@ -207,9 +225,11 @@ describe('ProfileService', () => {
       account.status = 'active';
       mockAccounts.findByIdForUpdate.mockResolvedValue(account);
 
-      await expect(service.completeProfile(validCommand)).rejects.toMatchObject({
-        code: ErrorCode.PROFILE_ALREADY_COMPLETE,
-      });
+      await expect(service.completeProfile(validCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.PROFILE_ALREADY_COMPLETE,
+        },
+      );
     });
 
     it('successfully completes profile and creates a new self passenger', async () => {
@@ -226,7 +246,10 @@ describe('ProfileService', () => {
       expect(account.fullName).toBe('Ahmed Hussein');
       expect(account.phoneNumber).toBe('01001234567');
       expect(account.nationalId).toBe('28505150101235');
-      expect(mockAccounts.update).toHaveBeenCalledWith(expect.anything(), account);
+      expect(mockAccounts.update).toHaveBeenCalledWith(
+        expect.anything(),
+        account,
+      );
       expect(mockPassengers.save).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -264,7 +287,9 @@ describe('ProfileService', () => {
       existingPassenger.accountId = account.id;
       existingPassenger.nationalId = '28505150101235';
       existingPassenger.isSelf = false;
-      mockPassengers.findByAccountAndNationalId.mockResolvedValue(existingPassenger);
+      mockPassengers.findByAccountAndNationalId.mockResolvedValue(
+        existingPassenger,
+      );
 
       await service.completeProfile(validCommand);
 
@@ -292,9 +317,11 @@ describe('ProfileService', () => {
         constraint: 'uq_account_phone',
       });
 
-      await expect(service.completeProfile(validCommand)).rejects.toMatchObject({
-        code: ErrorCode.PHONE_ALREADY_REGISTERED,
-      });
+      await expect(service.completeProfile(validCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.PHONE_ALREADY_REGISTERED,
+        },
+      );
     });
 
     it('maps unique constraint violation on national_id to NATIONAL_ID_ALREADY_REGISTERED', async () => {
@@ -310,9 +337,11 @@ describe('ProfileService', () => {
         constraint: 'uq_passenger_self_nid',
       });
 
-      await expect(service.completeProfile(validCommand)).rejects.toMatchObject({
-        code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
-      });
+      await expect(service.completeProfile(validCommand)).rejects.toMatchObject(
+        {
+          code: ErrorCode.NATIONAL_ID_ALREADY_REGISTERED,
+        },
+      );
     });
   });
 
@@ -378,4 +407,3 @@ describe('ProfileService', () => {
     });
   });
 });
-

@@ -51,7 +51,15 @@ function makeService(options: { failChannel?: boolean } = {}) {
 
   const service = new TripLifecycleTopologyService(amqp as never);
 
-  return { service, amqp, bindings, queues, consume, reconnectListeners, unsubscribe };
+  return {
+    service,
+    amqp,
+    bindings,
+    queues,
+    consume,
+    reconnectListeners,
+    unsubscribe,
+  };
 }
 
 describe('TripLifecycleTopologyService', () => {

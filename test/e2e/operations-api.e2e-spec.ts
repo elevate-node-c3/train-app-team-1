@@ -25,10 +25,7 @@ import {
   waitForGateway,
   waitForServiceReady,
 } from './support/stack.js';
-import {
-  SEARCH_STACK,
-  travellerAccessToken,
-} from './support/search-stack.js';
+import { SEARCH_STACK, travellerAccessToken } from './support/search-stack.js';
 
 /**
  * Exercise operator authorization, REST-to-gRPC wiring, publish/fare transactions,
@@ -39,12 +36,8 @@ import {
 const OPERATIONS = '/api/v1/operations';
 const TRIPS_SEARCH = '/api/v1/trips/search';
 
-const OPERATOR_TRAIN_NUMBER = String(
-  SEARCH_FIXTURE_TRAIN_NUMBERS.operations,
-);
-const RETRY_TRAIN_NUMBER = String(
-  SEARCH_FIXTURE_TRAIN_NUMBERS.operationsRetry,
-);
+const OPERATOR_TRAIN_NUMBER = String(SEARCH_FIXTURE_TRAIN_NUMBERS.operations);
+const RETRY_TRAIN_NUMBER = String(SEARCH_FIXTURE_TRAIN_NUMBERS.operationsRetry);
 
 interface PublishResult {
   timetableId: string;
@@ -267,15 +260,12 @@ afterAll(() => {
 describe('The operator flow, edge to catalog', () => {
   it('signs in as the operator, publishes train 916, changes a fare and reads the trail', async () => {
     const publishKey = `e2e-operations-publish-${randomUUID()}`;
-    const publish = await call<PublishResult>(
-      `${OPERATIONS}/timetables`,
-      {
-        method: 'POST',
-        token: operator.token,
-        idempotencyKey: publishKey,
-        body: publishBody(OPERATOR_TRAIN_NUMBER),
-      },
-    );
+    const publish = await call<PublishResult>(`${OPERATIONS}/timetables`, {
+      method: 'POST',
+      token: operator.token,
+      idempotencyKey: publishKey,
+      body: publishBody(OPERATOR_TRAIN_NUMBER),
+    });
 
     expect(publish.status, JSON.stringify(publish.body.error)).toBe(201);
     const published = publish.body.data as PublishResult;
@@ -373,29 +363,30 @@ describe('The operator flow, edge to catalog', () => {
   }, 600_000);
 
   it('refuses every operations route for a traveller token', async () => {
-    const requests: { path: string; method: 'GET' | 'POST'; body?: unknown }[] = [
-      {
-        path: `${OPERATIONS}/timetables`,
-        method: 'POST',
-        body: publishBody(OPERATOR_TRAIN_NUMBER),
-      },
-      {
-        path: `${OPERATIONS}/fares`,
-        method: 'POST',
-        body: {
-          trainNumber: OPERATOR_TRAIN_NUMBER,
-          travelClassId: fixture.travelClasses.first,
-          originStationId: fixture.stations.ramsis,
-          destinationStationId: fixture.stations.alexandria,
-          amountPiastres: 17_500,
-          effectiveFrom: new Date(Date.now() + 60_000).toISOString(),
+    const requests: { path: string; method: 'GET' | 'POST'; body?: unknown }[] =
+      [
+        {
+          path: `${OPERATIONS}/timetables`,
+          method: 'POST',
+          body: publishBody(OPERATOR_TRAIN_NUMBER),
         },
-      },
-      {
-        path: `${OPERATIONS}/audit`,
-        method: 'GET',
-      },
-    ];
+        {
+          path: `${OPERATIONS}/fares`,
+          method: 'POST',
+          body: {
+            trainNumber: OPERATOR_TRAIN_NUMBER,
+            travelClassId: fixture.travelClasses.first,
+            originStationId: fixture.stations.ramsis,
+            destinationStationId: fixture.stations.alexandria,
+            amountPiastres: 17_500,
+            effectiveFrom: new Date(Date.now() + 60_000).toISOString(),
+          },
+        },
+        {
+          path: `${OPERATIONS}/audit`,
+          method: 'GET',
+        },
+      ];
 
     for (const request of requests) {
       const { status, body } = await call<unknown>(request.path, {

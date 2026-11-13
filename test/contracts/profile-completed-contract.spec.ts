@@ -43,7 +43,9 @@ describe('ProfileCompleted event contract', () => {
 
   it('the event carries exactly the required keys on both levels', () => {
     const event = buildEvent();
-    expect(Object.keys(event).sort()).toEqual([...ENVELOPE_REQUIRED_KEYS].sort());
+    expect(Object.keys(event).sort()).toEqual(
+      [...ENVELOPE_REQUIRED_KEYS].sort(),
+    );
     expect(Object.keys(event.payload).sort()).toEqual(
       [...PROFILE_COMPLETED_PAYLOAD_KEYS].sort(),
     );
@@ -65,12 +67,13 @@ describe('ProfileCompleted event contract', () => {
     'the consumer rejects an event missing payload field %s',
     (key) => {
       const event = buildEvent();
-      const incompletePayload = event.payload as unknown as Record<string, unknown>;
+      const incompletePayload = event.payload as unknown as Record<
+        string,
+        unknown
+      >;
       delete incompletePayload[key];
 
-      expect(() => parseAsConsumer(event)).toThrow(
-        InvalidEventPayloadError,
-      );
+      expect(() => parseAsConsumer(event)).toThrow(InvalidEventPayloadError);
     },
   );
 
@@ -81,4 +84,3 @@ describe('ProfileCompleted event contract', () => {
     expect(() => parseAsConsumer(event)).toThrow(UnsupportedEventVersionError);
   });
 });
-

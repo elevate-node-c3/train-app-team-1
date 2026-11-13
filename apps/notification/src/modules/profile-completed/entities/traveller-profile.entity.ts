@@ -14,4 +14,3 @@ export class TravellerProfileEntity {
   @Column({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 }
-

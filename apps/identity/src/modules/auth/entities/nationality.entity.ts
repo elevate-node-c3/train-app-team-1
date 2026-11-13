@@ -11,4 +11,3 @@ export class NationalityEntity {
   @Column({ name: 'name_en', type: 'text' })
   nameEn!: string;
 }
-

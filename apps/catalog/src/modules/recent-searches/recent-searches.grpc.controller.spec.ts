@@ -41,9 +41,9 @@ describe('the recent-searches gRPC controller', () => {
     const response = { recentSearches: [] };
     const list = vi.fn().mockResolvedValue(response);
 
-    await expect(
-      controllerWith({ list }).listRecentSearches(),
-    ).resolves.toBe(response);
+    await expect(controllerWith({ list }).listRecentSearches()).resolves.toBe(
+      response,
+    );
   });
 
   /** Refuse unidentified callers instead of claiming they have no recent searches. */

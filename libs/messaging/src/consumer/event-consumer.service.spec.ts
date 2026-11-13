@@ -50,7 +50,9 @@ function message(overrides: Record<string, unknown> = {}): ConsumeMessage {
   } as unknown as ConsumeMessage;
 }
 
-function subscription(handler: EventSubscription['handler']): EventSubscription {
+function subscription(
+  handler: EventSubscription['handler'],
+): EventSubscription {
   return {
     eventType: EVENT_TYPE,
     version: 1,
@@ -90,7 +92,13 @@ function harness(
   };
   const confirmChannel = {
     publish: vi.fn(
-      (exchange: string, routingKey: string, _body: Buffer, opts: any, cb: any) => {
+      (
+        exchange: string,
+        routingKey: string,
+        _body: Buffer,
+        opts: any,
+        cb: any,
+      ) => {
         publishes.push({ exchange, routingKey, options: opts });
         calls.push(`publish:${exchange}`);
         cb(options.publishError ?? null);
@@ -103,7 +111,13 @@ function harness(
   const publishError = options.publishError ?? null;
   plainChannel.consume.mockResolvedValue({ consumerTag: 'tag-1' });
   confirmChannel.publish.mockImplementation(
-    (exchange: string, routingKey: string, _body: Buffer, opts: any, cb: any) => {
+    (
+      exchange: string,
+      routingKey: string,
+      _body: Buffer,
+      opts: any,
+      cb: any,
+    ) => {
       publishes.push({ exchange, routingKey, options: opts });
       calls.push(`publish:${exchange}`);
       cb(publishError);
@@ -204,9 +218,7 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     );
     expect(h.ack).toHaveBeenCalledTimes(1);
     expect(h.nack).not.toHaveBeenCalled();
-    expect(
-      h.publishes.some((p) => p.exchange === RETRY_EXCHANGE),
-    ).toBe(false);
+    expect(h.publishes.some((p) => p.exchange === RETRY_EXCHANGE)).toBe(false);
   });
 
   it('releases the claim before republishing a transient failure, then acks', async () => {

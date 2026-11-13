@@ -7,7 +7,6 @@ import {
 } from '@app/common';
 import type { DataSource } from 'typeorm';
 
-
 type FakeQueryRunner = {
   calls: string[];
   connect: () => Promise<void>;

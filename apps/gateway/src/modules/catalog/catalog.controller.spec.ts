@@ -123,16 +123,16 @@ describe('the return-search route', () => {
   };
 
   it('requires a verified traveller', () => {
-    expect(
-      Reflect.getMetadata(ACCESS_LEVEL_KEY, handler('searchReturn')),
-    ).toBe('traveller');
+    expect(Reflect.getMetadata(ACCESS_LEVEL_KEY, handler('searchReturn'))).toBe(
+      'traveller',
+    );
   });
 
   // Separate buckets keep either search leg from starving the other.
   it('has a rate-limit bucket of its own', () => {
-    expect(Reflect.getMetadata(RATE_LIMIT_KEY, handler('searchReturn'))).toEqual(
-      { bucket: 'trip-search-return', limit: 60, windowSeconds: 60 },
-    );
+    expect(
+      Reflect.getMetadata(RATE_LIMIT_KEY, handler('searchReturn')),
+    ).toEqual({ bucket: 'trip-search-return', limit: 60, windowSeconds: 60 });
   });
 
   it('passes the query and the resolved language through', async () => {

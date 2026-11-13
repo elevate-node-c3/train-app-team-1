@@ -192,7 +192,11 @@ export class TripSearchService {
    * Drop unpriced segments: they cannot be booked. Warn so missing fare coverage
    * is repaired as a data gap, not treated as normal emptiness.
    */
-  private warnUnpriced(trip: { tripId: string; originStationId: string; destinationStationId: string }): void {
+  private warnUnpriced(trip: {
+    tripId: string;
+    originStationId: string;
+    destinationStationId: string;
+  }): void {
     this.logger.warn(
       `Trip ${trip.tripId} has no fare for ${trip.originStationId} -> ${trip.destinationStationId}; excluded from search`,
     );

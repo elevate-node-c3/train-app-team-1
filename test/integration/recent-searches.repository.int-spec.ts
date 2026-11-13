@@ -82,7 +82,11 @@ describe('the recent-searches table', () => {
   describe('recording a search', () => {
     it('stores it with everything needed to run it again', async () => {
       await repository.record(
-        search({ kind: 'round_trip', returnDate: '2026-06-25', trainNumber: 903 }),
+        search({
+          kind: 'round_trip',
+          returnDate: '2026-06-25',
+          trainNumber: 903,
+        }),
         NOW,
       );
 
@@ -125,7 +129,10 @@ describe('the recent-searches table', () => {
   describe('repeating a search', () => {
     it('moves it to the top instead of adding a second entry', async () => {
       await repository.record(search(), NOW);
-      await repository.record(search({ destinationStationId: IDS.stations.tanta }), NOW);
+      await repository.record(
+        search({ destinationStationId: IDS.stations.tanta }),
+        NOW,
+      );
 
       await repository.record(
         search({ departureDate: '2026-07-01' }),
@@ -271,18 +278,15 @@ describe('the recent-searches table', () => {
         NOW,
       );
 
-      await source.query(
-        'UPDATE station SET is_active = false WHERE id = $1',
-        [IDS.stations.tanta],
-      );
+      await source.query('UPDATE station SET is_active = false WHERE id = $1', [
+        IDS.stations.tanta,
+      ]);
 
       try {
         const entries = await repository.list(TRAVELLER);
 
         expect(entries).toHaveLength(1);
-        expect(entries[0].destinationStationId).toBe(
-          IDS.stations.alexandria,
-        );
+        expect(entries[0].destinationStationId).toBe(IDS.stations.alexandria);
         // Hide, do not delete: reactivating the station restores the search.
         expect(await countFor(TRAVELLER)).toBe(2);
       } finally {

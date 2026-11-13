@@ -29,4 +29,3 @@ export class PassengerEntity {
   @Column({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 }
-

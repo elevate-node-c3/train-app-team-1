@@ -92,7 +92,9 @@ export class OperationsGrpcClientService {
 
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'number') {
-      this.logger.warn(`Catalog operations call failed with gRPC status ${code}`);
+      this.logger.warn(
+        `Catalog operations call failed with gRPC status ${code}`,
+      );
       return grpcStatusException(code);
     }
 

@@ -233,9 +233,7 @@ describe('the trip search query', () => {
         travelClassId: IDS.travelClasses.second,
       });
 
-      const unpriced = rows.find(
-        (row) => row.tripId === IDS.trips.singleClass,
-      );
+      const unpriced = rows.find((row) => row.tripId === IDS.trips.singleClass);
 
       expect(unpriced).toBeDefined();
       expect(unpriced!.farePiastres).toBeNull();

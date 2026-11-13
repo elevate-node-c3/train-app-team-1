@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AggregatedHealthReport, ServiceHealthReport } from '@app/contracts';
+import type {
+  AggregatedHealthReport,
+  ServiceHealthReport,
+} from '@app/contracts';
 import { HealthController } from './health.controller.js';
 import type { HealthService } from './health.service.js';
 import type { AggregateReadiness } from './aggregate-readiness.js';

@@ -67,4 +67,3 @@ describe('validateNationalId', () => {
     expect(result.errors).toContain(ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE);
   });
 });
-

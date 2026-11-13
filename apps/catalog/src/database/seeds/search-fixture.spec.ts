@@ -27,7 +27,9 @@ describe('the search fixture', () => {
   // positions must stay dense and one-based.
   it('numbers every trip stop densely from 1', () => {
     for (const [tripId, stops] of stopsByTrip) {
-      const positions = stops.map((stop) => stop.position).sort((a, b) => a - b);
+      const positions = stops
+        .map((stop) => stop.position)
+        .sort((a, b) => a - b);
 
       expect(positions, `${tripId} has gaps or duplicates`).toEqual(
         positions.map((_, index) => index + 1),
@@ -133,9 +135,9 @@ describe('the search fixture', () => {
           0,
         );
         expect(counted).toBeGreaterThan(0);
-        expect(seatCapacityOf(trip, coach.travelClass.id)).toBeGreaterThanOrEqual(
-          counted,
-        );
+        expect(
+          seatCapacityOf(trip, coach.travelClass.id),
+        ).toBeGreaterThanOrEqual(counted);
       }
     }
   });
@@ -159,8 +161,7 @@ describe('the search fixture', () => {
       const midRoute = stops[1];
       expect(midRoute.departureAt).not.toBeNull();
       expect(
-        midRoute.departureAt!.toISOString().slice(0, 10) >
-          trip!.serviceDate,
+        midRoute.departureAt!.toISOString().slice(0, 10) > trip!.serviceDate,
       ).toBe(true);
     });
 

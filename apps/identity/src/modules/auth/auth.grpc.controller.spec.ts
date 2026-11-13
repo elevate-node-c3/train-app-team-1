@@ -58,14 +58,19 @@ describe('AuthGrpcController - Passengers', () => {
   describe('listPassengers', () => {
     it('delegates to PassengersService.listPassengers and returns { passengers }', async () => {
       const expectedPassengers: PassengerDto[] = [mockPassengerDto];
-      vi.mocked(mockPassengers.listPassengers!).mockResolvedValue(expectedPassengers);
+      vi.mocked(mockPassengers.listPassengers!).mockResolvedValue(
+        expectedPassengers,
+      );
 
       const result = await controller.listPassengers({
         accountId: 'acc-123',
         language: 'ar',
       });
 
-      expect(mockPassengers.listPassengers).toHaveBeenCalledWith('acc-123', 'ar');
+      expect(mockPassengers.listPassengers).toHaveBeenCalledWith(
+        'acc-123',
+        'ar',
+      );
       expect(result).toEqual({ passengers: expectedPassengers });
     });
 
@@ -102,7 +107,9 @@ describe('AuthGrpcController - Passengers', () => {
     };
 
     it('delegates to PassengersService.addPassenger and returns { passenger }', async () => {
-      vi.mocked(mockPassengers.addPassenger!).mockResolvedValue(mockPassengerDto);
+      vi.mocked(mockPassengers.addPassenger!).mockResolvedValue(
+        mockPassengerDto,
+      );
 
       const result = await controller.addPassenger(addRequest);
 
@@ -190,11 +197,15 @@ describe('AuthGrpcController - Passengers', () => {
         fullName: 'Ahmed Hussein Ali',
         typeName: 'Regular',
       };
-      vi.mocked(mockPassengers.updatePassenger!).mockResolvedValue(updatedPassenger);
+      vi.mocked(mockPassengers.updatePassenger!).mockResolvedValue(
+        updatedPassenger,
+      );
 
       const result = await controller.updatePassenger(updateRequest);
 
-      expect(mockPassengers.updatePassenger).toHaveBeenCalledWith(updateRequest);
+      expect(mockPassengers.updatePassenger).toHaveBeenCalledWith(
+        updateRequest,
+      );
       expect(result).toEqual({ passenger: updatedPassenger });
     });
 
@@ -252,7 +263,9 @@ describe('AuthGrpcController - Passengers', () => {
 
       const result = await controller.deletePassenger(deleteRequest);
 
-      expect(mockPassengers.deletePassenger).toHaveBeenCalledWith(deleteRequest);
+      expect(mockPassengers.deletePassenger).toHaveBeenCalledWith(
+        deleteRequest,
+      );
       expect(result).toEqual({ success: true });
     });
 

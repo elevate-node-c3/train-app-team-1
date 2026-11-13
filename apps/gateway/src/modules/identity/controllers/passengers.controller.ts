@@ -12,7 +12,12 @@ import {
   Put,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CALLER_ACCOUNT_ID_KEY, RateLimit, RequireAccess, resolveLanguage } from '@app/common';
+import {
+  CALLER_ACCOUNT_ID_KEY,
+  RateLimit,
+  RequireAccess,
+  resolveLanguage,
+} from '@app/common';
 import {
   ErrorCode,
   type ListPassengersResponseDto,

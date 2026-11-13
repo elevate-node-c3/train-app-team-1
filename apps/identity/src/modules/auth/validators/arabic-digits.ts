@@ -17,4 +17,3 @@ const ARABIC_DIGITS: Record<string, string> = {
 export function normalizeDigits(input: string): string {
   return input.replace(/[٠-٩]/g, (digit) => ARABIC_DIGITS[digit] ?? digit);
 }
-

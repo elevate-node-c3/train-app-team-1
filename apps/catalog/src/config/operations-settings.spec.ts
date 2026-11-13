@@ -86,7 +86,9 @@ describe('operations-settings', () => {
       warnIfStripeFloorUnconfigured(logger);
       warnIfStripeFloorUnconfigured(logger);
       expect(logger.warn).toHaveBeenCalledTimes(1);
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(ENV_VAR));
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(ENV_VAR),
+      );
     });
 
     it('stays silent when the floor is configured', () => {

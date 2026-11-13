@@ -16,4 +16,3 @@ export class ProfileTypeRepository {
       .findOne({ where: { code } });
   }
 }
-

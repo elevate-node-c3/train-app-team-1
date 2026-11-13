@@ -1,7 +1,4 @@
-import type {
-  EventEnvelope,
-  SessionRevokedPayloadV1,
-} from '@app/contracts';
+import type { EventEnvelope, SessionRevokedPayloadV1 } from '@app/contracts';
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
 
 const REASONS = new Set([

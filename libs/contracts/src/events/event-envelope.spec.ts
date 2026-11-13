@@ -22,7 +22,8 @@ function envelope(): EventEnvelope {
 describe('Event envelope contract (ADR-0005, §10.C)', () => {
   // Type assertions keep both language unions compatible in both directions.
   it('keeps EventLanguage and SupportedLanguage mutually assignable', () => {
-    const toSupported = (language: EventLanguage): SupportedLanguage => language;
+    const toSupported = (language: EventLanguage): SupportedLanguage =>
+      language;
     const toEvent = (language: SupportedLanguage): EventLanguage => language;
 
     expect(toSupported('ar')).toBe('ar');

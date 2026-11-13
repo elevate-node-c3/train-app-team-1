@@ -45,4 +45,3 @@ export class ProfileController {
     return this.identity.getProfileOptions();
   }
 }
-

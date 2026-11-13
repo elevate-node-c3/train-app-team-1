@@ -104,7 +104,10 @@ describe('the trip search indexes', () => {
     for (const meta of source.entityMetadatas) {
       for (const index of meta.indices) {
         const definition = byName.get(index.name);
-        expect(definition, `${index.name} is not in the database`).toBeDefined();
+        expect(
+          definition,
+          `${index.name} is not in the database`,
+        ).toBeDefined();
 
         for (const column of index.columns) {
           expect(

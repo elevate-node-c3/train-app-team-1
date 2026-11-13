@@ -9,7 +9,10 @@ import type { TransactionContext } from '../../libs/common/src/persistence/unit-
 import { OperationsAuditEntity } from '../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
 import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/operations-audit.repository.js';
 
-import { catalogDataSource, closeCatalogDataSource } from './support/catalog-database.js';
+import {
+  catalogDataSource,
+  closeCatalogDataSource,
+} from './support/catalog-database.js';
 
 /**
  * Use real Postgres transactions to verify append honors ctx and rolls back
@@ -20,7 +23,9 @@ const TRAIN_A = '11111111-1111-4111-8111-111111111111';
 const TRAIN_B = '22222222-2222-4222-8222-222222222222';
 const ACTOR = '33333333-3333-4333-8333-333333333333';
 
-function row(overrides: Partial<OperationsAuditEntity> = {}): OperationsAuditEntity {
+function row(
+  overrides: Partial<OperationsAuditEntity> = {},
+): OperationsAuditEntity {
   const entity = new OperationsAuditEntity();
   entity.id = randomUUID();
   entity.action = 'timetable.published';
@@ -135,7 +140,9 @@ describe('the operations audit trail', () => {
   describe('list', () => {
     async function appendAll(entries: OperationsAuditEntity[]): Promise<void> {
       for (const entry of entries) {
-        await unitOfWork.withTransaction((ctx) => repository.append(ctx, entry));
+        await unitOfWork.withTransaction((ctx) =>
+          repository.append(ctx, entry),
+        );
       }
     }
 
@@ -164,16 +171,28 @@ describe('the operations audit trail', () => {
         row({ trainId: TRAIN_B, correlationId: 'b' }),
       ]);
 
-      const { entries } = await repository.list({ trainId: TRAIN_A, limit: 10 });
+      const { entries } = await repository.list({
+        trainId: TRAIN_A,
+        limit: 10,
+      });
 
       expect(entries.map((entry) => entry.correlationId)).toEqual(['a']);
     });
 
     it('filters by a from/to date range', async () => {
       await appendAll([
-        row({ correlationId: 'jan', occurredAt: new Date('2026-01-01T00:00:00Z') }),
-        row({ correlationId: 'feb', occurredAt: new Date('2026-02-01T00:00:00Z') }),
-        row({ correlationId: 'mar', occurredAt: new Date('2026-03-01T00:00:00Z') }),
+        row({
+          correlationId: 'jan',
+          occurredAt: new Date('2026-01-01T00:00:00Z'),
+        }),
+        row({
+          correlationId: 'feb',
+          occurredAt: new Date('2026-02-01T00:00:00Z'),
+        }),
+        row({
+          correlationId: 'mar',
+          occurredAt: new Date('2026-03-01T00:00:00Z'),
+        }),
       ]);
 
       const { entries } = await repository.list({

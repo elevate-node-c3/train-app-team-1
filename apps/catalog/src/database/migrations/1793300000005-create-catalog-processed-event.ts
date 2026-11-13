@@ -4,9 +4,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * Claim events before handling to skip redeliveries.
  * Keep this schema aligned with notification's inbox and the shared claim SQL.
  */
-export class CreateCatalogProcessedEvent1793300000005
-  implements MigrationInterface
-{
+export class CreateCatalogProcessedEvent1793300000005 implements MigrationInterface {
   name = 'CreateCatalogProcessedEvent1793300000005';
 
   async up(queryRunner: QueryRunner): Promise<void> {

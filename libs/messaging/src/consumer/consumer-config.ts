@@ -31,7 +31,9 @@ export function handlerTimeoutMs(): number {
 
 export function prefetchSize(): number {
   const raw = Number(process.env.EVENT_PREFETCH);
-  return Number.isInteger(raw) && raw > 0 ? raw : NOTIFICATION_DEFAULTS.prefetch;
+  return Number.isInteger(raw) && raw > 0
+    ? raw
+    : NOTIFICATION_DEFAULTS.prefetch;
 }
 
 export function claimLeaseSeconds(): number {

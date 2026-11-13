@@ -79,4 +79,3 @@ export function normalizePhone(raw: string): PhoneValidationResult {
     normalized: cleaned,
   };
 }
-

@@ -1,9 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** SQL handles email uniqueness and partial indexes that TypeORM sync cannot. */
-export class CreateAccountsVerificationCodesOutbox1761314400000
-  implements MigrationInterface
-{
+export class CreateAccountsVerificationCodesOutbox1761314400000 implements MigrationInterface {
   name = 'CreateAccountsVerificationCodesOutbox1761314400000';
 
   async up(queryRunner: QueryRunner): Promise<void> {

@@ -72,7 +72,10 @@ const DEFAULT_INVENTORY_GRPC_URL = 'inventory:50051';
 
 /** Inventory's gRPC URL; a blank value falls back to the default. */
 export function inventoryGrpcUrl(): string {
-  return nonEmpty(process.env[INVENTORY_GRPC_URL_ENV_VAR]) ?? DEFAULT_INVENTORY_GRPC_URL;
+  return (
+    nonEmpty(process.env[INVENTORY_GRPC_URL_ENV_VAR]) ??
+    DEFAULT_INVENTORY_GRPC_URL
+  );
 }
 
 function nonEmpty(value: string | undefined): string | null {

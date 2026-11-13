@@ -21,9 +21,9 @@ describe('staff account seed password resolution', () => {
   });
 
   it('refuses to seed in production without the password variable', () => {
-    expect(() => seedPassword(operator, { NODE_ENV: 'production' })).toThrowError(
-      /OPERATOR_SEED_PASSWORD/,
-    );
+    expect(() =>
+      seedPassword(operator, { NODE_ENV: 'production' }),
+    ).toThrowError(/OPERATOR_SEED_PASSWORD/);
     expect(() =>
       seedPassword(conductor, { NODE_ENV: 'production' }),
     ).toThrowError(/CONDUCTOR_SEED_PASSWORD/);

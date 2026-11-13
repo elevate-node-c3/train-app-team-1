@@ -77,12 +77,7 @@ export function createCatalogInvalidationSubscriptions(
 }
 
 @Module({
-  imports: [
-    MessagingModule,
-    CatalogCacheModule,
-    StationsModule,
-    TripsModule,
-  ],
+  imports: [MessagingModule, CatalogCacheModule, StationsModule, TripsModule],
   providers: [
     CacheInvalidationConsumer,
     TypeOrmProcessedEventStore,

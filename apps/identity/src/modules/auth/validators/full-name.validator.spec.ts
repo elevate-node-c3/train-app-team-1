@@ -55,10 +55,14 @@ describe('validateFullName', () => {
     expect(validateFullName('؟؟ ،،').error).toBe(ErrorCode.INVALID_FULL_NAME);
 
     expect(validateFullName('احمد ٢٩٩٠١').valid).toBe(false);
-    expect(validateFullName('احمد ٢٩٩٠١').error).toBe(ErrorCode.INVALID_FULL_NAME);
+    expect(validateFullName('احمد ٢٩٩٠١').error).toBe(
+      ErrorCode.INVALID_FULL_NAME,
+    );
 
     expect(validateFullName('أحمد، حسين').valid).toBe(false);
-    expect(validateFullName('أحمد، حسين').error).toBe(ErrorCode.INVALID_FULL_NAME);
+    expect(validateFullName('أحمد، حسين').error).toBe(
+      ErrorCode.INVALID_FULL_NAME,
+    );
   });
 
   it('rejects names exceeding 50 characters', () => {

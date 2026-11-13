@@ -14,9 +14,16 @@ import type {
 export class StationsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  async findById(stationId: string, ctx?: TransactionContext): Promise<StationDetails | null> {
+  async findById(
+    stationId: string,
+    ctx?: TransactionContext,
+  ): Promise<StationDetails | null> {
     const manager = ctx ? entityManagerOf(ctx) : this.dataSource.manager;
-    const rows: (Omit<StationDetails, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date })[] = await manager.query(`
+    const rows: (Omit<StationDetails, 'createdAt' | 'updatedAt'> & {
+      createdAt: Date;
+      updatedAt: Date;
+    })[] = await manager.query(
+      `
       SELECT s.id, s.city_id AS "cityId", c.governorate_id AS "governorateId",
         json_build_object('ar', s.name_ar, 'en', s.name_en) AS name,
         json_build_object('ar', c.name_ar, 'en', c.name_en) AS "cityName",
@@ -26,30 +33,48 @@ export class StationsRepository {
       FROM station s JOIN city c ON c.id = s.city_id
       JOIN governorate g ON g.id = c.governorate_id
       WHERE s.id = $1 ${ctx ? 'FOR UPDATE OF s' : ''}
-    `, [stationId]);
+    `,
+      [stationId],
+    );
     const row = rows[0];
-    return row ? { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() } : null;
+    return row
+      ? {
+          ...row,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }
+      : null;
   }
 
   async cityExists(ctx: TransactionContext, cityId: string): Promise<boolean> {
     const rows: { id: string }[] = await entityManagerOf(ctx).query(
-      'SELECT id FROM city WHERE id = $1 FOR KEY SHARE', [cityId],
+      'SELECT id FROM city WHERE id = $1 FOR KEY SHARE',
+      [cityId],
     );
     return rows.length > 0;
   }
 
-  async insert(ctx: TransactionContext, stationId: string, request: CreateStationRequest): Promise<void> {
-    await entityManagerOf(ctx).getRepository(StationEntity).insert({
-      id: stationId,
-      cityId: request.cityId,
-      nameAr: request.nameAr,
-      nameEn: request.nameEn,
-      altSpellings: request.altSpellings ?? [],
-      isActive: request.isActive ?? true,
-    });
+  async insert(
+    ctx: TransactionContext,
+    stationId: string,
+    request: CreateStationRequest,
+  ): Promise<void> {
+    await entityManagerOf(ctx)
+      .getRepository(StationEntity)
+      .insert({
+        id: stationId,
+        cityId: request.cityId,
+        nameAr: request.nameAr,
+        nameEn: request.nameEn,
+        altSpellings: request.altSpellings ?? [],
+        isActive: request.isActive ?? true,
+      });
   }
 
-  async update(ctx: TransactionContext, station: StationDetails): Promise<void> {
+  async update(
+    ctx: TransactionContext,
+    station: StationDetails,
+  ): Promise<void> {
     await entityManagerOf(ctx).getRepository(StationEntity).update(station.id, {
       cityId: station.cityId,
       nameAr: station.name.ar,

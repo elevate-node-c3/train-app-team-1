@@ -36,8 +36,7 @@ const operations = [
   {
     name: 'EVAL',
     command: 'eval',
-    run: (guard: StampedeGuard, redis: Redis) =>
-      guard.releaseLock(redis, lock),
+    run: (guard: StampedeGuard, redis: Redis) => guard.releaseLock(redis, lock),
     fallback: undefined,
     lateValue: 1,
   },
@@ -104,30 +103,33 @@ describe('stampede guard', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each([1, 0])('releases with token-owned Lua (result %i)', async (result) => {
-    const { client, redis } = fakeRedis();
-    client.eval.mockResolvedValue(result);
+  it.each([1, 0])(
+    'releases with token-owned Lua (result %i)',
+    async (result) => {
+      const { client, redis } = fakeRedis();
+      client.eval.mockResolvedValue(result);
 
-    await expect(
-      new StampedeGuard().releaseLock(redis, lock),
-    ).resolves.toBeUndefined();
+      await expect(
+        new StampedeGuard().releaseLock(redis, lock),
+      ).resolves.toBeUndefined();
 
-    expect(client.eval).toHaveBeenCalledWith(
-      RELEASE_LOCK_LUA,
-      1,
-      lock.lockKey,
-      lock.workerId,
-    );
-    expect(RELEASE_LOCK_LUA.trim()).toBe(
-      'if redis.call("get", KEYS[1]) == ARGV[1] then\n' +
-        '  return redis.call("del", KEYS[1])\n' +
-        'else\n' +
-        '  return 0\n' +
-        'end',
-    );
-    expect(client.del).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
-  });
+      expect(client.eval).toHaveBeenCalledWith(
+        RELEASE_LOCK_LUA,
+        1,
+        lock.lockKey,
+        lock.workerId,
+      );
+      expect(RELEASE_LOCK_LUA.trim()).toBe(
+        'if redis.call("get", KEYS[1]) == ARGV[1] then\n' +
+          '  return redis.call("del", KEYS[1])\n' +
+          'else\n' +
+          '  return 0\n' +
+          'end',
+      );
+      expect(client.del).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it.each([1, 0])('reports whether EXISTS returned %i', async (exists) => {
     const { client, redis } = fakeRedis();
@@ -235,7 +237,10 @@ describe('stampede guard', () => {
 
   it('coalesces local rebuilds and releases singleflight on success', async () => {
     const guard = new StampedeGuard();
-    const loader = vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second');
+    const loader = vi
+      .fn()
+      .mockResolvedValueOnce('first')
+      .mockResolvedValueOnce('second');
 
     await expect(
       Promise.all([
@@ -249,9 +254,14 @@ describe('stampede guard', () => {
 
   it('releases singleflight when a rebuild rejects', async () => {
     const guard = new StampedeGuard();
-    const loader = vi.fn().mockRejectedValueOnce(new Error('DB failed')).mockResolvedValueOnce('retry');
+    const loader = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('DB failed'))
+      .mockResolvedValueOnce('retry');
 
-    await expect(guard.coalesceInProcess('k', loader)).rejects.toThrow('DB failed');
+    await expect(guard.coalesceInProcess('k', loader)).rejects.toThrow(
+      'DB failed',
+    );
     await expect(guard.coalesceInProcess('k', loader)).resolves.toBe('retry');
     expect(loader).toHaveBeenCalledTimes(2);
   });
