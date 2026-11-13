@@ -44,7 +44,9 @@ export class SeatUsageRepository {
        ),
        stations AS (
          -- Both ends inclusive: the passenger is physically at the destination
-         -- station even though the seat is free from there (spec §6.10).
+         -- station even though the seat is free from there (spec §6.10). This
+         -- mirrors stationsInUse in segment.ts, which is the authority for the
+         -- rule; kept as SQL here so the query stays one bounded round trip.
          SELECT a.trip_id, array_agg(DISTINCT ts.station_id) AS station_ids
          FROM active a
          JOIN trip_stop ts
