@@ -13,6 +13,10 @@ export class InventoryTripEntity {
   @Column({ type: 'varchar', length: 20 })
   status!: 'on_sale' | 'closed';
 
+  // Guards republication: a lower or equal version never overwrites this row.
+  @Column({ name: 'timetable_version', type: 'integer' })
+  timetableVersion!: number;
+
   // Children import this file for their owning @ManyToOne; naming the target
   // here instead of importing it keeps the runtime graph acyclic.
   @OneToMany('TripStopEntity', 'trip')
