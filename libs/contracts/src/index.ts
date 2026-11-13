@@ -23,3 +23,4 @@ export * from './events/verification-code-issued.js';
 export * from './events/identity-events.js';
 export * from './events/catalog-events.js';
 export * from './events/trip-events.js';
+export * from './events/inventory-events.js';
