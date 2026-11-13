@@ -1,8 +1,12 @@
 import { EVENTS_EXCHANGE } from '@app/messaging/amqp-topology.js';
+import type { EventHandlerPort } from '@app/messaging/consumer/event-handler.port.js';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createTripLifecycleSubscriptions } from './trip-lifecycle.module.js';
 import {
-  INVENTORY_TRIP_LIFECYCLE_QUEUE,
+  INVENTORY_TRIP_LIFECYCLE_QUEUES,
+  INVENTORY_TRIP_PUBLISHED_QUEUE,
+  INVENTORY_TRIP_WITHDRAWN_QUEUE,
   TRIP_LIFECYCLE_EVENT_TYPES,
   TripLifecycleTopologyService,
 } from './trip-lifecycle.topology.js';
@@ -64,22 +68,25 @@ function makeService(options: { failChannel?: boolean } = {}) {
 }
 
 describe('TripLifecycleTopologyService', () => {
-  it('binds the queue to both trip events on the shared exchange', async () => {
+  it('binds each trip event to its own queue on the shared exchange', async () => {
     const { service, bindings } = makeService();
 
     await service.onApplicationBootstrap();
 
-    for (const eventType of TRIP_LIFECYCLE_EVENT_TYPES) {
-      expect(bindings).toEqual(
-        expect.arrayContaining([
-          {
-            queue: INVENTORY_TRIP_LIFECYCLE_QUEUE,
-            exchange: EVENTS_EXCHANGE,
-            routingKey: eventType,
-          },
-        ]),
-      );
-    }
+    expect(bindings).toEqual(
+      expect.arrayContaining([
+        {
+          queue: INVENTORY_TRIP_PUBLISHED_QUEUE,
+          exchange: EVENTS_EXCHANGE,
+          routingKey: 'catalog.trip.published',
+        },
+        {
+          queue: INVENTORY_TRIP_WITHDRAWN_QUEUE,
+          exchange: EVENTS_EXCHANGE,
+          routingKey: 'catalog.trip.withdrawn',
+        },
+      ]),
+    );
   });
 
   it('carries the routing keys catalog actually publishes', async () => {
@@ -89,27 +96,53 @@ describe('TripLifecycleTopologyService', () => {
     ]);
   });
 
+  it('declares one queue per event type', async () => {
+    const { service, queues } = makeService();
+
+    await service.declare();
+
+    const declaredQueues = queues.filter((name) =>
+      (INVENTORY_TRIP_LIFECYCLE_QUEUES as readonly string[]).includes(name),
+    );
+    expect(declaredQueues).toEqual([
+      'inventory.trip-lifecycle.trip-published',
+      'inventory.trip-lifecycle.trip-withdrawn',
+    ]);
+  });
+
+  it('never binds two event types to one queue', () => {
+    const handler: EventHandlerPort = {
+      handle: async () => ({ status: 'handled' }),
+    };
+    const queues = createTripLifecycleSubscriptions(handler).map(
+      (s) => s.queueName,
+    );
+
+    expect(new Set(queues).size).toBe(queues.length);
+  });
+
   it('declares the queue without consuming it', async () => {
     // Consuming now would acknowledge and discard the backlog.
     const { service, consume, queues } = makeService();
 
     await service.onApplicationBootstrap();
 
-    expect(queues).toContain(INVENTORY_TRIP_LIFECYCLE_QUEUE);
+    expect(queues).toContain(INVENTORY_TRIP_PUBLISHED_QUEUE);
+    expect(queues).toContain(INVENTORY_TRIP_WITHDRAWN_QUEUE);
     expect(consume).not.toHaveBeenCalled();
   });
 
-  it('declares the retry and dead-letter queues Sprint 3 will need', async () => {
+  it('declares the retry and dead-letter queues the consumer needs', async () => {
     const { service, queues } = makeService();
 
     await service.onApplicationBootstrap();
 
-    expect(queues).toContain(`${INVENTORY_TRIP_LIFECYCLE_QUEUE}.dlq`);
-    expect(
-      queues.some((name) =>
-        name.startsWith(`${INVENTORY_TRIP_LIFECYCLE_QUEUE}.retry.`),
-      ),
-    ).toBe(true);
+    for (const queue of INVENTORY_TRIP_LIFECYCLE_QUEUES) {
+      expect(queues).toContain(`${queue}.dlq`);
+      expect(queues.some((name) => name.startsWith(`${queue}.retry.`))).toBe(
+        true,
+      );
+    }
   });
 
   it('re-declares after the connection is replaced', async () => {
