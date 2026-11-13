@@ -70,19 +70,15 @@ describe('InventorySeatUsageClient', () => {
     );
   });
 
-  it(
-    'throws rather than returning zeros when inventory times out',
-    async () => {
-      process.env[TIMEOUT_ENV_VAR] = '20';
-      // Never emits or errors: a stopped inventory holding the connection open.
-      const client = clientWith(() => new Observable<never>(() => {}));
+  it('throws rather than returning zeros when inventory times out', async () => {
+    process.env[TIMEOUT_ENV_VAR] = '20';
+    // Never emits or errors: a stopped inventory holding the connection open.
+    const client = clientWith(() => new Observable<never>(() => {}));
 
-      await expect(
-        client.seatUsageForTrips(['trip-a']),
-      ).rejects.toBeInstanceOf(SeatUsageUnavailableError);
-    },
-    2000,
-  );
+    await expect(client.seatUsageForTrips(['trip-a'])).rejects.toBeInstanceOf(
+      SeatUsageUnavailableError,
+    );
+  }, 2000);
 
   // A missing trip is unanswered, not "no tickets".
   it('throws when inventory answers for fewer trips than were asked about', async () => {

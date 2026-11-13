@@ -29,7 +29,6 @@ export function buildTripPublished(
   };
 }
 
-
 interface BuildTripWithdrawnProps {
   eventId: string;
   correlationId: string;

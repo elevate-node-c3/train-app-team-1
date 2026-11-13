@@ -135,7 +135,11 @@ describe('TimetablePublishService.publish', () => {
     harness = makeHarness({ withExistingVersion: true });
     const untouched = await harness.tripOn(TODAY);
 
-    await harness.service.publish(republishWithExtraStop(), 'key-past', OPERATOR);
+    await harness.service.publish(
+      republishWithExtraStop(),
+      'key-past',
+      OPERATOR,
+    );
 
     // The publish may change the future and must never rewrite the past.
     expect(untouched.timetableVersion).toBe(1);

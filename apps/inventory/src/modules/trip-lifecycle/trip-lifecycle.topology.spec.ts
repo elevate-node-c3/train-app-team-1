@@ -33,7 +33,8 @@ function makeService(options: { failChannel?: boolean } = {}) {
     consume,
   };
 
-  const reconnectListeners: (() => void)[] = [];
+  // Matches AmqpReconnectListener: the real handler is async.
+  const reconnectListeners: (() => void | Promise<void>)[] = [];
   const unsubscribe = vi.fn();
 
   const amqp = {
@@ -51,7 +52,15 @@ function makeService(options: { failChannel?: boolean } = {}) {
 
   const service = new TripLifecycleTopologyService(amqp as never);
 
-  return { service, amqp, bindings, queues, consume, reconnectListeners, unsubscribe };
+  return {
+    service,
+    amqp,
+    bindings,
+    queues,
+    consume,
+    reconnectListeners,
+    unsubscribe,
+  };
 }
 
 describe('TripLifecycleTopologyService', () => {

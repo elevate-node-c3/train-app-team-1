@@ -6,5 +6,13 @@
   },
   "env": {
     "node": true
-  }
+  },
+  "overrides": [
+    {
+      "files": ["**/*.spec.ts", "**/*.int-spec.ts", "**/*.e2e-spec.ts"],
+      "rules": {
+        "typescript/unbound-method": "off"
+      }
+    }
+  ]
 }

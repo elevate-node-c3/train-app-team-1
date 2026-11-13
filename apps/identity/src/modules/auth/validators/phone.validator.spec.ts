@@ -65,4 +65,3 @@ describe('normalizePhone', () => {
     expect(normalizePhone('not-a-phone').valid).toBe(false);
   });
 });
-

@@ -39,7 +39,9 @@ export class PassengerRepository {
       .getOne();
   }
 
-  async findSelfByAccountId(accountId: string): Promise<PassengerEntity | null> {
+  async findSelfByAccountId(
+    accountId: string,
+  ): Promise<PassengerEntity | null> {
     return this.dataSource
       .getRepository(PassengerEntity)
       .createQueryBuilder('passenger')
@@ -93,10 +95,7 @@ export class PassengerRepository {
     return query.getOne();
   }
 
-  async delete(
-    ctx: TransactionContext | null,
-    id: string,
-  ): Promise<void> {
+  async delete(ctx: TransactionContext | null, id: string): Promise<void> {
     if (ctx) {
       await entityManagerOf(ctx).delete(PassengerEntity, { id });
     } else {

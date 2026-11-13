@@ -9,9 +9,7 @@ import { parseSessionRevokedPayload } from './session-revoked.parser.js';
 
 const NOW = new Date('2026-10-24T10:00:00.000Z');
 
-function envelope(
-  payload: Record<string, unknown> = {},
-): EventEnvelope {
+function envelope(payload: Record<string, unknown> = {}): EventEnvelope {
   return {
     id: '11111111-1111-4111-8111-111111111111',
     type: SESSION_REVOKED_EVENT_TYPE,

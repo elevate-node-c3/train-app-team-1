@@ -28,7 +28,10 @@ function makeHarness() {
       const manager = {
         getRepository: () => ({
           insert: async (entity: OperationsRequestEntity) => {
-            if (staged.has(entity.idempotencyKey) || committed.has(entity.idempotencyKey)) {
+            if (
+              staged.has(entity.idempotencyKey) ||
+              committed.has(entity.idempotencyKey)
+            ) {
               throw new Error('duplicate key value violates unique constraint');
             }
             staged.set(entity.idempotencyKey, entity);
@@ -140,6 +143,8 @@ describe('fingerprintOf', () => {
   });
 
   it('is sensitive to a number changing, including across int/float', () => {
-    expect(fingerprintOf({ price: 100 })).not.toBe(fingerprintOf({ price: 100.5 }));
+    expect(fingerprintOf({ price: 100 })).not.toBe(
+      fingerprintOf({ price: 100.5 }),
+    );
   });
 });

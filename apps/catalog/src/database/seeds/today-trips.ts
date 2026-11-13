@@ -529,7 +529,14 @@ async function insertReturnTrips(
       const tripId = e2eUuid(88, index + 1);
 
       return [
-        [e2eUuid(89, index * 2 + 1), tripId, IDS.stations.ramsis, 1, null, at(departure)],
+        [
+          e2eUuid(89, index * 2 + 1),
+          tripId,
+          IDS.stations.ramsis,
+          1,
+          null,
+          at(departure),
+        ],
         [
           e2eUuid(89, index * 2 + 2),
           tripId,

@@ -98,8 +98,9 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     };
     const relay = new OutboxRelayService(
       {
-        withTransaction: async <T>(work: (c: TransactionContext) => Promise<T>) =>
-          work(transaction),
+        withTransaction: async <T>(
+          work: (c: TransactionContext) => Promise<T>,
+        ) => work(transaction),
       },
       outbox as any,
       publisher as any,
@@ -133,8 +134,9 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     };
     const relay = new OutboxRelayService(
       {
-        withTransaction: async <T>(work: (c: TransactionContext) => Promise<T>) =>
-          work(transaction),
+        withTransaction: async <T>(
+          work: (c: TransactionContext) => Promise<T>,
+        ) => work(transaction),
       },
       outbox as any,
       publisher as any,
@@ -147,13 +149,12 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(markPublished).not.toHaveBeenCalled();
     expect(recordFailure).toHaveBeenCalledTimes(1);
 
-    const [receivedCtx, id, message, nextAttemptAt] = recordFailure.mock.calls[0];
+    const [receivedCtx, id, message, nextAttemptAt] =
+      recordFailure.mock.calls[0];
     expect(receivedCtx).toBe(transaction);
     expect(id).toBe(EVENT.id);
     expect(message).toBe('broker rejected the publish');
-    expect(message).not.toContain(
-      (EVENT.payload as { code: string }).code,
-    );
+    expect(message).not.toContain((EVENT.payload as { code: string }).code);
     expect(nextAttemptAt).toBeInstanceOf(Date);
   });
 
@@ -162,8 +163,9 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     const recordFailure = vi.fn(recordFailureStub);
     const relay = new OutboxRelayService(
       {
-        withTransaction: async <T>(work: (c: TransactionContext) => Promise<T>) =>
-          work(ctx()),
+        withTransaction: async <T>(
+          work: (c: TransactionContext) => Promise<T>,
+        ) => work(ctx()),
       },
       {
         claimBatch: async () => rows,
@@ -183,9 +185,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
 
     const stored = String(recordFailure.mock.calls[0][2]);
     expect(stored).toBe('smtp: connection refused');
-    expect(stored).not.toContain(
-      (EVENT.payload as { code: string }).code,
-    );
+    expect(stored).not.toContain((EVENT.payload as { code: string }).code);
     expect(stored).not.toContain('user@example.com');
   });
 

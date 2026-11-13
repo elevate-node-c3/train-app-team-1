@@ -1,9 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** Each service owns its consumer ledger; this matches notification's table. */
-export class CreateGatewayProcessedEvent1761314800000
-  implements MigrationInterface
-{
+export class CreateGatewayProcessedEvent1761314800000 implements MigrationInterface {
   name = 'CreateGatewayProcessedEvent1761314800000';
 
   async up(queryRunner: QueryRunner): Promise<void> {

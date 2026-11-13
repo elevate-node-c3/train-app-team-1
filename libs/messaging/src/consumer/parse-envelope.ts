@@ -31,10 +31,7 @@ export function parseEventEnvelope(
   }
 
   if (value.version !== expected.version) {
-    throw new UnsupportedEventVersionError(
-      value.version,
-      expected.version,
-    );
+    throw new UnsupportedEventVersionError(value.version, expected.version);
   }
 
   return value;

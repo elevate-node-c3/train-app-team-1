@@ -146,13 +146,17 @@ describe('RevocationStore (F6c, BR-07)', () => {
   it('revokes every token minted at or before an account-wide reset', async () => {
     const redis = fakeRedis();
     const store = new RevocationStore(redis.service);
-    await store.revoke(payload({ allSessions: true, reason: 'password_reset' }));
+    await store.revoke(
+      payload({ allSessions: true, reason: 'password_reset' }),
+    );
 
     await expect(
       store.isRevoked(subject({ iat: NOW_SECONDS - 5 })),
     ).resolves.toBe(true);
     await expect(
-      store.isRevoked(subject({ iat: NOW_SECONDS + 5, jti: 'later', sid: 'later' })),
+      store.isRevoked(
+        subject({ iat: NOW_SECONDS + 5, jti: 'later', sid: 'later' }),
+      ),
     ).resolves.toBe(false);
   });
 
@@ -166,7 +170,9 @@ describe('RevocationStore (F6c, BR-07)', () => {
       store.isRevoked(subject({ iat: NOW_SECONDS - 1 })),
     ).resolves.toBe(true);
     await expect(
-      store.isRevoked(subject({ iat: NOW_SECONDS + 1, jti: 'later', sid: 'later' })),
+      store.isRevoked(
+        subject({ iat: NOW_SECONDS + 1, jti: 'later', sid: 'later' }),
+      ),
     ).resolves.toBe(false);
   });
 
@@ -209,7 +215,9 @@ describe('RevocationStore (F6c, BR-07)', () => {
         throw new Error('redis write failed');
       },
     });
-    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => {});
     const store = new RevocationStore(redis.service);
 
     await expect(store.revoke(payload())).resolves.toBeUndefined();
@@ -225,7 +233,9 @@ describe('RevocationStore (F6c, BR-07)', () => {
         throw new Error('connection reset');
       },
     });
-    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => {});
     const store = new RevocationStore(redis.service);
 
     await expect(store.isRevoked(subject())).resolves.toBe(false);

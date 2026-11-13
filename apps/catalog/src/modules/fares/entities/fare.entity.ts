@@ -1,10 +1,4 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  PrimaryColumn,
-} from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 
 import { TrainEntity } from '../../trains/entities/train.entity.js';
 import { TravelClassEntity } from '../../trains/entities/travel-class.entity.js';

@@ -1,8 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateCatalogScheduleFareTripTables1793300000001
-  implements MigrationInterface
-{
+export class CreateCatalogScheduleFareTripTables1793300000001 implements MigrationInterface {
   name = 'CreateCatalogScheduleFareTripTables1793300000001';
 
   async up(queryRunner: QueryRunner): Promise<void> {

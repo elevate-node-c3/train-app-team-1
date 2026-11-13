@@ -43,8 +43,14 @@ describe('building the trip list', () => {
   it('maps, orders and counts what survived the filters', () => {
     const list = buildTripList({
       eligible: [
-        trip({ tripId: 'late', originDepartureMillis: Date.parse('2026-06-20T09:00:00Z') }),
-        trip({ tripId: 'early', originDepartureMillis: Date.parse('2026-06-20T03:00:00Z') }),
+        trip({
+          tripId: 'late',
+          originDepartureMillis: Date.parse('2026-06-20T09:00:00Z'),
+        }),
+        trip({
+          tripId: 'early',
+          originDepartureMillis: Date.parse('2026-06-20T03:00:00Z'),
+        }),
       ],
       seats: seatsFor(['late', 10], ['early', 10]),
       travelClassId: FIRST,

@@ -36,7 +36,10 @@ describe('Distributed Stampede Guard (§2.3 rule 3)', () => {
       dbQueryCount++;
       // Keep requests overlapping while the loader waits.
       await new Promise((resolve) => setTimeout(resolve, 50));
-      return { trips: [{ id: 'trip-1', fare: 12000 }], generatedAt: Date.now() };
+      return {
+        trips: [{ id: 'trip-1', fare: 12000 }],
+        generatedAt: Date.now(),
+      };
     });
 
     const promises = Array.from({ length: 200 }, () =>
@@ -70,9 +73,13 @@ describe('Distributed Stampede Guard (§2.3 rule 3)', () => {
       return { answer: 'from-db' };
     };
 
-    const res = await degradedCache.getOrRebuild('int:degraded:key', 'search', loader, 60);
+    const res = await degradedCache.getOrRebuild(
+      'int:degraded:key',
+      'search',
+      loader,
+      60,
+    );
     expect(res).toEqual({ answer: 'from-db' });
     expect(queryCount).toBe(1);
   });
 });
-

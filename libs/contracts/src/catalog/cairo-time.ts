@@ -155,8 +155,7 @@ export function cairoInstantOf(civilDate: string, localTime: string): Date {
   const asIfUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
 
   const firstGuess = asIfUtc - offsetToMs(partsOf(new Date(asIfUtc)).offset);
-  const corrected =
-    asIfUtc - offsetToMs(partsOf(new Date(firstGuess)).offset);
+  const corrected = asIfUtc - offsetToMs(partsOf(new Date(firstGuess)).offset);
 
   return new Date(corrected);
 }

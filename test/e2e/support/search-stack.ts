@@ -112,10 +112,7 @@ interface Called {
 }
 
 /** Share correlation, bearer and language headers across all route helpers. */
-async function get(
-  url: URL,
-  options: CallOptions = {},
-): Promise<Called> {
+async function get(url: URL, options: CallOptions = {}): Promise<Called> {
   const response = await fetch(url, {
     headers: {
       'x-correlation-id': `e2e-search-${randomUUID()}`,

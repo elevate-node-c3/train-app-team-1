@@ -29,4 +29,3 @@ export class ProfileCompletedConsumer implements EventHandlerPort {
     return { status: 'handled' };
   }
 }
-

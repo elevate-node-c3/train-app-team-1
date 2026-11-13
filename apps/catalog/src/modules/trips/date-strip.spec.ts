@@ -86,9 +86,9 @@ describe('the date strip', () => {
   });
 
   it('has no today when the strip has slid past it', () => {
-    expect(
-      buildDateStrip(LAST_BOOKABLE, NOW).some((day) => day.isToday),
-    ).toBe(false);
+    expect(buildDateStrip(LAST_BOOKABLE, NOW).some((day) => day.isToday)).toBe(
+      false,
+    );
   });
 
   it('returns consecutive civil dates across a DST transition', () => {

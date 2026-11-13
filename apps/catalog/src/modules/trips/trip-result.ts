@@ -57,7 +57,11 @@ export function buildTripList(input: TripListInput): TripList {
 
   return {
     trips: sortTrips(priced, input.sort).map((trip) =>
-      toTripResult(trip, input.travelClassId, input.seats.get(trip.tripId) ?? 0),
+      toTripResult(
+        trip,
+        input.travelClassId,
+        input.seats.get(trip.tripId) ?? 0,
+      ),
     ),
     filteredCount: filtered.length,
   };

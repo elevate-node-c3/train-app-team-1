@@ -69,7 +69,9 @@ const TRAIN_A = '11111111-1111-4111-8111-111111111111';
 const TRAIN_B = '22222222-2222-4222-8222-222222222222';
 const ACTOR = '33333333-3333-4333-8333-333333333333';
 
-function makeInput(overrides: Partial<AppendAuditInput> = {}): AppendAuditInput {
+function makeInput(
+  overrides: Partial<AppendAuditInput> = {},
+): AppendAuditInput {
   return {
     action: 'timetable.published',
     actorAccountId: ACTOR,
@@ -125,10 +127,7 @@ describe('OperationsAuditService', () => {
       return service.append(ctx as never, makeInput());
     });
 
-    expect(repository.append).toHaveBeenCalledWith(
-      seenCtx,
-      expect.anything(),
-    );
+    expect(repository.append).toHaveBeenCalledWith(seenCtx, expect.anything());
     expect(uow.withTransaction).toHaveBeenCalledOnce();
   });
 
@@ -212,9 +211,9 @@ describe('OperationsAuditService', () => {
         to: new Date('2026-02-15T00:00:00Z'),
         limit: 10,
       });
-      expect(
-        byDateRange.entries.map((entry) => entry.correlationId),
-      ).toEqual(['b-feb']);
+      expect(byDateRange.entries.map((entry) => entry.correlationId)).toEqual([
+        'b-feb',
+      ]);
     } finally {
       vi.useRealTimers();
     }

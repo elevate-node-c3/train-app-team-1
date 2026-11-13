@@ -156,9 +156,7 @@ export class TimetablePublishRepository {
   }
 
   /** Every stop of several trips at once, keyed by trip id, in travel order. */
-  async tripStopsOf(
-    tripIds: string[],
-  ): Promise<Map<string, TripStopEntity[]>> {
+  async tripStopsOf(tripIds: string[]): Promise<Map<string, TripStopEntity[]>> {
     const byTrip = new Map<string, TripStopEntity[]>();
     if (tripIds.length === 0) return byTrip;
 

@@ -158,13 +158,13 @@ describe('the station-picker route', () => {
 describe('the operator station routes', () => {
   const id = '11111111-1111-4111-8111-111111111111';
   const cityId = '22222222-2222-4222-8222-222222222222';
-  const create: CreateStationDto = {
+  const create = {
     cityId,
     nameAr: 'Ramses AR',
     nameEn: 'Ramses',
     altSpellings: [],
     isActive: false,
-  };
+  } satisfies CreateStationDto;
   const patch: UpdateStationDto = { altSpellings: [], isActive: false };
   const response: StationResponse = {
     station: {

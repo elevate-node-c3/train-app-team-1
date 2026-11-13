@@ -1,6 +1,4 @@
-import {
-  SEARCH_FIXTURE_IDS as IDS,
-} from '../../apps/catalog/src/database/seeds/search-fixture.js';
+import { SEARCH_FIXTURE_IDS as IDS } from '../../apps/catalog/src/database/seeds/search-fixture.js';
 import { seedSearchFixture } from '../../apps/catalog/src/database/seeds/search-fixture.seed.js';
 import { MAX_TRIP_DAY_SPAN_DAYS } from '../../apps/catalog/src/modules/trips/trip-sellability.js';
 import type { DataSource } from 'typeorm';
@@ -50,7 +48,7 @@ describe("search's assumptions about generated trip data", () => {
    * destination.position - origin.position - 1 counts stops only when
    * positions are dense and start at 1.
    */
-  it('numbers every trip\'s stops densely from 1', async () => {
+  it("numbers every trip's stops densely from 1", async () => {
     const gaps: { trip_id: string; stops: number; highest: number }[] =
       await source.query(
         `SELECT trip_id, count(*)::int AS stops, max(position)::int AS highest

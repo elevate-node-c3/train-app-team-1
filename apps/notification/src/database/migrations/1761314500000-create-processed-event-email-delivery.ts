@@ -4,9 +4,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * Track handled events by ID and append each delivery attempt.
  * Never store verification codes or other secrets.
  */
-export class CreateProcessedEventEmailDelivery1761314500000
-  implements MigrationInterface
-{
+export class CreateProcessedEventEmailDelivery1761314500000 implements MigrationInterface {
   name = 'CreateProcessedEventEmailDelivery1761314500000';
 
   async up(queryRunner: QueryRunner): Promise<void> {

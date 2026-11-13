@@ -1,9 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** Store each Idempotency-Key's fingerprint and response for safe retries. */
-export class CreateOperationsRequest1793300000008
-  implements MigrationInterface
-{
+export class CreateOperationsRequest1793300000008 implements MigrationInterface {
   name = 'CreateOperationsRequest1793300000008';
 
   async up(queryRunner: QueryRunner): Promise<void> {

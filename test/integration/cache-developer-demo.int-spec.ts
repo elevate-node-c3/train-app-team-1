@@ -14,7 +14,7 @@ import { assertReachable } from './support/catalog-database.js';
 
 const REDIS_URL = `redis://127.0.0.1:${process.env.REDIS_HOST_PORT ?? '16379'}`;
 
-describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
+describe('Developer Flow & Demo Verification Suite (Story TA-19)', () => {
   let redisService: RedisClientService;
   let cache: CacheAsideService;
   let metrics: CacheMetrics;
@@ -48,7 +48,10 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
   });
 
   async function executeSearch(): Promise<{ trips: any[] }> {
-    const version = await routeVersion.getRouteVersion(originStationId, destinationStationId);
+    const version = await routeVersion.getRouteVersion(
+      originStationId,
+      destinationStationId,
+    );
     const key = searchCacheKey({
       originStationId,
       destinationStationId,
@@ -139,7 +142,7 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
       id: 'evt-fare-change-123',
       type: EVENT_TYPES.fareChanged,
       occurredAt: new Date().toISOString(),
-      source: 'ops',
+      producer: 'ops',
       version: 1,
       correlationId: 'corr-demo-1',
       payload: {
@@ -198,7 +201,9 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
   });
 
   it('Step 5: Redis disconnected (searches still answer slower, health check says degraded)', async () => {
-    const privRedis = redisService as unknown as { handleConnectionError: (err: Error) => void };
+    const privRedis = redisService as unknown as {
+      handleConnectionError: (err: Error) => void;
+    };
     privRedis.handleConnectionError(new Error('ECONNREFUSED'));
 
     // Redis loss degrades readiness instead of returning HTTP 503.
@@ -219,12 +224,14 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
   });
 
   it('Step 6: Redis reconnected (cache used again without restart)', async () => {
-    const privRedis = redisService as unknown as { handleConnectionReady: () => void };
+    const privRedis = redisService as unknown as {
+      handleConnectionReady: () => void;
+    };
     privRedis.handleConnectionReady();
 
     const testKey = 'catalog:reconnect-test:v1';
-    await cache.set(testKey, { reconnected: true }, 60, 'search');
-    const cached = await cache.get<{ reconnected: boolean }>(testKey, 'search');
+    await cache.set(testKey, { reconnected: true }, 60);
+    const cached = await cache.get<{ reconnected: boolean }>(testKey);
     expect(cached?.reconnected).toBe(true);
 
     const health = await healthService.checkReadiness('catalog');
@@ -244,10 +251,18 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
     expect(snapshot.overall.total).toBeGreaterThan(0);
 
     console.log('\n--- Cache Hit Rate Report (§2.3 rule 8) ---');
-    console.log(`Search Hit Rate: ${(snapshot.search.hitRate * 100).toFixed(2)}% (Hits: ${snapshot.search.hits}, Misses: ${snapshot.search.misses}, Total: ${snapshot.search.total})`);
-    console.log(`Trip Stops Hit Rate: ${(snapshot['trip-stops'].hitRate * 100).toFixed(2)}%`);
-    console.log(`Stations Hit Rate: ${(snapshot.stations.hitRate * 100).toFixed(2)}%`);
-    console.log(`Overall Hit Rate: ${(snapshot.overall.hitRate * 100).toFixed(2)}%`);
+    console.log(
+      `Search Hit Rate: ${(snapshot.search.hitRate * 100).toFixed(2)}% (Hits: ${snapshot.search.hits}, Misses: ${snapshot.search.misses}, Total: ${snapshot.search.total})`,
+    );
+    console.log(
+      `Trip Stops Hit Rate: ${(snapshot['trip-stops'].hitRate * 100).toFixed(2)}%`,
+    );
+    console.log(
+      `Stations Hit Rate: ${(snapshot.stations.hitRate * 100).toFixed(2)}%`,
+    );
+    console.log(
+      `Overall Hit Rate: ${(snapshot.overall.hitRate * 100).toFixed(2)}%`,
+    );
     console.log('-------------------------------------------\n');
   });
 });

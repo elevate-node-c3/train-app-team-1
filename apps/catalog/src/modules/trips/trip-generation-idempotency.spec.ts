@@ -36,9 +36,7 @@ function makeService(options: {
     findOne.mockResolvedValueOnce(result);
   }
 
-  const withTransaction = vi.fn(
-    options.transaction ?? (async () => existing),
-  );
+  const withTransaction = vi.fn(options.transaction ?? (async () => existing));
 
   const service = new TripsService(
     {} as never,
@@ -79,7 +77,7 @@ describe('createDatedTrip idempotency', () => {
     expect(withTransaction).toHaveBeenCalledOnce();
   });
 
-  it('recognises the violation through TypeORM\'s wrapper', async () => {
+  it("recognises the violation through TypeORM's wrapper", async () => {
     const { service } = makeService({
       findOne: [null, existing],
       transaction: () => Promise.reject(wrappedUniqueViolation()),

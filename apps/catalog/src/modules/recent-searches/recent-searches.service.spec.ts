@@ -122,9 +122,7 @@ describe('the recent-searches service', () => {
     /** Omit stale dates so the client asks for new ones. */
     describe('a stale entry', () => {
       it('comes back without its dates', async () => {
-        const { service } = makeService([
-          row({ departureDate: '2026-06-01' }),
-        ]);
+        const { service } = makeService([row({ departureDate: '2026-06-01' })]);
 
         const [entry] = (await service.list(TRAVELLER, NOW)).recentSearches;
 
@@ -150,9 +148,7 @@ describe('the recent-searches service', () => {
       });
 
       it('keeps today, which is still bookable', async () => {
-        const { service } = makeService([
-          row({ departureDate: '2026-06-15' }),
-        ]);
+        const { service } = makeService([row({ departureDate: '2026-06-15' })]);
 
         const [entry] = (await service.list(TRAVELLER, NOW)).recentSearches;
 

@@ -44,7 +44,9 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     await this.connect(url).catch((error: unknown) => {
-      this.logger.warn(`AMQP connection failed at startup: ${messageOf(error)}`);
+      this.logger.warn(
+        `AMQP connection failed at startup: ${messageOf(error)}`,
+      );
       // Announce recovery because the startup subscription also failed.
       this.announceOpens = true;
       this.scheduleReconnect();

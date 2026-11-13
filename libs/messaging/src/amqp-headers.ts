@@ -3,9 +3,7 @@ export const ATTEMPT_HEADER = 'x-attempt';
 export const DEATH_REASON_HEADER = 'x-death-reason';
 
 export type DeathReason =
-  | 'invalid-payload'
-  | 'unsupported-version'
-  | 'retries-exhausted';
+  'invalid-payload' | 'unsupported-version' | 'retries-exhausted';
 
 /** Add the required correlation ID to message headers. */
 export function injectCorrelationId(

@@ -71,16 +71,6 @@ function allAppFiles(): string[] {
   });
 }
 
-function directoriesIn(root: string): string[] {
-  const directories: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const full = join(root, entry.name);
-    directories.push(full, ...directoriesIn(full));
-  }
-  return directories;
-}
-
 /** Anchor line comments to preserve URLs such as `postgres://`; also strip blocks. */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

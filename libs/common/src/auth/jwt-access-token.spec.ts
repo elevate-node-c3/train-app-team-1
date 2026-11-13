@@ -54,10 +54,12 @@ async function signerFor(
   });
 }
 
-async function verifier(options: {
-  clockSkewSeconds?: number;
-  previous?: KeyPair;
-} = {}): Promise<JwtAccessTokenVerifier> {
+async function verifier(
+  options: {
+    clockSkewSeconds?: number;
+    previous?: KeyPair;
+  } = {},
+): Promise<JwtAccessTokenVerifier> {
   return JwtAccessTokenVerifier.create({
     active: { kid: 'active', publicKeyPem: ACTIVE.publicPem },
     ...(options.previous

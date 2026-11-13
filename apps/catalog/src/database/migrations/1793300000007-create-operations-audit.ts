@@ -4,9 +4,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * A database trigger enforces append-only audit history, including direct SQL writes.
  * The train/time index serves newest-first reads per train.
  */
-export class CreateOperationsAudit1793300000007
-  implements MigrationInterface
-{
+export class CreateOperationsAudit1793300000007 implements MigrationInterface {
   name = 'CreateOperationsAudit1793300000007';
 
   async up(queryRunner: QueryRunner): Promise<void> {

@@ -367,7 +367,7 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
       bookable: true,
     };
 
-    const { adapter, fake } = adapterWith((method) => {
+    const { adapter } = adapterWith((method) => {
       if (method === 'completeProfile') {
         return {
           response: {
@@ -381,8 +381,12 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
       }
       return {
         response: {
-          profileTypes: [{ code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' }],
-          nationalities: [{ code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' }],
+          profileTypes: [
+            { code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' },
+          ],
+          nationalities: [
+            { code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' },
+          ],
         },
       };
     });
@@ -432,7 +436,10 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     const listResult = await adapter.listPassengers('acc-1', 'en');
     expect(listResult).toEqual({ passengers: [wirePassenger] });
     expect(fake.calls[0].method).toBe('listPassengers');
-    expect(fake.calls[0].request).toEqual({ accountId: 'acc-1', language: 'en' });
+    expect(fake.calls[0].request).toEqual({
+      accountId: 'acc-1',
+      language: 'en',
+    });
 
     const addResult = await adapter.addPassenger({
       accountId: 'acc-1',
@@ -558,7 +565,6 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
 
     const error = await httpErrorOf(
       adapter.completeProfile({
-        accountId: 'acc-1',
         fullName: 'Single',
         phoneNumber: '123',
         nationalId: '123',

@@ -121,10 +121,18 @@ export class IdentityService {
     return {
       accountId: response.profile.accountId,
       fullName: response.profile.bookable ? response.profile.fullName : null,
-      phoneNumber: response.profile.bookable ? response.profile.phoneNumber : null,
-      nationalId: response.profile.bookable ? response.profile.nationalId : null,
-      profileType: response.profile.bookable ? response.profile.profileType : null,
-      nationality: response.profile.bookable ? response.profile.nationality : null,
+      phoneNumber: response.profile.bookable
+        ? response.profile.phoneNumber
+        : null,
+      nationalId: response.profile.bookable
+        ? response.profile.nationalId
+        : null,
+      profileType: response.profile.bookable
+        ? response.profile.profileType
+        : null,
+      nationality: response.profile.bookable
+        ? response.profile.nationality
+        : null,
       bookable: response.profile.bookable,
     };
   }
@@ -170,10 +178,7 @@ export class IdentityService {
     return response.passenger;
   }
 
-  async deletePassenger(
-    passengerId: string,
-    accountId: string,
-  ): Promise<void> {
+  async deletePassenger(passengerId: string, accountId: string): Promise<void> {
     await this.client.deletePassenger(passengerId, accountId);
   }
 }
