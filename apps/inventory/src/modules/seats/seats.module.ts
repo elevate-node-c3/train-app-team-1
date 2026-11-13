@@ -9,6 +9,7 @@ import { TripStopEntity } from './entities/trip-stop.entity.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { AvailabilityService } from './availability.service.js';
 import { SeatPlanRepository } from './seat-plan.repository.js';
+import { SeatUsageRepository } from './seat-usage.repository.js';
 
 /** Owns inventory's seat tables and the services that read and write them. */
 @Module({
@@ -21,7 +22,7 @@ import { SeatPlanRepository } from './seat-plan.repository.js';
       SeatOccupationEntity,
     ]),
   ],
-  providers: [SeatPlanRepository, AvailabilityRepository, AvailabilityService],
-  exports: [SeatPlanRepository, AvailabilityRepository, AvailabilityService],
+  providers: [SeatPlanRepository, AvailabilityRepository, AvailabilityService, SeatUsageRepository],
+  exports: [SeatPlanRepository, AvailabilityRepository, AvailabilityService, SeatUsageRepository],
 })
 export class SeatsModule {}

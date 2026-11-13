@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { TripSeatUsage } from '@app/contracts';
 
-/** No seat tables yet; report zero sold and held counts for every trip. */
+import { SeatUsageRepository } from '../seats/seat-usage.repository.js';
+
+/** Answers catalog's republish-safety question from the real seat tables. */
 @Injectable()
 export class SeatUsageService {
+  constructor(private readonly repository: SeatUsageRepository) {}
+
   async seatUsageForTrips(tripIds: string[]): Promise<TripSeatUsage[]> {
-    return tripIds.map((tripId) => ({
-      tripId,
-      soldCount: 0,
-      heldCount: 0,
-      stationIdsInUse: [],
-    }));
+    return this.repository.usageFor(tripIds);
   }
 }
