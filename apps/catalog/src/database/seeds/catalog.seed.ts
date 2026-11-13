@@ -1,12 +1,21 @@
+import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { type INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DataSource } from 'typeorm';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWorkPort,
+} from '@app/common/persistence/unit-of-work.port.js';
+import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
+import { OUTBOX, type OutboxPort } from '@app/messaging/outbox/outbox.port.js';
 
 import { CatalogModule } from '../../catalog.module.js';
 
-import { GovernorateEntity } from '../../modules/stations/entities/governorate.entity.js';
-import { CityEntity } from '../../modules/stations/entities/city.entity.js';
-import { StationEntity } from '../../modules/stations/entities/station.entity.js';
+import { StationsService } from '../../modules/stations/stations.service.js';
+import { buildStationChanged } from '../../modules/stations/station-events.factory.js';
+import { CATALOG_STATION_IDS } from './stations.js';
+import { writeStations } from './stations.seed.js';
 
 import { TrainTypeEntity } from '../../modules/trains/entities/train-type.entity.js';
 import { TravelClassEntity } from '../../modules/trains/entities/travel-class.entity.js';
@@ -27,24 +36,6 @@ import { TimetablesService } from '../../modules/timetables/timetables.service.j
 
 // Stable IDs make the seed safe to run more than once.
 const IDS = {
-  governorates: {
-    cairo: '00000000-0000-4000-8000-000000000001',
-    giza: '00000000-0000-4000-8000-000000000002',
-    beniSuef: '00000000-0000-4000-8000-000000000003',
-  },
-
-  cities: {
-    cairo: '00000000-0000-4000-8000-000000000011',
-    giza: '00000000-0000-4000-8000-000000000012',
-    beniSuef: '00000000-0000-4000-8000-000000000013',
-  },
-
-  stations: {
-    cairo: '00000000-0000-4000-8000-000000000021',
-    giza: '00000000-0000-4000-8000-000000000022',
-    beniSuef: '00000000-0000-4000-8000-000000000023',
-  },
-
   trainType: '00000000-0000-4000-8000-000000000101',
 
   classes: {
@@ -82,81 +73,24 @@ const IDS = {
   },
 };
 
-async function seedCatalog(app: INestApplicationContext): Promise<void> {
-  const dataSource = app.get(DataSource);
+export async function seedCatalog(app: INestApplicationContext): Promise<void> {
+  const outbox = app.get<OutboxPort>(OUTBOX);
+  const correlationId = randomUUID();
 
-  await dataSource.transaction(async (manager) => {
-    // 1. Create governorates.
-    await manager.getRepository(GovernorateEntity).save([
-      {
-        id: IDS.governorates.cairo,
-        nameAr: 'القاهرة',
-        nameEn: 'Cairo',
-        sortOrder: 1,
-      },
-      {
-        id: IDS.governorates.giza,
-        nameAr: 'الجيزة',
-        nameEn: 'Giza',
-        sortOrder: 2,
-      },
-      {
-        id: IDS.governorates.beniSuef,
-        nameAr: 'بني سويف',
-        nameEn: 'Beni Suef',
-        sortOrder: 3,
-      },
-    ]);
-
-    // 2. Create cities.
-    await manager.getRepository(CityEntity).save([
-      {
-        id: IDS.cities.cairo,
-        governorateId: IDS.governorates.cairo,
-        nameAr: 'القاهرة',
-        nameEn: 'Cairo',
-      },
-      {
-        id: IDS.cities.giza,
-        governorateId: IDS.governorates.giza,
-        nameAr: 'الجيزة',
-        nameEn: 'Giza',
-      },
-      {
-        id: IDS.cities.beniSuef,
-        governorateId: IDS.governorates.beniSuef,
-        nameAr: 'بني سويف',
-        nameEn: 'Beni Suef',
-      },
-    ]);
-
-    // 3. Create stations.
-    await manager.getRepository(StationEntity).save([
-      {
-        id: IDS.stations.cairo,
-        cityId: IDS.cities.cairo,
-        nameAr: 'محطة رمسيس',
-        nameEn: 'Cairo Ramses',
-        altSpellings: ['Ramses', 'Ramses Station'],
-        isActive: true,
-      },
-      {
-        id: IDS.stations.giza,
-        cityId: IDS.cities.giza,
-        nameAr: 'محطة الجيزة',
-        nameEn: 'Giza Station',
-        altSpellings: ['Giza'],
-        isActive: true,
-      },
-      {
-        id: IDS.stations.beniSuef,
-        cityId: IDS.cities.beniSuef,
-        nameAr: 'محطة بني سويف',
-        nameEn: 'Beni Suef Station',
-        altSpellings: ['Beni Suef'],
-        isActive: true,
-      },
-    ]);
+  await app.get<UnitOfWorkPort>(UNIT_OF_WORK).withTransaction(async (ctx) => {
+    const manager = entityManagerOf(ctx);
+    // 1-3. Use the same governorates, cities and stations as the station-only CLI.
+    await writeStations(manager, (payload) =>
+      outbox.append(
+        ctx,
+        buildStationChanged({
+          eventId: randomUUID(),
+          correlationId,
+          occurredAt: new Date(),
+          payload,
+        }),
+      ),
+    );
 
     // 4. Create train type and travel classes.
     await manager.getRepository(TrainTypeEntity).save({
@@ -250,8 +184,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
       {
         id: IDS.timetableStops.cairo,
         timetable: { id: IDS.timetable },
-        station: { id: IDS.stations.cairo },
-        stationId: IDS.stations.cairo,
+        station: { id: CATALOG_STATION_IDS.cairo },
+        stationId: CATALOG_STATION_IDS.cairo,
         position: 1,
         dayOffset: 0,
         arrivalTime: null,
@@ -260,8 +194,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
       {
         id: IDS.timetableStops.giza,
         timetable: { id: IDS.timetable },
-        station: { id: IDS.stations.giza },
-        stationId: IDS.stations.giza,
+        station: { id: CATALOG_STATION_IDS.giza },
+        stationId: CATALOG_STATION_IDS.giza,
         position: 2,
         dayOffset: 0,
         arrivalTime: '08:40',
@@ -270,8 +204,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
       {
         id: IDS.timetableStops.beniSuef,
         timetable: { id: IDS.timetable },
-        station: { id: IDS.stations.beniSuef },
-        stationId: IDS.stations.beniSuef,
+        station: { id: CATALOG_STATION_IDS.beniSuef },
+        stationId: CATALOG_STATION_IDS.beniSuef,
         position: 3,
         dayOffset: 0,
         arrivalTime: '10:30',
@@ -288,8 +222,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.cairoGizaFirst,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.first },
-        originStationId: IDS.stations.cairo,
-        destinationStationId: IDS.stations.giza,
+        originStationId: CATALOG_STATION_IDS.cairo,
+        destinationStationId: CATALOG_STATION_IDS.giza,
         amountPiastres: 5000,
         effectiveFrom,
       },
@@ -297,8 +231,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.cairoBeniSuefFirst,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.first },
-        originStationId: IDS.stations.cairo,
-        destinationStationId: IDS.stations.beniSuef,
+        originStationId: CATALOG_STATION_IDS.cairo,
+        destinationStationId: CATALOG_STATION_IDS.beniSuef,
         amountPiastres: 15000,
         effectiveFrom,
       },
@@ -306,8 +240,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.gizaBeniSuefFirst,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.first },
-        originStationId: IDS.stations.giza,
-        destinationStationId: IDS.stations.beniSuef,
+        originStationId: CATALOG_STATION_IDS.giza,
+        destinationStationId: CATALOG_STATION_IDS.beniSuef,
         amountPiastres: 10000,
         effectiveFrom,
       },
@@ -315,8 +249,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.cairoGizaSecond,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.second },
-        originStationId: IDS.stations.cairo,
-        destinationStationId: IDS.stations.giza,
+        originStationId: CATALOG_STATION_IDS.cairo,
+        destinationStationId: CATALOG_STATION_IDS.giza,
         amountPiastres: 3500,
         effectiveFrom,
       },
@@ -324,8 +258,8 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.cairoBeniSuefSecond,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.second },
-        originStationId: IDS.stations.cairo,
-        destinationStationId: IDS.stations.beniSuef,
+        originStationId: CATALOG_STATION_IDS.cairo,
+        destinationStationId: CATALOG_STATION_IDS.beniSuef,
         amountPiastres: 10000,
         effectiveFrom,
       },
@@ -333,19 +267,21 @@ async function seedCatalog(app: INestApplicationContext): Promise<void> {
         id: IDS.fares.gizaBeniSuefSecond,
         train: { id: IDS.train },
         travelClass: { id: IDS.classes.second },
-        originStationId: IDS.stations.giza,
-        destinationStationId: IDS.stations.beniSuef,
+        originStationId: CATALOG_STATION_IDS.giza,
+        destinationStationId: CATALOG_STATION_IDS.beniSuef,
         amountPiastres: 7000,
         effectiveFrom,
       },
     ]);
   });
 
+  await app.get(StationsService).invalidate();
+
   // Publish through the normal application flow.
   await app.get(TimetablesService).publishTimetable(IDS.timetable);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   await withBackgroundJobsDisabled(async () => {
     let app: INestApplicationContext | undefined;
 
@@ -361,7 +297,13 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((error: unknown) => {
-  console.error('Catalog seed failed:', error);
-  process.exitCode = 1;
-});
+const entry = process.argv[1];
+if (
+  entry !== undefined &&
+  import.meta.url === pathToFileURL(resolve(entry)).href
+) {
+  main().catch((error: unknown) => {
+    console.error('Catalog seed failed:', error);
+    process.exitCode = 1;
+  });
+}

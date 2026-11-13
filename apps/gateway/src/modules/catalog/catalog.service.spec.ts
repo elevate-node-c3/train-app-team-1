@@ -1,6 +1,11 @@
 import type {
+  CreateStationRequest,
+  ListStationsRequest,
+  ListStationsResponse,
   SearchOneWayTripsResponse,
   SearchReturnTripsResponse,
+  StationResponse,
+  UpdateStationRequest,
 } from '@app/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +13,7 @@ import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import { CatalogService } from './catalog.service.js';
 import type { SearchReturnTripsDto } from './dto/search-return-trips.dto.js';
 import type { SearchTripsDto } from './dto/search-trips.dto.js';
+import type { UpdateStationDto } from './dto/station-requests.dto.js';
 import type { TripStopsQueryDto } from './dto/trip-stops.dto.js';
 
 const CAIRO = '11111111-1111-4111-8111-111111111111';
@@ -266,10 +272,7 @@ describe('the gateway search service', () => {
    * keyed by the wire enum -- there is no mapping table in between.
    */
   describe('the empty-result sentence', () => {
-    const withReason = (
-      reason: string,
-      params: Record<string, string> = {},
-    ) =>
+    const withReason = (reason: string, params: Record<string, string> = {}) =>
       serviceWith({
         ...baseResponse,
         emptyResult: { reason: reason as never, params },
@@ -336,6 +339,282 @@ describe('the gateway search service', () => {
 
       expect(result.emptyResult?.message).not.toBe('');
     });
+  });
+});
+
+describe('the gateway station-picker service', () => {
+  function serviceWith(response: Partial<ListStationsResponse>) {
+    const listStations = vi.fn().mockResolvedValue(response);
+    const client = { listStations } as unknown as CatalogGrpcClientService;
+
+    return { service: new CatalogService(client), listStations };
+  }
+
+  it.each<ListStationsRequest>([
+    { language: 'en', query: '  RaMsEs  ' },
+    { language: 'ar', query: '' },
+    { language: ' EN ', query: 'x'.repeat(101) },
+    { language: '' },
+    { language: 'fr', query: '  ' },
+  ])(
+    'forwards language and query without rewriting them: %j',
+    async (request) => {
+      Object.freeze(request);
+      const { service, listStations } = serviceWith({ governorates: [] });
+
+      await service.listStations(request);
+
+      expect(listStations).toHaveBeenCalledTimes(1);
+      expect(listStations.mock.calls[0][0]).toStrictEqual(request);
+    },
+  );
+
+  it('restores an omitted governorates array without mutating the response', async () => {
+    const response = Object.freeze({});
+    const { service } = serviceWith(response);
+
+    await expect(service.listStations({ language: 'en' })).resolves.toEqual({
+      governorates: [],
+    });
+    expect(response).not.toHaveProperty('governorates');
+  });
+
+  it('keeps an explicitly empty governorates array empty', async () => {
+    const response: ListStationsResponse = { governorates: [] };
+    Object.freeze(response.governorates);
+    Object.freeze(response);
+    const { service } = serviceWith(response);
+
+    await expect(service.listStations({ language: 'ar' })).resolves.toEqual({
+      governorates: [],
+    });
+    expect(response).toStrictEqual({ governorates: [] });
+  });
+
+  it('restores nested absent stations while preserving populated groups and the original response', async () => {
+    const emptyGovernorate = Object.freeze({ id: FIRST, name: 'Cairo' });
+    const populatedGovernorate = {
+      id: ALEX,
+      name: 'Alexandria',
+      stations: [
+        { id: CAIRO, name: 'Sidi Gaber', cityName: 'Alexandria' },
+        { id: FIRST, name: 'Misr', cityName: 'Alexandria' },
+      ],
+    };
+    const response = {
+      governorates: [emptyGovernorate, populatedGovernorate],
+    };
+    const original = structuredClone(response);
+    Object.freeze(response.governorates);
+    Object.freeze(response);
+    // An empty repeated stations field can be truly absent after decoding.
+    const { service } = serviceWith(response as ListStationsResponse);
+
+    const result = await service.listStations({ language: 'en', query: '' });
+
+    expect(result).toStrictEqual({
+      governorates: [
+        { id: FIRST, name: 'Cairo', stations: [] },
+        populatedGovernorate,
+      ],
+    });
+    expect(emptyGovernorate).not.toHaveProperty('stations');
+    expect(response).toStrictEqual(original);
+  });
+
+  it('does not turn a failed catalog call into an empty station list', async () => {
+    const failure = new Error('catalog refused');
+    const { service, listStations } = serviceWith({});
+    listStations.mockRejectedValue(failure);
+
+    await expect(service.listStations({ language: 'en' })).rejects.toBe(
+      failure,
+    );
+  });
+});
+
+describe('the gateway operator station service', () => {
+  const response: StationResponse = {
+    station: {
+      id: CAIRO,
+      cityId: ALEX,
+      governorateId: FIRST,
+      name: { en: 'Ramses', ar: 'رمسيس' },
+      cityName: { en: 'Cairo', ar: 'القاهرة' },
+      governorateName: { en: 'Cairo', ar: 'القاهرة' },
+      altSpellings: [],
+      isActive: false,
+      createdAt: '2026-11-13T01:00:00.000Z',
+      updatedAt: '2026-11-13T01:15:00.000Z',
+    },
+  };
+
+  function serviceWith() {
+    const client = {
+      getStation: vi.fn().mockResolvedValue(response),
+      createStation: vi.fn().mockResolvedValue(response),
+      updateStation: vi.fn().mockResolvedValue(response),
+      deactivateStation: vi.fn().mockResolvedValue(response),
+    };
+    return {
+      service: new CatalogService(
+        client as unknown as CatalogGrpcClientService,
+      ),
+      client,
+    };
+  }
+
+  it('fetches details by ID without filtering or localizing an inactive station', async () => {
+    const { service, client } = serviceWith();
+
+    await expect(service.getStation(CAIRO)).resolves.toBe(response);
+    expect(client.getStation).toHaveBeenCalledWith(CAIRO);
+    expect(response.station.isActive).toBe(false);
+  });
+
+  it.each<CreateStationRequest>([
+    { cityId: ALEX, nameAr: 'رمسيس', nameEn: 'Ramses' },
+    {
+      cityId: ALEX,
+      nameAr: 'رمسيس',
+      nameEn: 'Ramses',
+      altSpellings: [],
+      isActive: false,
+    },
+    {
+      cityId: ALEX,
+      nameAr: 'رمسيس',
+      nameEn: 'Ramses',
+      altSpellings: ['Ramsis'],
+      isActive: true,
+    },
+  ])(
+    'passes creates and their direct altSpellings through: %j',
+    async (body) => {
+      const { service, client } = serviceWith();
+      Object.freeze(body);
+
+      await expect(service.createStation(body, 'create-key')).resolves.toBe(
+        response,
+      );
+      expect(client.createStation).toHaveBeenCalledWith(body, 'create-key');
+      expect(client.createStation.mock.calls[0][0]).toBe(body);
+      expect(client.createStation.mock.calls[0][0]).not.toHaveProperty(
+        'aliases',
+      );
+    },
+  );
+
+  it.each<{
+    body: UpdateStationDto;
+    changes: Omit<UpdateStationRequest, 'stationId'>;
+  }>([
+    { body: {}, changes: {} },
+    { body: { cityId: ALEX }, changes: { cityId: ALEX } },
+    { body: { nameAr: 'رمسيس' }, changes: { nameAr: 'رمسيس' } },
+    { body: { nameEn: 'Ramses' }, changes: { nameEn: 'Ramses' } },
+    { body: { isActive: true }, changes: { isActive: true } },
+    { body: { isActive: false }, changes: { isActive: false } },
+    { body: { altSpellings: [] }, changes: { aliases: { values: [] } } },
+    {
+      body: { altSpellings: ['Ramsis', 'Cairo'], isActive: false },
+      changes: { aliases: { values: ['Ramsis', 'Cairo'] }, isActive: false },
+    },
+    {
+      body: {
+        cityId: ALEX,
+        nameAr: 'رمسيس',
+        nameEn: 'Ramses',
+        altSpellings: ['Ramsis'],
+        isActive: false,
+      },
+      changes: {
+        cityId: ALEX,
+        nameAr: 'رمسيس',
+        nameEn: 'Ramses',
+        aliases: { values: ['Ramsis'] },
+        isActive: false,
+      },
+    },
+    {
+      body: {
+        cityId: undefined,
+        nameAr: undefined,
+        nameEn: undefined,
+        altSpellings: undefined,
+        isActive: undefined,
+      },
+      changes: {},
+    },
+  ])('maps only supplied PATCH changes: $body', async ({ body, changes }) => {
+    const { service, client } = serviceWith();
+    const original = structuredClone(body);
+    Object.freeze(body);
+
+    await expect(
+      service.updateStation(CAIRO, body, 'update-key'),
+    ).resolves.toBe(response);
+
+    expect(client.updateStation).toHaveBeenCalledTimes(1);
+    expect(client.updateStation).toHaveBeenCalledWith(
+      { stationId: CAIRO, ...changes },
+      'update-key',
+    );
+    expect(client.updateStation.mock.calls[0][0]).not.toHaveProperty(
+      'altSpellings',
+    );
+    expect(body).toStrictEqual(original);
+  });
+
+  it('does not turn inherited altSpellings into an explicit alias replacement', async () => {
+    const { service, client } = serviceWith();
+    const body = Object.create({
+      altSpellings: ['inherited'],
+    }) as UpdateStationDto;
+
+    await service.updateStation(CAIRO, body, 'update-key');
+
+    expect(client.updateStation).toHaveBeenCalledWith(
+      { stationId: CAIRO },
+      'update-key',
+    );
+  });
+
+  it('forwards deactivation by ID and key and returns the retained station snapshot', async () => {
+    const { service, client } = serviceWith();
+
+    await expect(
+      service.deactivateStation(CAIRO, 'deactivate-key'),
+    ).resolves.toBe(response);
+    expect(client.deactivateStation).toHaveBeenCalledWith(
+      CAIRO,
+      'deactivate-key',
+    );
+    expect(response.station.id).toBe(CAIRO);
+    expect(response.station.isActive).toBe(false);
+  });
+
+  it.each([
+    'getStation',
+    'createStation',
+    'updateStation',
+    'deactivateStation',
+  ] as const)('does not conceal a failed %s call', async (method) => {
+    const { service, client } = serviceWith();
+    const failure = new Error('catalog refused station command');
+    client[method].mockRejectedValue(failure);
+    const invoke = {
+      getStation: () => service.getStation(CAIRO),
+      createStation: () =>
+        service.createStation(
+          { cityId: ALEX, nameAr: 'رمسيس', nameEn: 'Ramses' },
+          'key',
+        ),
+      updateStation: () => service.updateStation(CAIRO, {}, 'key'),
+      deactivateStation: () => service.deactivateStation(CAIRO, 'key'),
+    };
+
+    await expect(invoke[method]()).rejects.toBe(failure);
   });
 });
 

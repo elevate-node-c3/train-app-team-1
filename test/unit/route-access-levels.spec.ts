@@ -16,6 +16,7 @@ const BR01_PUBLIC_ROUTES = [
   'GET /health/live',
   'GET /health/ready',
   'GET /ping-all',
+  'GET /stations',
   'POST /auth/sign-up',
   'POST /auth/verify-email',
   'POST /auth/resend-verification',
@@ -101,8 +102,7 @@ function routePath(controllerPath: unknown, handlerPath: unknown): string {
   const parts = [controllerPath, handlerPath]
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
     .filter(
-      (value): value is string =>
-        typeof value === 'string' && value.length > 0,
+      (value): value is string => typeof value === 'string' && value.length > 0,
     )
     .map((value) => value.replace(/^\/+|\/+$/g, ''))
     .filter((value) => value.length > 0);
@@ -116,23 +116,19 @@ function routes(): Route[] {
   for (const controller of registeredControllers()) {
     const prototype = (controller as { prototype: object }).prototype;
     const classLevel = Reflect.getMetadata(ACCESS_LEVEL_KEY, controller) as
-      | AccessLevel
-      | undefined;
+      AccessLevel | undefined;
     const classRoles =
       (Reflect.getMetadata(STAFF_ROLE_KEY, controller) as
-        | StaffRole[]
-        | undefined) ?? [];
+        StaffRole[] | undefined) ?? [];
 
     for (const name of Object.getOwnPropertyNames(prototype)) {
       if (name === 'constructor') continue;
-      const handler = Object.getOwnPropertyDescriptor(prototype, name)?.value as
-        | Function
-        | undefined;
+      const handler = Object.getOwnPropertyDescriptor(prototype, name)
+        ?.value as Function | undefined;
       if (typeof handler !== 'function') continue;
 
       const method = Reflect.getMetadata('method', handler) as
-        | number
-        | undefined;
+        number | undefined;
       if (method === undefined) continue;
 
       const httpMethod = HTTP_METHODS[method];
@@ -150,12 +146,10 @@ function routes(): Route[] {
         ),
         level:
           (Reflect.getMetadata(ACCESS_LEVEL_KEY, handler) as
-            | AccessLevel
-            | undefined) ?? classLevel,
+            AccessLevel | undefined) ?? classLevel,
         roles:
           (Reflect.getMetadata(STAFF_ROLE_KEY, handler) as
-            | StaffRole[]
-            | undefined) ?? classRoles,
+            StaffRole[] | undefined) ?? classRoles,
       });
     }
   }
@@ -179,5 +173,21 @@ describe('Gateway route access metadata (BR-01, R4)', () => {
       .sort();
 
     expect(publicRoutes).toEqual([...BR01_PUBLIC_ROUTES].sort());
+  });
+
+  it.each([
+    'GET /stations/:id',
+    'POST /stations',
+    'PATCH /stations/:id',
+    'POST /stations/:id/deactivate',
+    'DELETE /stations/:id',
+  ])('keeps %s operator-only while the station picker stays public', (name) => {
+    const matching = routes().filter(
+      (route) => `${route.method} ${route.path}` === name,
+    );
+
+    expect(matching).toHaveLength(1);
+    expect(matching[0].level).not.toBe('public');
+    expect(matching[0].roles).toEqual(['operator']);
   });
 });

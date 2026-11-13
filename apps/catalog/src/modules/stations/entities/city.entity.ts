@@ -1,12 +1,14 @@
 import {
   Check,
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { GovernorateEntity } from './governorate.entity.js';
 import type { StationEntity } from './station.entity.js';
@@ -36,6 +38,11 @@ export class CityEntity {
   @Column({ name: 'name_en', type: 'text' })
   nameEn!: string;
 
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
   // Named, not imported: `station` imports this file for its owning
   // @ManyToOne, so a runtime import back would be circular.
   @OneToMany('StationEntity', 'city')

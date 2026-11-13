@@ -1,4 +1,12 @@
-import { Check, Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import type { Relation } from 'typeorm';
 import type { CityEntity } from './city.entity.js';
 
@@ -21,6 +29,11 @@ export class GovernorateEntity {
   @Column({ name: 'sort_order', type: 'int', unique: true })
   sortOrder!: number;
 
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
   // The inverse side names its target instead of importing it. `city` already
   // imports this file to declare the owning @ManyToOne, so importing it back
   // at runtime would make the two modules circular.

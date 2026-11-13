@@ -27,6 +27,62 @@ export const CONSTRAINT_ISSUE_KEYS: Record<string, string> = {
 };
 
 export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
+  ISSUE_STATION_NOT_FOUND: {
+    ar: 'هذه المحطة غير موجودة في قائمة المحطات.',
+    en: 'This station does not exist in the station catalog.',
+  },
+  ACTION_REFRESH_STATIONS: {
+    ar: 'حدّث قائمة المحطات واختر محطة موجودة.',
+    en: 'Refresh the station list and select an existing station.',
+  },
+  ISSUE_STATION_CITY_NOT_KNOWN: {
+    ar: 'المدينة المحددة لهذه المحطة غير موجودة.',
+    en: 'The city selected for this station does not exist.',
+  },
+  ACTION_PICK_STATION_CITY: {
+    ar: 'اختر مدينة موجودة للمحطة.',
+    en: 'Select an existing city for the station.',
+  },
+  ISSUE_STATION_PATCH_EMPTY: {
+    ar: 'هذا الطلب لا يتضمن أي تغيير في المحطة.',
+    en: 'This request contains no station changes.',
+  },
+  ACTION_SEND_STATION_CHANGES: {
+    ar: 'أرسل حقلاً واحداً على الأقل لتحديث المحطة.',
+    en: 'Send at least one field to update the station.',
+  },
+  ISSUE_STATION_NAME_INVALID: {
+    ar: 'اسم المحطة يجب ألا يكون فارغاً وألا يتجاوز 120 حرفاً.',
+    en: 'A station name must not be blank or longer than 120 characters.',
+  },
+  ACTION_SET_BILINGUAL_STATION_NAME: {
+    ar: 'أدخل اسماً غير فارغ للمحطة بالعربية والإنجليزية، حتى 120 حرفاً لكل اسم.',
+    en: 'Provide nonblank Arabic and English station names, each at most 120 characters.',
+  },
+  ISSUE_STATION_ALIASES_INVALID: {
+    ar: 'قائمة الأسماء البديلة يجب أن تحتوي على 100 اسم غير فارغ كحد أقصى، حتى 120 حرفاً لكل اسم.',
+    en: 'Alternative spellings must contain at most 100 nonblank names, each at most 120 characters.',
+  },
+  ACTION_SET_STATION_ALIASES: {
+    ar: 'أرسل قائمة أسماء بديلة صالحة، أو قائمة فارغة لمسحها.',
+    en: 'Send valid alternative spellings, or an empty list to clear them.',
+  },
+  ISSUE_STATION_LANGUAGE_INVALID: {
+    ar: 'لغة قائمة المحطات يجب أن تكون ar أو en.',
+    en: 'The station language must be ar or en.',
+  },
+  ACTION_SET_STATION_LANGUAGE: {
+    ar: 'حدد لغة قائمة المحطات بقيمة ar أو en.',
+    en: 'Set the station language to ar or en.',
+  },
+  ISSUE_STATION_QUERY_TOO_LONG: {
+    ar: 'عبارة البحث عن محطة يجب ألا تتجاوز {{maxLength}} حرفاً.',
+    en: 'This station search must contain at most {{maxLength}} characters.',
+  },
+  ACTION_SHORTEN_STATION_QUERY: {
+    ar: 'اختصر عبارة البحث عن محطة إلى {{maxLength}} حرفاً أو أقل.',
+    en: 'Shorten the station search to {{maxLength}} characters or fewer.',
+  },
   ACTION_DEFAULT: {
     ar: 'أرسل قيمة تطابق شروط هذا الحقل.',
     en: "Send a value that meets this field's constraints.",

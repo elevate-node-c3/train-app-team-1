@@ -1965,6 +1965,960 @@
       ]
     },
     {
+      "name": "Stations (Gateway)",
+      "description": "TA-15's bilingual station picker plus the operator-only station management routes: `GET /api/v1/stations`, and `GET`, `POST`, `PATCH`, `POST :id/deactivate` and `DELETE` under `/api/v1/stations`.\n\nNeeds a seeded catalog and identity's seeded operator. From a clean database:\n\n```\ndocker compose up -d\ndocker compose run --rm seeder\n```\n\nRun the folder in order. It signs the operator in itself, reads a real city from an existing station rather than hardcoding a seed id, then creates a station and follows it through update, deactivate and DELETE.\n\nThree things the order is designed to show:\n\n- **Authorization** — the picker is the only anonymous route; the station snapshot returns 401 without the operator token.\n- **Cache refresh** — the list carries a 24-hour TTL, so *Picker Shows The New Station* and *Picker Drops The Deactivated Station* only pass because the station change invalidated the cache instead of waiting it out.\n- **Lifecycle safety** — *DELETE Aliases Deactivate* followed by *Station Survives DELETE* proves a referenced station is closed, not destroyed.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{accessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Station Picker (Arabic Default)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Governorates group the stations\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.governorates).to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(data.governorates[0].stations).to.be.an(\"array\");",
+                  "});",
+                  "",
+                  "// One response is in one language; a missing header means Arabic.",
+                  "pm.test(\"No English leaks into the Arabic list\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    for (const governorate of data.governorates) {",
+                  "        pm.expect(governorate.name).to.not.match(/[A-Za-z]/);",
+                  "        for (const station of governorate.stations) {",
+                  "            pm.expect(station.name).to.not.match(/[A-Za-z]/);",
+                  "            pm.expect(station.cityName).to.not.match(/[A-Za-z]/);",
+                  "        }",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ]
+            },
+            "description": "The public picker. This is the only anonymous station route; every other route in this folder requires the operator role.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Station Picker (English, Query)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The query narrows the list and names it in English\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.governorates).to.be.an(\"array\").that.is.not.empty;",
+                  "    const station = data.governorates[0].stations[0];",
+                  "    pm.expect(station.name).to.match(/[A-Za-z]/);",
+                  "    pm.environment.set(\"stationId\", station.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations?query={{stationQuery}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{stationQuery}}"
+                }
+              ]
+            },
+            "description": "Language comes from `Accept-Language`, never a `lang` query parameter. A query matches names, alternative spellings, cities and governorates in either language.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Refusal - Overlong Station Query",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"stationOverlongQuery\", \"x\".repeat(101));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal names the field to change\", function () {",
+                  "    const detail = pm.response.json().error.details[0];",
+                  "    pm.expect(detail.field).to.eql(\"query\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations?query={{stationOverlongQuery}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{stationOverlongQuery}}"
+                }
+              ]
+            },
+            "description": "A query over 100 characters is refused by field, not silently truncated.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Refusal - Station Detail Requires Operator",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationId}}"
+              ]
+            },
+            "description": "The picker is public; a station snapshot is not. Operator snapshots include inactive stations, so they stay behind the role.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Operator Sign In",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The seeded operator is signed in\", function () {",
+                  "    const json = pm.response.json();",
+                  "    const token = json.data.tokens.accessToken;",
+                  "    pm.environment.set(\"accessToken\", token);",
+                  "    pm.environment.set(\"refreshToken\", json.data.tokens.refreshToken);",
+                  "",
+                  "    const payload = token.split(\".\")[1]",
+                  "        .replace(/-/g, \"+\")",
+                  "        .replace(/_/g, \"/\");",
+                  "    const padded = payload + \"=\".repeat((4 - (payload.length % 4)) % 4);",
+                  "    const claims = JSON.parse(atob(padded));",
+                  "    pm.expect(claims.roles).to.include(\"operator\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{operatorEmail}}\",\n  \"password\": \"{{operatorPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/sign-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "sign-in"
+              ]
+            },
+            "description": "Uses identity's seeded operator, so this folder runs on its own.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Get Station (Operator)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The snapshot carries both languages and the city\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.name.ar).to.be.a(\"string\").that.is.not.empty;",
+                  "    pm.expect(station.name.en).to.be.a(\"string\").that.is.not.empty;",
+                  "    pm.expect(station.isActive).to.be.true;",
+                  "    // The create below reuses this city, so no seed id is hardcoded.",
+                  "    pm.environment.set(\"stationCityId\", station.cityId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationId}}"
+              ]
+            },
+            "description": "Unlike the picker, a snapshot is bilingual in one payload and includes `isActive` and `cityId`."
+          }
+        },
+        {
+          "name": "Create Station",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A new key makes this a new request; the replay below reuses it.",
+                  "pm.environment.set(\"stationCreateKey\", \"postman-station-\" + Date.now());",
+                  "pm.environment.set(\"stationCreatedNameEn\", \"Postman Station \" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"The station is created active, in both languages\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.name.en).to.eql(pm.environment.get(\"stationCreatedNameEn\"));",
+                  "    pm.expect(station.isActive).to.be.true;",
+                  "    pm.environment.set(\"stationCreatedId\", station.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationCreateKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cityId\": \"{{stationCityId}}\",\n  \"nameAr\": \"محطة بوستمان\",\n  \"nameEn\": \"{{stationCreatedNameEn}}\",\n  \"altSpellings\": [\n    \"Postman Stop\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ]
+            },
+            "description": "The row and its `station.changed` outbox row commit together, so a published event always has a committed station behind it."
+          }
+        },
+        {
+          "name": "Picker Shows The New Station",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// The cached list is not waited out: the station change invalidates it.",
+                  "pm.test(\"The new station reaches the picker without a TTL wait\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    const ids = data.governorates.flatMap((g) => g.stations.map((s) => s.id));",
+                  "    pm.expect(ids).to.include(pm.environment.get(\"stationCreatedId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations?query={{stationCreatedNameEn}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{stationCreatedNameEn}}"
+                }
+              ]
+            },
+            "description": "Proves the cache refreshed on create rather than expiring: the station list carries a 24-hour TTL.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Replay Create (Same Key)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"The replay returns the first station, not a second one\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.id).to.eql(pm.environment.get(\"stationCreatedId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationCreateKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cityId\": \"{{stationCityId}}\",\n  \"nameAr\": \"محطة بوستمان\",\n  \"nameEn\": \"{{stationCreatedNameEn}}\",\n  \"altSpellings\": [\n    \"Postman Stop\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ]
+            },
+            "description": "The same key with the same payload replays the stored response instead of creating a second station."
+          }
+        },
+        {
+          "name": "Refusal - Reused Key, Different Body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal names the reused key\", function () {",
+                  "    const detail = pm.response.json().error.details[0];",
+                  "    pm.expect(detail.field).to.eql(\"Idempotency-Key\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationCreateKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cityId\": \"{{stationCityId}}\",\n  \"nameAr\": \"محطة أخرى\",\n  \"nameEn\": \"A Different Station\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ]
+            },
+            "description": "A key is fingerprinted over the operation, the payload and the actor, so the same key with a different body is a conflict, not a replay."
+          }
+        },
+        {
+          "name": "Refusal - Missing Idempotency Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal names the missing header\", function () {",
+                  "    const detail = pm.response.json().error.details[0];",
+                  "    pm.expect(detail.field).to.eql(\"Idempotency-Key\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cityId\": \"{{stationCityId}}\",\n  \"nameAr\": \"محطة بلا مفتاح\",\n  \"nameEn\": \"Station Without A Key\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ]
+            },
+            "description": "Every station write requires the header; nothing is created without one."
+          }
+        },
+        {
+          "name": "Update Station",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"stationUpdateKey\", \"postman-station-update-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The alternative spelling is replaced, the station stays active\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.altSpellings).to.include(\"Postman Junction\");",
+                  "    pm.expect(station.isActive).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationUpdateKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"altSpellings\": [\n    \"Postman Junction\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationCreatedId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationCreatedId}}"
+              ]
+            },
+            "description": "A patch carries only what changes; anything omitted keeps its value."
+          }
+        },
+        {
+          "name": "Refusal - Empty Patch",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"stationEmptyPatchKey\", \"postman-station-empty-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"The refusal says the patch carries no change\", function () {",
+                  "    const detail = pm.response.json().error.details[0];",
+                  "    pm.expect(detail.issueKey).to.eql(\"ISSUE_STATION_PATCH_EMPTY\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "content-type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationEmptyPatchKey}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationCreatedId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationCreatedId}}"
+              ]
+            },
+            "description": "A patch that would change nothing is refused rather than published as an event."
+          }
+        },
+        {
+          "name": "Deactivate Station",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"stationDeactivateKey\", \"postman-station-off-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The station is closed, not removed\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.id).to.eql(pm.environment.get(\"stationCreatedId\"));",
+                  "    pm.expect(station.isActive).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationDeactivateKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationCreatedId}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationCreatedId}}",
+                "deactivate"
+              ]
+            },
+            "description": "The station keeps its id, so every timetable, trip and recent search that references it stays intact."
+          }
+        },
+        {
+          "name": "Picker Drops The Deactivated Station",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"A closed station is no longer offered\", function () {",
+                  "    const data = pm.response.json().data;",
+                  "    const ids = data.governorates.flatMap((g) => g.stations.map((s) => s.id));",
+                  "    pm.expect(ids).to.not.include(pm.environment.get(\"stationCreatedId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations?query={{stationCreatedNameEn}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{stationCreatedNameEn}}"
+                }
+              ]
+            },
+            "description": "The other half of the cache proof: the deactivation invalidated the list, so the closed station leaves the picker immediately.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "DELETE Aliases Deactivate",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"stationDeleteKey\", \"postman-station-delete-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"DELETE returns the station rather than destroying it\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.id).to.eql(pm.environment.get(\"stationCreatedId\"));",
+                  "    pm.expect(station.isActive).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{stationDeleteKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationCreatedId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationCreatedId}}"
+              ]
+            },
+            "description": "There is no delete command behind this verb: it aliases deactivate, and every foreign key into station is ON DELETE RESTRICT."
+          }
+        },
+        {
+          "name": "Station Survives DELETE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"The row is still readable, still closed\", function () {",
+                  "    const station = pm.response.json().data.station;",
+                  "    pm.expect(station.isActive).to.be.false;",
+                  "    pm.expect(station.name.ar).to.be.a(\"string\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stations/{{stationCreatedId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stations",
+                "{{stationCreatedId}}"
+              ]
+            },
+            "description": "A 200 here after the DELETE above is the point of the story: a referenced station is deactivated, never deleted."
+          }
+        }
+      ]
+    },
+    {
       "name": "Operations (Gateway)",
       "description": "TA-20 operator-only writes: `POST /api/v1/operations/timetables`, `POST /api/v1/operations/fares` and `GET /api/v1/operations/audit`.\n\nRequires the catalog search fixture, whose network now includes train 916 with a first-class coach and no timetable, plus identity's seeded operator. From a clean database:\n\n```\ndocker compose up -d\ndocker compose run --rm seeder\n```\n\nRun **Operator Sign In** first; it replaces `{{accessToken}}` with the operator's token and records the account id from the JWT. Every write needs an `Idempotency-Key`. The publish request stores its key, so **Publish Retried with Same Key** can replay it and return the same `timetableId` and version.\n\nThe route is Ramsis (Cairo) to Alexandria. Search resolves the fare against the current instant, so **Search Again** waits for the fare's `effectiveFrom` before asking; otherwise the old amount is the correct answer.",
       "auth": {
