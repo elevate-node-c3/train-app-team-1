@@ -7,6 +7,7 @@ import { AddTripSeatTripUnique1794600000003 } from './1794600000003-add-trip-sea
 import { CreateSeatOccupation1794600000004 } from './1794600000004-create-seat-occupation.js';
 import { AddTripTimetableVersion1794600000005 } from './1794600000005-add-trip-timetable-version.js';
 import { AddTripStopTimes1794600000006 } from './1794600000006-add-trip-stop-times.js';
+import { AlignTripSchemaWithDesign1794600000007 } from './1794600000007-align-trip-schema-with-design.js';
 
 // Keep migration timestamps unique; TypeORM keys migrations by name.
 export const migrations: (new () => MigrationInterface)[] = [
@@ -17,4 +18,5 @@ export const migrations: (new () => MigrationInterface)[] = [
   CreateSeatOccupation1794600000004,
   AddTripTimetableVersion1794600000005,
   AddTripStopTimes1794600000006,
+  AlignTripSchemaWithDesign1794600000007,
 ];

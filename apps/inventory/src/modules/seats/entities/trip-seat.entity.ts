@@ -35,12 +35,21 @@ export class TripSeatEntity {
   @Column({ name: 'trip_coach_id', type: 'uuid' })
   tripCoachId!: string;
 
-  @Column({ name: 'seat_number', type: 'integer' })
-  seatNumber!: number;
+  // Text, not an integer: catalog's layout labels seats 1A, 1B, 2A, 2B. A
+  // numeric column would collapse those labels and ON CONFLICT would silently
+  // absorb the collisions.
+  @Column({ name: 'seat_number', type: 'text' })
+  seatNumber!: string;
 
   @Column({ name: 'travel_class_id', type: 'uuid' })
   travelClassId!: string;
 
+  @Column({ name: 'row_number', type: 'integer' })
+  rowNumber!: number;
+
   @Column({ type: 'varchar', length: 10 })
   side!: 'left' | 'right';
+
+  @Column({ name: 'seat_index_in_side', type: 'integer' })
+  seatIndexInSide!: number;
 }

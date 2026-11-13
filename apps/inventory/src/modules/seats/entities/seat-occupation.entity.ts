@@ -39,7 +39,10 @@ export class SeatOccupationEntity {
   tripSeatId!: string;
 
   // Postgres column is really int4range; parseInt4Range turns this literal
-  // (e.g. "[0,2)") into a Segment. TypeORM has no int4range column type.
+  // (e.g. "[0,2)") into a Segment. TypeORM has no int4range column type, so
+  // reads work but writes through this entity send a text parameter Postgres
+  // rejects. Write segment with raw SQL and an explicit `$n::int4range` cast
+  // until a real range column type exists.
   @Column({ type: 'text' })
   segment!: string;
 

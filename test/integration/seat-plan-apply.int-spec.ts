@@ -7,7 +7,10 @@ import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-uni
 
 import { segmentOf } from '../../apps/inventory/src/modules/seats/segment.js';
 import { seatPlanFrom, type SeatPlan } from '../../apps/inventory/src/modules/seats/seat-plan.js';
-import { sixStopPayload } from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
+import {
+  payloadWithRow,
+  sixStopPayload,
+} from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
 import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/seat-plan.repository.js';
 
 import {
@@ -57,14 +60,22 @@ async function tripStatus(): Promise<string> {
   return row.status;
 }
 
-/** A single row sorted by seat_number so coach-two's seats are predictable. */
-async function seatIdByCoachAndNumber(coachNumber: number, seatNumber: number): Promise<string> {
+async function seatIdByCoachAndNumber(coachNumber: number, seatNumber: string): Promise<string> {
   const [row] = await source.query(
     `SELECT ts.id AS "id" FROM trip_seat ts JOIN trip_coach tc ON tc.id = ts.trip_coach_id
      WHERE tc.coach_number = $1 AND ts.seat_number = $2`,
     [coachNumber, seatNumber],
   );
   return row.id;
+}
+
+async function stopStationIds(tripId: string): Promise<string[]> {
+  const rows: { stationId: string }[] = await source.query(
+    `SELECT station_id AS "stationId" FROM trip_stop
+     WHERE trip_id = $1 ORDER BY position`,
+    [tripId],
+  );
+  return rows.map((row) => row.stationId);
 }
 
 async function tripRow(
@@ -190,14 +201,23 @@ describe('SeatPlanRepository.apply', () => {
     expect(await tripVersion()).toBe(2);
   });
 
-  it('never reopens a closed trip', async () => {
-    const plan = seatPlanFrom(sixStopPayload());
+  it('never reopens or rewrites a closed trip', async () => {
+    const payload = sixStopPayload();
+    const plan = seatPlanFrom(payload);
+    const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
 
     await apply({ ...plan, timetableVersion: 1 });
     await close(plan.tripId);
-    await apply({ ...plan, timetableVersion: 2 });
 
+    const outcome = await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
+
+    // The version guard, not just the status column, must stop the write: a
+    // v2 apply that ran would bump the version and drop coach two.
+    expect(outcome).toEqual({ kind: 'skipped', reason: 'stale-version' });
     expect(await tripStatus()).toBe('closed');
+    expect(await tripVersion()).toBe(1);
+    expect(await countRows('trip_coach')).toBe(2);
+    expect(await countRows('trip_seat')).toBe(20);
   });
 
   it('deletes a coach the new layout drops when nothing occupies it', async () => {
@@ -218,7 +238,7 @@ describe('SeatPlanRepository.apply', () => {
     const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
 
     await apply({ ...plan, timetableVersion: 1 });
-    const seatInCoachTwo = await seatIdByCoachAndNumber(2, 1);
+    const seatInCoachTwo = await seatIdByCoachAndNumber(2, '1');
     await occupySeat(source, seatInCoachTwo, plan.tripId, segmentOf(0, 2), 'held', new Date(Date.now() + 60 * 60_000));
 
     const outcome = await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
@@ -238,7 +258,7 @@ describe('SeatPlanRepository.apply', () => {
     const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
 
     await apply({ ...plan, timetableVersion: 1 });
-    const seatInCoachTwo = await seatIdByCoachAndNumber(2, 1);
+    const seatInCoachTwo = await seatIdByCoachAndNumber(2, '1');
     const occupationId = await occupySeat(
       source,
       seatInCoachTwo,
@@ -301,12 +321,159 @@ describe('SeatPlanRepository.apply', () => {
     const plan = seatPlanFrom(sixStopPayload());
     await apply({ ...plan, timetableVersion: 1 });
 
-    const seatId = await seatIdByCoachAndNumber(1, 1);
+    const seatId = await seatIdByCoachAndNumber(1, '1');
     await occupySeat(source, seatId, plan.tripId, segmentOf(0, 2), 'held', new Date(Date.now() + 60 * 60_000));
 
     await close(plan.tripId);
 
     expect(await tripStatus()).toBe('closed');
     expect(await activeOccupationCount(seatId)).toBe(1);
+  });
+
+  it('persists alphanumeric seat numbers instead of collapsing them', async () => {
+    // Review Critical: a numeric column would parseInt 1A/1B/2A/2B to
+    // 1/1/2/2 and ON CONFLICT would silently keep two rows for four seats.
+    const plan = seatPlanFrom(
+      payloadWithRow({
+        rowNumber: 1,
+        leftSeats: ['1A', '1B'],
+        rightSeats: ['2A', '2B'],
+      }),
+    );
+
+    await apply(plan);
+
+    const rows: { seatNumber: string }[] = await source.query(
+      `SELECT seat_number AS "seatNumber" FROM trip_seat ORDER BY seat_number`,
+    );
+    expect(rows.map((row) => row.seatNumber)).toEqual(['1A', '1B', '2A', '2B']);
+  });
+
+  it('persists row, side and index so adjacency survives the write', async () => {
+    // The unit test proves the plan carries adjacency; this proves the system
+    // actually stores it. Same row and same side is the adjacency rule (BR-25).
+    const plan = seatPlanFrom(
+      payloadWithRow({ rowNumber: 3, leftSeats: ['A', 'B'], rightSeats: ['C'] }),
+    );
+
+    await apply(plan);
+
+    const rows = await source.query(
+      `SELECT seat_number AS "seatNumber", row_number AS "rowNumber",
+              side, seat_index_in_side AS "seatIndexInSide"
+       FROM trip_seat ORDER BY side, seat_index_in_side`,
+    );
+    expect(rows).toEqual([
+      { seatNumber: 'A', rowNumber: 3, side: 'left', seatIndexInSide: 0 },
+      { seatNumber: 'B', rowNumber: 3, side: 'left', seatIndexInSide: 1 },
+      { seatNumber: 'C', rowNumber: 3, side: 'right', seatIndexInSide: 0 },
+    ]);
+  });
+
+  it('updates a coach and its seats when a republication reclassifies them', async () => {
+    // Review Important 4: ON CONFLICT DO NOTHING would leave the coach and
+    // every seat on the old class for the life of the trip.
+    const payload = sixStopPayload();
+    await apply({ ...seatPlanFrom(payload), timetableVersion: 1 });
+
+    const newClassId = randomUUID();
+    const changedPayload = {
+      ...payload,
+      timetableVersion: 2,
+      coaches: payload.coaches.map((coach, index) =>
+        index === 1
+          ? {
+              ...coach,
+              travelClass: {
+                id: newClassId,
+                nameEn: 'Premium',
+                nameAr: 'ممتازة',
+              },
+            }
+          : coach,
+      ),
+    };
+    const changedPlan = seatPlanFrom(changedPayload);
+
+    expect((await apply(changedPlan)).kind).toBe('created');
+
+    const [coach] = await source.query(
+      `SELECT travel_class_id AS "travelClassId",
+              travel_class_name_en AS "nameEn",
+              travel_class_name_ar AS "nameAr"
+       FROM trip_coach WHERE coach_number = 2`,
+    );
+    expect(coach).toEqual({
+      travelClassId: newClassId,
+      nameEn: 'Premium',
+      nameAr: 'ممتازة',
+    });
+
+    const seatClasses: { travelClassId: string }[] = await source.query(
+      `SELECT DISTINCT ts.travel_class_id AS "travelClassId"
+       FROM trip_seat ts JOIN trip_coach tc ON tc.id = ts.trip_coach_id
+       WHERE tc.coach_number = 2`,
+    );
+    expect(seatClasses).toEqual([{ travelClassId: newClassId }]);
+  });
+
+  it('refuses a stop reshape while an occupation still points at the old positions', async () => {
+    // Review Important 5: replacing stops would silently re-point a sold
+    // [0,2) at a different stretch of railway.
+    const payload = sixStopPayload();
+    const plan = seatPlanFrom(payload);
+    await apply({ ...plan, timetableVersion: 1 });
+
+    const occupiedSeat = await seatIdByCoachAndNumber(1, '1');
+    await occupySeat(source, occupiedSeat, plan.tripId, segmentOf(0, 2), 'sold');
+
+    const insertedStop = {
+      stationId: randomUUID(),
+      position: -1,
+      arrivalAt: null,
+      departureAt: null,
+    };
+    const reshapedPlan = seatPlanFrom({
+      ...payload,
+      timetableVersion: 2,
+      stops: [insertedStop, ...payload.stops],
+    });
+
+    const outcome = await apply(reshapedPlan);
+
+    expect(outcome).toMatchObject({ kind: 'refused', reason: 'stops-changed' });
+    expect(await tripVersion()).toBe(1);
+    expect(await stopStationIds(plan.tripId)).toEqual(
+      payload.stops.map((stop) => stop.stationId),
+    );
+  });
+
+  it('applies a stop reshape when nothing is occupied', async () => {
+    const payload = sixStopPayload();
+    const plan = seatPlanFrom(payload);
+    await apply({ ...plan, timetableVersion: 1 });
+
+    const insertedStop = {
+      stationId: randomUUID(),
+      position: -1,
+      arrivalAt: null,
+      departureAt: null,
+    };
+    const reshapedPlan = seatPlanFrom({
+      ...payload,
+      timetableVersion: 2,
+      stops: [insertedStop, ...payload.stops],
+    });
+
+    expect((await apply(reshapedPlan)).kind).toBe('created');
+    expect(await stopStationIds(plan.tripId)).toEqual([
+      insertedStop.stationId,
+      ...payload.stops.map((stop) => stop.stationId),
+    ]);
+  });
+
+  it('refuses to close a trip it has never seen', async () => {
+    // A withdrawal delivered before its publication must retry, not vanish.
+    await expect(close(randomUUID())).rejects.toThrow(/unknown trip/i);
   });
 });

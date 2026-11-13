@@ -50,6 +50,10 @@ export const SIX_STOP_TRIP = {
     '50000000-0000-0000-0000-000000000001',
     '50000000-0000-0000-0000-000000000002',
   ],
+  travelClassNames: [
+    { en: 'Economy', ar: 'اقتصادية' },
+    { en: 'Business', ar: 'درجة أولى' },
+  ],
   trainId: '60000000-0000-0000-0000-000000000001',
   trainNumber: 123,
   serviceDate: '2026-11-20',
@@ -76,19 +80,44 @@ export async function seedSixStopTrip(source: DataSource): Promise<void> {
   }
 
   for (const [coachIndex, coachId] of f.coachIds.entries()) {
+    const className = f.travelClassNames[coachIndex];
     await source.query(
-      `INSERT INTO trip_coach (id, trip_id, coach_number, travel_class_id) VALUES ($1, $2, $3, $4)`,
-      [coachId, f.tripId, coachIndex + 1, f.travelClassIds[coachIndex]],
+      `INSERT INTO trip_coach
+         (id, trip_id, coach_number, position, travel_class_id,
+          travel_class_name_en, travel_class_name_ar)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        coachId,
+        f.tripId,
+        coachIndex + 1,
+        coachIndex,
+        f.travelClassIds[coachIndex],
+        className.en,
+        className.ar,
+      ],
     );
 
     for (let seatNumber = 1; seatNumber <= 10; seatNumber += 1) {
       const seatId = f.seatIds[coachIndex * 10 + (seatNumber - 1)];
       const side = seatNumber % 2 === 0 ? 'right' : 'left';
+      const rowNumber = Math.ceil(seatNumber / 2);
+      const seatIndexInSide = Math.floor((seatNumber - 1) / 2);
 
       await source.query(
-        `INSERT INTO trip_seat (id, trip_id, trip_coach_id, seat_number, travel_class_id, side)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [seatId, f.tripId, coachId, seatNumber, f.travelClassIds[coachIndex], side],
+        `INSERT INTO trip_seat
+           (id, trip_id, trip_coach_id, seat_number, travel_class_id,
+            row_number, side, seat_index_in_side)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          seatId,
+          f.tripId,
+          coachId,
+          String(seatNumber),
+          f.travelClassIds[coachIndex],
+          rowNumber,
+          side,
+          seatIndexInSide,
+        ],
       );
     }
   }
