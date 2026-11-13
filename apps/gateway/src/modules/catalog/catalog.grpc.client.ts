@@ -4,14 +4,19 @@ import { firstValueFrom, timeout, type Observable } from 'rxjs';
 import type { Metadata } from '@grpc/grpc-js';
 import { createGrpcMetadataWithCaller, grpcStatusException } from '@app/common';
 import type {
+  CreateStationRequest,
   GetTripStopsRequest,
   ListRecentSearchesRequest,
   ListRecentSearchesResponse,
+  ListStationsRequest,
+  ListStationsResponse,
   SearchOneWayTripsRequest,
   SearchOneWayTripsResponse,
   SearchReturnTripsRequest,
   SearchReturnTripsResponse,
+  StationResponse,
   TripStopsResponse,
+  UpdateStationRequest,
 } from '@app/contracts';
 
 import {
@@ -40,6 +45,50 @@ export class CatalogGrpcClientService {
     private readonly cls: ClsService,
   ) {}
 
+  async listStations(
+    request: ListStationsRequest,
+  ): Promise<ListStationsResponse> {
+    return this.call((client, metadata, options) =>
+      client.listStations(request, metadata, options),
+    );
+  }
+
+  async getStation(stationId: string): Promise<StationResponse> {
+    return this.call((client, metadata, options) =>
+      client.getStation({ stationId }, metadata, options),
+    );
+  }
+
+  async createStation(
+    request: CreateStationRequest,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.call((client, metadata, options) => {
+      metadata.set('idempotency-key', idempotencyKey);
+      return client.createStation(request, metadata, options);
+    });
+  }
+
+  async updateStation(
+    request: UpdateStationRequest,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.call((client, metadata, options) => {
+      metadata.set('idempotency-key', idempotencyKey);
+      return client.updateStation(request, metadata, options);
+    });
+  }
+
+  async deactivateStation(
+    stationId: string,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.call((client, metadata, options) => {
+      metadata.set('idempotency-key', idempotencyKey);
+      return client.deactivateStation({ stationId }, metadata, options);
+    });
+  }
+
   async searchOneWayTrips(
     request: SearchOneWayTripsRequest,
   ): Promise<SearchOneWayTripsResponse> {
@@ -56,9 +105,7 @@ export class CatalogGrpcClientService {
     );
   }
 
-  async getTripStops(
-    request: GetTripStopsRequest,
-  ): Promise<TripStopsResponse> {
+  async getTripStops(request: GetTripStopsRequest): Promise<TripStopsResponse> {
     return this.call((client, metadata, options) =>
       client.getTripStops(request, metadata, options),
     );

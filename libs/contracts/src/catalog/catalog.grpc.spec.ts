@@ -1,6 +1,10 @@
 import { existsSync } from 'node:fs';
 
-import { loadSync } from '@grpc/proto-loader';
+import {
+  loadSync,
+  type Options,
+  type ServiceDefinition,
+} from '@grpc/proto-loader';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,20 +13,30 @@ import {
   getCatalogProtoPath,
 } from './catalog.grpc.js';
 import type {
+  CreateStationRequest,
   FilterOptions,
   GetTripStopsRequest,
+  GovernorateGroup,
   ListRecentSearchesRequest,
   ListRecentSearchesResponse,
+  ListStationsRequest,
+  ListStationsResponse,
   RecentSearch,
   RecentSearchStation,
   SearchOneWayTripsRequest,
   SearchOneWayTripsResponse,
   SearchReturnTripsRequest,
   SearchReturnTripsResponse,
+  StationAliases,
+  StationDetails,
+  StationIdRequest,
+  StationItem,
+  StationResponse,
   TrainTypeOption,
   TripResult,
   TripStop,
   TripStopsResponse,
+  UpdateStationRequest,
 } from './catalog.dto.js';
 
 /**
@@ -33,7 +47,14 @@ import type {
  * asserted on below have to be spelled out here.
  */
 interface MessageDescriptor {
-  field?: { name: string; type: string; number: number }[];
+  field?: {
+    name: string;
+    type: string;
+    number: number;
+    typeName?: string;
+    oneofIndex?: number;
+  }[];
+  oneofDecl?: { name: string }[];
 }
 
 interface EnumDescriptor {
@@ -59,6 +80,13 @@ function messageDescriptor(messageName: string): MessageDescriptor {
 
 function enumDescriptor(enumName: string): EnumDescriptor {
   return descriptorOf(enumName) as EnumDescriptor;
+}
+
+function serviceDefinition(options?: Options): ServiceDefinition {
+  const definition = loadSync(getCatalogProtoPath(), options);
+  return definition[
+    `${CATALOG_PACKAGE_NAME}.${CATALOG_SERVICE_NAME}`
+  ] as ServiceDefinition;
 }
 
 /**
@@ -172,10 +200,7 @@ const RECENT_SEARCH_REQUEST_KEYS: Record<
   language: true,
 };
 
-const RECENT_SEARCH_STATION_KEYS: Record<
-  keyof RecentSearchStation,
-  true
-> = {
+const RECENT_SEARCH_STATION_KEYS: Record<keyof RecentSearchStation, true> = {
   id: true,
   name: true,
 };
@@ -197,6 +222,84 @@ const RECENT_SEARCH_RESPONSE_KEYS: Record<
 > = {
   recentSearches: true,
 };
+
+const STATIONS_REQUEST_KEYS: Record<keyof ListStationsRequest, true> = {
+  language: true,
+  query: true,
+};
+
+const STATION_ITEM_KEYS: Record<keyof StationItem, true> = {
+  id: true,
+  name: true,
+  cityName: true,
+};
+
+const GOVERNORATE_GROUP_KEYS: Record<keyof GovernorateGroup, true> = {
+  id: true,
+  name: true,
+  stations: true,
+};
+
+const STATIONS_RESPONSE_KEYS: Record<keyof ListStationsResponse, true> = {
+  governorates: true,
+};
+
+const STATION_DETAILS_KEYS: Record<keyof StationDetails, true> = {
+  id: true,
+  cityId: true,
+  governorateId: true,
+  name: true,
+  cityName: true,
+  governorateName: true,
+  altSpellings: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const STATION_RESPONSE_KEYS: Record<keyof StationResponse, true> = {
+  station: true,
+};
+
+const STATION_ID_REQUEST_KEYS: Record<keyof StationIdRequest, true> = {
+  stationId: true,
+};
+
+const CREATE_STATION_REQUEST_KEYS: Record<keyof CreateStationRequest, true> = {
+  cityId: true,
+  nameAr: true,
+  nameEn: true,
+  altSpellings: true,
+  isActive: true,
+};
+
+const STATION_ALIASES_KEYS: Record<keyof StationAliases, true> = {
+  values: true,
+};
+
+const UPDATE_STATION_REQUEST_KEYS: Record<keyof UpdateStationRequest, true> = {
+  stationId: true,
+  cityId: true,
+  nameAr: true,
+  nameEn: true,
+  aliases: true,
+  isActive: true,
+};
+
+const RPC_NAMES = [
+  'ListStations',
+  'SearchOneWayTrips',
+  'SearchReturnTrips',
+  'GetTripStops',
+  'ListRecentSearches',
+  'PublishTimetable',
+  'ChangeFare',
+  'ListAuditEntries',
+  'GetStation',
+  'CreateStation',
+  'UpdateStation',
+  'DeactivateStation',
+] as const;
 
 describe('the catalog contract surface', () => {
   // Every spec in this folder imports its subject directly, so a module left
@@ -237,19 +340,59 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('declares every catalog RPC on one service', () => {
-    const definition = loadSync(getCatalogProtoPath());
-    const service = definition[`${CATALOG_PACKAGE_NAME}.${CATALOG_SERVICE_NAME}`];
+    const service = serviceDefinition();
 
     expect(service).toBeDefined();
-    expect(Object.keys(service!)).toEqual(
-      expect.arrayContaining([
-        'SearchOneWayTrips',
-        'SearchReturnTrips',
-        'GetTripStops',
-        'ListRecentSearches',
-      ]),
+    expect(Object.keys(service).sort()).toEqual([...RPC_NAMES].sort());
+  });
+
+  it.each(RPC_NAMES)(
+    'keeps %s as a unary RPC on the catalog service',
+    (name) => {
+      const method = serviceDefinition()[name];
+
+      expect(method.path).toBe(
+        `/${CATALOG_PACKAGE_NAME}.${CATALOG_SERVICE_NAME}/${name}`,
+      );
+      expect(method.originalName).toBe(name[0].toLowerCase() + name.slice(1));
+      expect(method.requestStream).toBe(false);
+      expect(method.responseStream).toBe(false);
+    },
+  );
+
+  it('keeps the station-picker messages in step with their interfaces', () => {
+    expect(fieldNamesOf('ListStationsRequest').sort()).toEqual(
+      Object.keys(STATIONS_REQUEST_KEYS).sort(),
+    );
+    expect(fieldNamesOf('StationItem').sort()).toEqual(
+      Object.keys(STATION_ITEM_KEYS).sort(),
+    );
+    expect(fieldNamesOf('GovernorateGroup').sort()).toEqual(
+      Object.keys(GOVERNORATE_GROUP_KEYS).sort(),
+    );
+    expect(fieldNamesOf('ListStationsResponse').sort()).toEqual(
+      Object.keys(STATIONS_RESPONSE_KEYS).sort(),
     );
   });
+
+  it.each([
+    ['ListStationsRequest', { language: 1, query: 2 }],
+    ['StationItem', { id: 1, name: 2, cityName: 3 }],
+    ['GovernorateGroup', { id: 1, name: 2, stations: 3 }],
+    ['ListStationsResponse', { governorates: 1 }],
+  ] as const)(
+    'preserves the station-picker field numbers on %s',
+    (name, numbers) => {
+      expect(
+        Object.fromEntries(
+          (messageDescriptor(name).field ?? []).map((field) => [
+            field.name,
+            field.number,
+          ]),
+        ),
+      ).toEqual(numbers);
+    },
+  );
 
   it('keeps FilterOptions and its train-type facet in step', () => {
     expect(fieldNamesOf('FilterOptions').sort()).toEqual(
@@ -261,9 +404,9 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('puts FilterOptions on the one-way response at field 6', () => {
-    const field = (messageDescriptor('SearchOneWayTripsResponse').field ?? []).find(
-      (candidate) => candidate.name === 'filterOptions',
-    );
+    const field = (
+      messageDescriptor('SearchOneWayTripsResponse').field ?? []
+    ).find((candidate) => candidate.name === 'filterOptions');
 
     // 6 was reserved before anything was serialized there, so taking it is
     // safe; 7 onwards stays reserved for a future page token.
@@ -375,4 +518,285 @@ describe('the catalog search gRPC contract', () => {
     );
     expect(byNumber.get(5)).toBe('SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL');
   });
+});
+
+describe('the station-picker gRPC payload', () => {
+  it.each<ListStationsRequest>([
+    { language: 'en', query: '  RaMsEs  ' },
+    { language: 'ar', query: 'القاهرة' },
+    { language: 'en' },
+    { language: 'en', query: '' },
+  ])('round-trips the language and raw optional query: %j', (request) => {
+    const method = serviceDefinition().ListStations;
+
+    expect(
+      method.requestDeserialize(method.requestSerialize(request)),
+    ).toStrictEqual(request);
+  });
+
+  it('round-trips flat governorates, station names and city names in order', () => {
+    const response: ListStationsResponse = {
+      governorates: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'القاهرة',
+          stations: [
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              name: 'رمسيس',
+              cityName: 'القاهرة',
+            },
+            {
+              id: '33333333-3333-4333-8333-333333333333',
+              name: 'Shubra',
+              cityName: 'Cairo',
+            },
+          ],
+        },
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          name: 'Alexandria',
+          stations: [
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              name: 'Sidi Gaber',
+              cityName: 'Alexandria',
+            },
+          ],
+        },
+      ],
+    };
+    const method = serviceDefinition().ListStations;
+
+    expect(
+      method.responseDeserialize(method.responseSerialize(response)),
+    ).toStrictEqual(response);
+  });
+
+  // Default proto-loader decoding omits empty repeated fields; the gateway's
+  // arrays option restores them. Both paths must retain the same wire shape.
+  it.each([false, true])(
+    'decodes empty governorates with arrays=%s',
+    (arrays) => {
+      const method = serviceDefinition({ enums: String, arrays }).ListStations;
+      const response: ListStationsResponse = { governorates: [] };
+      const encoded = method.responseSerialize(response);
+
+      expect(encoded).toHaveLength(0);
+      expect(method.responseDeserialize(encoded)).toStrictEqual(
+        arrays ? response : {},
+      );
+    },
+  );
+
+  it.each([false, true])(
+    'decodes nested empty stations with arrays=%s',
+    (arrays) => {
+      const response: ListStationsResponse = {
+        governorates: [{ id: 'governorate-1', name: 'Cairo', stations: [] }],
+      };
+      const method = serviceDefinition({ enums: String, arrays }).ListStations;
+
+      expect(
+        method.responseDeserialize(method.responseSerialize(response)),
+      ).toStrictEqual(
+        arrays
+          ? response
+          : { governorates: [{ id: 'governorate-1', name: 'Cairo' }] },
+      );
+    },
+  );
+});
+
+describe('the operator station gRPC contract', () => {
+  const stationId = '11111111-1111-4111-8111-111111111111';
+  const cityId = '22222222-2222-4222-8222-222222222222';
+  const response: StationResponse = {
+    station: {
+      id: stationId,
+      cityId,
+      governorateId: '33333333-3333-4333-8333-333333333333',
+      name: { en: 'Ramses', ar: 'رمسيس' },
+      cityName: { en: 'Cairo', ar: 'القاهرة' },
+      governorateName: { en: 'Cairo', ar: 'القاهرة' },
+      altSpellings: [],
+      isActive: false,
+      createdAt: '2026-11-13T01:00:00.000Z',
+      updatedAt: '2026-11-13T01:15:00.000Z',
+    },
+  };
+
+  it.each([
+    ['StationDetails', STATION_DETAILS_KEYS],
+    ['StationResponse', STATION_RESPONSE_KEYS],
+    ['StationIdRequest', STATION_ID_REQUEST_KEYS],
+    ['CreateStationRequest', CREATE_STATION_REQUEST_KEYS],
+    ['StationAliases', STATION_ALIASES_KEYS],
+    ['UpdateStationRequest', UPDATE_STATION_REQUEST_KEYS],
+  ] as const)('keeps %s in step with its shared DTO', (name, keys) => {
+    expect(fieldNamesOf(name).sort()).toEqual(Object.keys(keys).sort());
+  });
+
+  it.each([
+    [
+      'StationDetails',
+      {
+        id: 1,
+        cityId: 2,
+        governorateId: 3,
+        name: 4,
+        cityName: 5,
+        governorateName: 6,
+        altSpellings: 7,
+        isActive: 8,
+        createdAt: 9,
+        updatedAt: 10,
+      },
+    ],
+    ['StationResponse', { station: 1 }],
+    ['StationIdRequest', { stationId: 1 }],
+    [
+      'CreateStationRequest',
+      { cityId: 1, nameAr: 2, nameEn: 3, altSpellings: 4, isActive: 5 },
+    ],
+    ['StationAliases', { values: 1 }],
+    [
+      'UpdateStationRequest',
+      {
+        stationId: 1,
+        cityId: 2,
+        nameAr: 3,
+        nameEn: 4,
+        aliases: 5,
+        isActive: 6,
+      },
+    ],
+  ] as const)('pins the new field numbers on %s', (name, numbers) => {
+    expect(
+      Object.fromEntries(
+        (messageDescriptor(name).field ?? []).map((field) => [
+          field.name,
+          field.number,
+        ]),
+      ),
+    ).toEqual(numbers);
+  });
+
+  it.each(['name', 'cityName', 'governorateName'])(
+    'reuses LocalizedName for StationDetails.%s',
+    (name) => {
+      const field = (messageDescriptor('StationDetails').field ?? []).find(
+        (candidate) => candidate.name === name,
+      );
+      expect(field?.type).toBe('TYPE_MESSAGE');
+      expect(field?.typeName).toBe('LocalizedName');
+    },
+  );
+
+  it.each(['StationDetails', 'CreateStationRequest', 'UpdateStationRequest'])(
+    'uses explicit bool presence for %s.isActive',
+    (name) => {
+      const descriptor = messageDescriptor(name);
+      const field = (descriptor.field ?? []).find(
+        (candidate) => candidate.name === 'isActive',
+      );
+      expect(field?.type).toBe('TYPE_BOOL');
+      // proto-loader represents explicit presence as a synthetic oneof.
+      expect(field?.oneofIndex).toBeTypeOf('number');
+      expect(descriptor.oneofDecl?.[field!.oneofIndex!]?.name).toBe(
+        '_isActive',
+      );
+    },
+  );
+
+  it.each(['GetStation', 'DeactivateStation'])(
+    '%s carries only the station ID',
+    (name) => {
+      const method = serviceDefinition()[name];
+      const request: StationIdRequest = { stationId };
+      expect(
+        method.requestDeserialize(method.requestSerialize(request)),
+      ).toStrictEqual(request);
+      expect(fieldNamesOf('StationIdRequest')).toEqual(['stationId']);
+    },
+  );
+
+  it.each([
+    'GetStation',
+    'CreateStation',
+    'UpdateStation',
+    'DeactivateStation',
+  ])(
+    '%s returns the full bilingual inactive snapshot with defaults disabled',
+    (name) => {
+      const method = serviceDefinition({
+        enums: String,
+        arrays: true,
+        defaults: false,
+      })[name];
+      expect(
+        method.responseDeserialize(method.responseSerialize(response)),
+      ).toStrictEqual(response);
+    },
+  );
+
+  it.each<CreateStationRequest>([
+    { cityId, nameAr: 'رمسيس', nameEn: 'Ramses' },
+    {
+      cityId,
+      nameAr: 'رمسيس',
+      nameEn: 'Ramses',
+      altSpellings: ['Ramsis', 'Cairo'],
+      isActive: false,
+    },
+    { cityId, nameAr: 'رمسيس', nameEn: 'Ramses', isActive: true },
+  ])(
+    'round-trips a create without defaulting optional fields: %j',
+    (request) => {
+      const method = serviceDefinition({ defaults: false }).CreateStation;
+      expect(
+        method.requestDeserialize(method.requestSerialize(request)),
+      ).toStrictEqual(request);
+    },
+  );
+
+  it.each<UpdateStationRequest>([
+    { stationId },
+    { stationId, cityId },
+    { stationId, nameAr: 'رمسيس' },
+    { stationId, nameEn: 'Ramses' },
+    { stationId, nameEn: '', isActive: false },
+    { stationId, aliases: { values: ['Ramsis'] }, isActive: true },
+  ])('round-trips a partial update without inventing fields: %j', (request) => {
+    const method = serviceDefinition({ defaults: false }).UpdateStation;
+    expect(
+      method.requestDeserialize(method.requestSerialize(request)),
+    ).toStrictEqual(request);
+  });
+
+  it.each([false, true])(
+    'distinguishes omitted aliases from an explicit clear with arrays=%s',
+    (arrays) => {
+      const method = serviceDefinition({
+        arrays,
+        defaults: false,
+      }).UpdateStation;
+      const unchanged: UpdateStationRequest = { stationId };
+      const clear: UpdateStationRequest = {
+        stationId,
+        aliases: { values: [] },
+        isActive: false,
+      };
+      expect(
+        method.requestDeserialize(method.requestSerialize(unchanged)),
+      ).toStrictEqual(unchanged);
+      expect(
+        method.requestDeserialize(method.requestSerialize(clear)),
+      ).toStrictEqual({
+        stationId,
+        aliases: arrays ? { values: [] } : {},
+        isActive: false,
+      });
+    },
+  );
 });

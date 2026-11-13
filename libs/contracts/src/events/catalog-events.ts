@@ -1,5 +1,6 @@
 import type { EventEnvelope } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
+import type { LocalizedName } from '../catalog/catalog.dto.js';
 
 export const TIMETABLE_PUBLISHED_EVENT_TYPE = EVENT_TYPES.timetablePublished;
 export const TIMETABLE_PUBLISHED_VERSION = 1;
@@ -47,7 +48,21 @@ export type TimetablePublishedEvent = EventEnvelope<
 export interface StationChangedPayloadV1 {
   stationId: string;
   action: 'created' | 'updated' | 'deactivated';
+  nameAr?: string;
+  nameEn?: string;
+  cityId?: string;
+  governorateId?: string;
+  cityName?: LocalizedName;
+  governorateName?: LocalizedName;
+  altSpellings?: string[];
+  isActive?: boolean;
+  actorAccountId?: string;
 }
+
+export type StationChangedEvent = EventEnvelope<
+  typeof STATION_CHANGED_EVENT_TYPE,
+  StationChangedPayloadV1
+>;
 
 export interface SeatAvailabilityChangedPayloadV1 {
   tripId: string;

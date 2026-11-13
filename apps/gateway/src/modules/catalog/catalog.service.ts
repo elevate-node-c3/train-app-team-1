@@ -4,9 +4,12 @@ import type {
   EmptyResult,
   FilterOptions,
   ListRecentSearchesResponse,
+  ListStationsRequest,
+  ListStationsResponse,
   SearchFilters,
   SearchOneWayTripsResponse,
   SearchReturnTripsResponse,
+  StationResponse,
   TripStopsResponse,
 } from '@app/contracts';
 
@@ -14,11 +17,17 @@ import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import type { RecentSearchesQueryDto } from './dto/recent-searches.dto.js';
 import type { SearchReturnTripsDto } from './dto/search-return-trips.dto.js';
 import type { SearchTripsDto } from './dto/search-trips.dto.js';
+import type {
+  CreateStationDto,
+  UpdateStationDto,
+} from './dto/station-requests.dto.js';
 import type { TripStopsQueryDto } from './dto/trip-stops.dto.js';
 
 /** What the REST endpoint answers with. */
-export interface SearchTripsResult
-  extends Omit<SearchOneWayTripsResponse, 'emptyResult' | 'filterOptions'> {
+export interface SearchTripsResult extends Omit<
+  SearchOneWayTripsResponse,
+  'emptyResult' | 'filterOptions'
+> {
   /** Always present, even when the day offered nothing to narrow. */
   filterOptions: FilterOptions;
   /**
@@ -43,6 +52,60 @@ export interface SearchTripsResult
 @Injectable()
 export class CatalogService {
   constructor(private readonly catalog: CatalogGrpcClientService) {}
+
+  async listStations(
+    request: ListStationsRequest,
+  ): Promise<ListStationsResponse> {
+    const response = await this.catalog.listStations(request);
+    return {
+      governorates: (response.governorates ?? []).map((governorate) => ({
+        ...governorate,
+        stations: governorate.stations ?? [],
+      })),
+    };
+  }
+
+  getStation(stationId: string): Promise<StationResponse> {
+    return this.catalog.getStation(stationId);
+  }
+
+  createStation(
+    request: CreateStationDto,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.catalog.createStation(request, idempotencyKey);
+  }
+
+  updateStation(
+    stationId: string,
+    request: UpdateStationDto,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.catalog.updateStation(
+      {
+        stationId,
+        ...(request.cityId === undefined ? {} : { cityId: request.cityId }),
+        ...(request.nameAr === undefined ? {} : { nameAr: request.nameAr }),
+        ...(request.nameEn === undefined ? {} : { nameEn: request.nameEn }),
+        // The wrapper preserves an explicit [] as a clear, not an omission.
+        ...(Object.hasOwn(request, 'altSpellings') &&
+        request.altSpellings !== undefined
+          ? { aliases: { values: request.altSpellings } }
+          : {}),
+        ...(request.isActive === undefined
+          ? {}
+          : { isActive: request.isActive }),
+      },
+      idempotencyKey,
+    );
+  }
+
+  deactivateStation(
+    stationId: string,
+    idempotencyKey: string,
+  ): Promise<StationResponse> {
+    return this.catalog.deactivateStation(stationId, idempotencyKey);
+  }
 
   async searchOneWay(
     query: SearchTripsDto,
@@ -182,8 +245,10 @@ export class CatalogService {
  * booking window, because the outbound call already sent both and two copies
  * could disagree.
  */
-export interface SearchReturnTripsResult
-  extends Omit<SearchReturnTripsResponse, 'emptyResult' | 'filterOptions'> {
+export interface SearchReturnTripsResult extends Omit<
+  SearchReturnTripsResponse,
+  'emptyResult' | 'filterOptions'
+> {
   filterOptions: FilterOptions;
   emptyResult?: {
     reason: string;

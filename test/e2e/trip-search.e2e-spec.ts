@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ApiResponse, ListStationsResponse } from '@app/contracts';
 
 import {
   EMAIL_QUEUE,
   GATEWAY_URL,
   compose,
+  redisGet,
   stopStack,
   waitFor,
   waitForConsumer,
@@ -125,6 +127,87 @@ beforeAll(async () => {
 afterAll(() => {
   stopStack();
 }, 300_000);
+
+describe('public station picker', () => {
+  async function stations(
+    acceptLanguage?: string,
+    query = 'Ramsis',
+    lang?: string,
+  ) {
+    const search = new URLSearchParams({ query });
+    if (lang !== undefined) search.set('lang', lang);
+    const response = await fetch(`${GATEWAY_URL}/api/v1/stations?${search}`, {
+      headers:
+        acceptLanguage === undefined
+          ? {}
+          : { 'Accept-Language': acceptLanguage },
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as ApiResponse<ListStationsResponse>,
+    };
+  }
+
+  it.each([
+    ['en', 'en'],
+    ['ar', 'ar'],
+    [undefined, 'ar'],
+    ['fr', 'ar'],
+    ['*', 'ar'],
+    ['en-GB,en;q=0.9', 'en'],
+  ] as const)(
+    'uses Accept-Language %s without requiring a bearer token',
+    async (header, language) => {
+      const { status, body } = await stations(header);
+      expect(status, JSON.stringify(body.error)).toBe(200);
+      const station = body.data?.governorates
+        .flatMap((group) => group.stations)
+        .find((entry) => entry.id === fixture.stations.ramsis);
+      expect(station).toBeDefined();
+      if (language === 'en') expect(station?.name).toMatch(/rams[ei]s/i);
+      else expect(station?.name).not.toMatch(/[A-Za-z]/);
+      expect(station?.cityName).not.toBe('');
+    },
+  );
+
+  it('ignores a lang query parameter in favor of the language header', async () => {
+    const { status, body } = await stations('ar', 'Ramsis', 'en');
+    expect(status).toBe(200);
+    const station = body.data?.governorates
+      .flatMap((group) => group.stations)
+      .find((entry) => entry.id === fixture.stations.ramsis);
+    expect(station?.name).not.toMatch(/[A-Za-z]/);
+  });
+
+  it("stores the bilingual city hierarchy in dev's canonical station cache", async () => {
+    await stations('en');
+    await stations('ar');
+    // The seed invalidates, so the live generation decides which key holds it.
+    const generation = redisGet('catalog:stations:generation') || '1';
+    const cached = JSON.parse(redisGet(`catalog:stations:v1:g${generation}`)!);
+    const city = cached.governorates[0].cities[0];
+    expect(city.name.en).toBeTypeOf('string');
+    expect(city.name.ar).toBeTypeOf('string');
+    expect(city.stations[0].name.en).toBeTypeOf('string');
+    expect(city.stations[0].name.ar).toBeTypeOf('string');
+    expect(redisGet('catalog:stations:list:v1')).toBeNull();
+  });
+
+  it('returns a localized field refusal for an overlong search', async () => {
+    const query = 'x'.repeat(101);
+    const { status, body } = await stations('en', query);
+    expect(status).toBe(400);
+    expect(body.error?.details?.[0]).toMatchObject({
+      field: 'query',
+      rejectedValue: query,
+    });
+    expect(body.error?.details?.[0].issue).toContain('100');
+    expect(body.error?.details?.[0].action).toContain('100');
+    expect(JSON.stringify(body.error?.details)).not.toMatch(
+      /issueKey|actionKey|\{\{/,
+    );
+  });
+});
 
 describe('One-way search, edge to catalog', () => {
   const search = (

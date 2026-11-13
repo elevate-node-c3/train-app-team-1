@@ -438,6 +438,14 @@ A complete Postman Collection and Environment are provided in `postman/`:
 
 ### Trip Search (TA-17)
 
+The public station picker is `GET /api/v1/stations?query=...`. Select its language
+with `Accept-Language`, not a `lang` query parameter. Missing or unsupported
+headers use Arabic, following the gateway's normal language-selection rules:
+
+```bash
+curl -H "Accept-Language: en" "http://localhost:3000/api/v1/stations?query=Ramses"
+```
+
 The **Trip Search (Gateway)** folder covers one-way search: the happy path, the optional train-number filter (ASCII and Arabic-Indic digits), both empty-result reasons in Arabic and English, and the refusals that name the field to change.
 
 It needs two things first:

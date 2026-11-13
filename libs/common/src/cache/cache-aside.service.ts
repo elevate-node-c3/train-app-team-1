@@ -120,6 +120,33 @@ export class CacheAsideService {
   }
 
   /**
+   * Increments a counter and returns the new value, or null on an outage.
+   *
+   * Unlike `get`/`set`/`del`, the caller needs to know whether this landed: a
+   * generation counter that silently did not move leaves stale entries
+   * reachable.
+   */
+  async increment(key: string): Promise<number | null> {
+    const client = this.redis.isAvailable() ? this.redis.getClient() : null;
+    if (!client) return null;
+
+    try {
+      return await withTimeout(
+        client.incr(key),
+        REDIS_OP_TIMEOUT_MS,
+        `Cache increment for ${key}`,
+      );
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Cache increment failed for ${key}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Distributed stampede-protected read-through caching (§2.3 rule 3).
    *
    * Coalesces concurrent misses on the same key across processes using Redis
@@ -130,8 +157,14 @@ export class CacheAsideService {
     family: CacheFamily,
     loader: () => Promise<T>,
     ttlSeconds: number,
-    options?: { maxWaitMs?: number; pollIntervalMs?: number },
+    options?: {
+      maxWaitMs?: number;
+      pollIntervalMs?: number;
+      isValid?: (value: unknown) => value is T;
+    },
   ): Promise<T> {
+    const isUsable = (value: T | null): value is T =>
+      value !== null && (!options?.isValid || options.isValid(value));
     const client = this.redis.isAvailable() ? this.redis.getClient() : null;
     if (!client) {
       this.metrics.recordMiss(family);
@@ -140,7 +173,7 @@ export class CacheAsideService {
 
     // 1. Initial Redis lookup
     const cached = await this.get<T>(key);
-    if (cached !== null) {
+    if (isUsable(cached)) {
       this.metrics.recordHit(family);
       return cached;
     }
@@ -151,7 +184,7 @@ export class CacheAsideService {
     return this.stampedeGuard.coalesceInProcess(key, async () => {
       // Re-check cache in case another caller populated it while waiting
       const warmCheck = await this.get<T>(key);
-      if (warmCheck !== null) {
+      if (isUsable(warmCheck)) {
         return warmCheck;
       }
 
@@ -178,14 +211,14 @@ export class CacheAsideService {
       while (Date.now() - start < maxWaitMs) {
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
         const warm = await this.get<T>(key);
-        if (warm !== null) {
+        if (isUsable(warm)) {
           return warm;
         }
 
         const stillLocked = await this.stampedeGuard.isLocked(client, lockKey);
         if (!stillLocked) {
           const finalCheck = await this.get<T>(key);
-          if (finalCheck !== null) return finalCheck;
+          if (isUsable(finalCheck)) return finalCheck;
           break;
         }
       }
