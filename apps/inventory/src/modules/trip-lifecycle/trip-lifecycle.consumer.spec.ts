@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope } from '@app/contracts';
 import {
   TRIP_PUBLISHED_EVENT_TYPE,
@@ -62,6 +63,10 @@ describe('TripLifecycleConsumer', () => {
       unitOfWork as never,
       outbox as never,
     );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   const publishedEnvelope = envelopeFor(
@@ -132,6 +137,8 @@ describe('TripLifecycleConsumer', () => {
       consumer.handle(envelopeWithDuplicateCoachNumber, 1),
     ).rejects.toBeInstanceOf(PermanentEventError);
     expect(repository.apply).not.toHaveBeenCalled();
+    // A malformed payload must never produce any outbox event, not just skip the expected one.
+    expect(outbox.append).not.toHaveBeenCalled();
   });
 
   it('publishes the refusal before dead-lettering, and in that order', async () => {
@@ -150,9 +157,16 @@ describe('TripLifecycleConsumer', () => {
       ctx,
       expect.objectContaining({ type: 'inventory.trip.publication-refused' }),
     );
+    // Exactly one append: nothing was appended in the rolled-back first transaction.
+    expect(outbox.append).toHaveBeenCalledTimes(1);
   });
 
   it('warns about a capacity mismatch without refusing', async () => {
+    const warnings: string[] = [];
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+
     repository.apply.mockResolvedValue({
       kind: 'created',
       seatCount: 20,
@@ -165,7 +179,12 @@ describe('TripLifecycleConsumer', () => {
     );
 
     const result = await consumer.handle(envelopeWithWrongCapacity, 1);
+
     expect(result.status).toBe('handled');
+    // The warning is the only signal that catalog's summary disagreed with the layout.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(tripId);
+    expect(warnings[0]).toContain('999');
   });
 
   it('closes a withdrawn trip and touches no occupation', async () => {
