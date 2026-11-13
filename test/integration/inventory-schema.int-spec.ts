@@ -1,5 +1,44 @@
-import { describe, it, expect } from 'vitest';
-import { inventoryDataSource } from './support/inventory-database.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import type { DataSource } from 'typeorm';
+import { inventoryDataSource, truncateInventory } from './support/inventory-database.js';
+import { SIX_STOP_TRIP, seedSixStopTrip } from './support/inventory-fixture.js';
+
+async function insertStop(tripId: string, stationId: string, position: number): Promise<void> {
+  const source = await inventoryDataSource();
+  await source.query(
+    `INSERT INTO trip_stop (trip_id, position, station_id) VALUES ($1, $2, $3)`,
+    [tripId, position, stationId],
+  );
+}
+
+async function insertCoach(
+  tripId: string,
+  coachId: string,
+  coachNumber: number,
+  travelClassId: string,
+): Promise<void> {
+  const source = await inventoryDataSource();
+  await source.query(
+    `INSERT INTO trip_coach (id, trip_id, coach_number, travel_class_id) VALUES ($1, $2, $3, $4)`,
+    [coachId, tripId, coachNumber, travelClassId],
+  );
+}
+
+async function insertSeat(
+  seatId: string,
+  tripId: string,
+  coachId: string,
+  seatNumber: number,
+  travelClassId: string,
+  side = 'left',
+): Promise<void> {
+  const source = await inventoryDataSource();
+  await source.query(
+    `INSERT INTO trip_seat (id, trip_id, trip_coach_id, seat_number, travel_class_id, side)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [seatId, tripId, coachId, seatNumber, travelClassId, side],
+  );
+}
 
 describe('inventory migrations', () => {
   it('creates the outbox and inbox tables', async () => {
@@ -19,5 +58,72 @@ describe('inventory migrations', () => {
       `SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_outbox_event_unpublished'`,
     );
     expect(rows[0].indexdef).toContain('WHERE (published_at IS NULL)');
+  });
+});
+
+describe('the trip tables', () => {
+  let source: DataSource;
+
+  beforeEach(async () => {
+    source = await inventoryDataSource();
+    await truncateInventory(source);
+    await seedSixStopTrip(source);
+  });
+
+  it('refuses a second stop at the same station on one trip', async () => {
+    // seedSixStopTrip already placed station 0; inserting it at position 6 must fail
+    await expect(insertStop(SIX_STOP_TRIP.tripId, SIX_STOP_TRIP.stationIds[0], 6)).rejects.toThrow(
+      /trip_stop/,
+    );
+  });
+
+  it('refuses two coaches with the same number on one trip', async () => {
+    // unique (trip_id, coach_number): coach 1 already exists on this trip
+    await expect(
+      insertCoach(
+        SIX_STOP_TRIP.tripId,
+        '30000000-0000-0000-0000-000000000099',
+        1,
+        SIX_STOP_TRIP.travelClassIds[0],
+      ),
+    ).rejects.toThrow(/trip_coach/);
+  });
+
+  it('refuses two seats with the same number in one coach', async () => {
+    // unique (trip_coach_id, seat_number): seat 1 already exists in coach 1
+    await expect(
+      insertSeat(
+        '40000000-0000-0000-0000-000000000099',
+        SIX_STOP_TRIP.tripId,
+        SIX_STOP_TRIP.coachIds[0],
+        1,
+        SIX_STOP_TRIP.travelClassIds[0],
+      ),
+    ).rejects.toThrow(/trip_seat/);
+  });
+
+  it('accepts seat 1 in two different coaches', async () => {
+    // uniqueness is per coach, not per trip: seat 1 exists in coach 1 and
+    // coach 2 already; a third coach can still take seat number 1.
+    const thirdCoachId = '30000000-0000-0000-0000-000000000003';
+    await insertCoach(SIX_STOP_TRIP.tripId, thirdCoachId, 3, SIX_STOP_TRIP.travelClassIds[0]);
+
+    await expect(
+      insertSeat(
+        '40000000-0000-0000-0000-000000000099',
+        SIX_STOP_TRIP.tripId,
+        thirdCoachId,
+        1,
+        SIX_STOP_TRIP.travelClassIds[0],
+      ),
+    ).resolves.not.toThrow();
+  });
+
+  it('refuses a status outside on_sale and closed', async () => {
+    await expect(
+      source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'pending')`, [
+        '10000000-0000-0000-0000-000000000099',
+      ]),
+    ).rejects.toThrow(/chk_inventory_trip_status/);
   });
 });
