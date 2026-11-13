@@ -34,7 +34,7 @@ export function normalizePhone(raw: string): PhoneValidationResult {
   let cleaned = normalizeDigits(raw.trim());
 
   // 2. Remove all non-digit characters except leading '+'
-  cleaned = cleaned.replace(/[\s\-\(\)\.]/g, '');
+  cleaned = cleaned.replace(/[\s\-().]/g, '');
 
   // 3. Strip international prefix
   if (cleaned.startsWith('+20')) {

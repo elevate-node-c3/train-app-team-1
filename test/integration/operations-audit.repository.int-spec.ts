@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { DataSourceInitializer } from '../../libs/common/src/persistence/data-source-initializer.js';
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
-import type { TransactionContext } from '../../libs/common/src/persistence/unit-of-work.port.js';
 
 import { OperationsAuditEntity } from '../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
 import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/operations-audit.repository.js';

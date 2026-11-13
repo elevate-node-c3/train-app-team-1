@@ -16,10 +16,7 @@ import {
 } from '@app/contracts';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import { UNIT_OF_WORK } from '@app/common/persistence/unit-of-work.port.js';
-import type {
-  TransactionContext,
-  UnitOfWorkPort,
-} from '@app/common/persistence/unit-of-work.port.js';
+import type { UnitOfWorkPort } from '@app/common/persistence/unit-of-work.port.js';
 import { OUTBOX, type OutboxPort } from '@app/messaging';
 
 import { dependencyRetryAfterSeconds } from '../../config/operations-settings.js';

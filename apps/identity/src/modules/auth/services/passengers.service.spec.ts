@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ErrorCode } from '@app/contracts';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
-import { AuthError } from '../auth-error.js';
 import { AccountEntity } from '../entities/account.entity.js';
 import { PassengerEntity } from '../entities/passenger.entity.js';
 import { ProfileTypeEntity } from '../entities/profile-type.entity.js';

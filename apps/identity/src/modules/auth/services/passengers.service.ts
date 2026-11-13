@@ -53,7 +53,8 @@ function constraintOf(error: unknown): string {
       constraint?: unknown;
       driverError?: { constraint?: unknown };
     };
-    return String(err.constraint || err.driverError?.constraint || '');
+    const constraint = err.constraint ?? err.driverError?.constraint;
+    return typeof constraint === 'string' ? constraint : '';
   }
   return '';
 }

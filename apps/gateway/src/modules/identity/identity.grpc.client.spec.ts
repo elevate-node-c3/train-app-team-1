@@ -367,7 +367,7 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
       bookable: true,
     };
 
-    const { adapter, fake } = adapterWith((method) => {
+    const { adapter } = adapterWith((method) => {
       if (method === 'completeProfile') {
         return {
           response: {

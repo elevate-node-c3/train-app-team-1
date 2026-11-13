@@ -643,6 +643,8 @@ describe('TimetablePublishService refusals', () => {
     const bounded = harness.store.timetables[0];
     bounded.effectiveUntil = D_PLUS_3;
     harness.store.timetables.push({
+      // The harness store holds plain rows, so there is no prototype to lose.
+      // oxlint-disable-next-line typescript/no-misused-spread
       ...bounded,
       id: 'future-version',
       version: 2,

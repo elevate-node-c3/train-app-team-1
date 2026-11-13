@@ -33,7 +33,8 @@ function makeService(options: { failChannel?: boolean } = {}) {
     consume,
   };
 
-  const reconnectListeners: (() => void)[] = [];
+  // Matches AmqpReconnectListener: the real handler is async.
+  const reconnectListeners: (() => void | Promise<void>)[] = [];
   const unsubscribe = vi.fn();
 
   const amqp = {
