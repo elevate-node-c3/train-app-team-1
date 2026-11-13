@@ -2,6 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
+  isValidationIssueRef,
   type ValidationIssueRef,
 } from '@app/contracts';
 
@@ -15,25 +16,6 @@ interface CatalogRefusal {
   details: ValidationIssueRef[];
   /** Present only on a `DEPENDENCY_UNAVAILABLE` refusal: how long to wait before retrying. */
   retryAfterSeconds?: number;
-}
-
-function isValidationIssueRef(value: unknown): value is ValidationIssueRef {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.field === 'string' &&
-    typeof candidate.issueKey === 'string' &&
-    (candidate.actionKey === undefined ||
-      typeof candidate.actionKey === 'string') &&
-    (candidate.params === undefined ||
-      (typeof candidate.params === 'object' &&
-        candidate.params !== null &&
-        !Array.isArray(candidate.params) &&
-        Object.values(candidate.params).every(
-          (param) => typeof param === 'string',
-        )))
-  );
 }
 
 /** Decodes the refusal, or null when this is not one. */

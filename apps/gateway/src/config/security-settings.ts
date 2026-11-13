@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TOKEN_DEFAULTS } from '@app/contracts';
 
@@ -72,6 +72,11 @@ function readPublicKeyPem(
   if (!existsSync(path)) {
     throw new Error(
       `${fileVariable} points to a missing public key file: ${file}`,
+    );
+  }
+  if (statSync(path).isDirectory()) {
+    throw new Error(
+      `${fileVariable} points to a directory, not a file: ${file}. If you started Docker before generating keys, run 'npm run keys:generate' and restart Docker.`,
     );
   }
   return readFileSync(path, 'utf8');

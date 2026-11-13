@@ -5,11 +5,14 @@ import {
   EMAIL_VERIFIED_VERSION,
   PASSWORD_RESET_EVENT_TYPE,
   PASSWORD_RESET_VERSION,
+  PROFILE_COMPLETED_EVENT_TYPE,
+  PROFILE_COMPLETED_VERSION,
   SESSION_REVOKED_EVENT_TYPE,
   SESSION_REVOKED_VERSION,
   type AccountRegisteredEvent,
   type EmailVerifiedEvent,
   type PasswordResetEvent,
+  type ProfileCompletedEvent,
   type SessionRevokedEvent,
 } from '@app/contracts';
 
@@ -101,6 +104,21 @@ export function buildPasswordReset(
     payload: {
       accountId: props.accountId,
       resetAt: props.occurredAt.toISOString(),
+    },
+  };
+}
+
+export function buildProfileCompleted(
+  props: EnvelopeProps & { accountId: string; fullName: string },
+): ProfileCompletedEvent {
+  return {
+    ...envelope(props),
+    type: PROFILE_COMPLETED_EVENT_TYPE,
+    version: PROFILE_COMPLETED_VERSION,
+    payload: {
+      accountId: props.accountId,
+      fullName: props.fullName,
+      completedAt: props.occurredAt.toISOString(),
     },
   };
 }

@@ -683,6 +683,74 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'اختر تاريخ بدء بعد النسخة المتداخلة، أو ألغِ تلك النسخة أولاً.',
     en: 'Choose an effective date after the clashing version, or withdraw that version first.',
   },
+  ISSUE_FULL_NAME_INVALID: {
+    ar: 'الاسم بالكامل يجب أن يحتوي على الاسم الأول واسم العائلة على الأقل بحروف عربية أو لاتينية، وبحد أقصى 50 حرفاً.',
+    en: 'The full name must hold at least a first and a family name in Arabic or Latin letters, up to 50 characters.',
+  },
+  ACTION_SEND_FIRST_AND_FAMILY_NAME: {
+    ar: 'أدخل الاسم الأول واسم العائلة على الأقل.',
+    en: 'Enter at least a first and a family name.',
+  },
+  ISSUE_PHONE_NOT_EGYPTIAN_MOBILE: {
+    ar: 'رقم الهاتف ليس رقم هاتف محمول مصرياً صحيحاً.',
+    en: 'The phone number is not a valid Egyptian mobile number.',
+  },
+  ACTION_SEND_EGYPTIAN_MOBILE: {
+    ar: 'أدخل رقم هاتف محمول مصرياً من 11 رقماً يبدأ بـ 010 أو 011 أو 012 أو 015.',
+    en: 'Enter an 11-digit Egyptian mobile number starting with 010, 011, 012, or 015.',
+  },
+  ISSUE_NATIONAL_ID_LENGTH: {
+    ar: 'الرقم القومي يجب أن يتكون من 14 رقماً بالضبط.',
+    en: 'The National ID must be exactly 14 digits.',
+  },
+  ACTION_SEND_14_DIGIT_NATIONAL_ID: {
+    ar: 'أدخل رقماً قومياً مصرياً من 14 رقماً.',
+    en: 'Enter a 14-digit Egyptian National ID.',
+  },
+  ISSUE_NATIONAL_ID_CENTURY_DIGIT: {
+    ar: 'رقم القرن في الرقم القومي يجب أن يكون 2 (القرن العشرين) أو 3 (القرن الحادي والعشرين).',
+    en: 'The century digit of the National ID must be 2 (1900s) or 3 (2000s).',
+  },
+  ACTION_CHECK_NATIONAL_ID_CENTURY_DIGIT: {
+    ar: 'راجع الرقم الأول في الرقم القومي.',
+    en: 'Check the first digit of the National ID.',
+  },
+  ISSUE_NATIONAL_ID_BIRTH_DATE: {
+    ar: 'تاريخ الميلاد في الرقم القومي ليس تاريخاً صحيحاً أو يقع في المستقبل.',
+    en: 'The birth date in the National ID is not a valid date, or is in the future.',
+  },
+  ACTION_CHECK_NATIONAL_ID_BIRTH_DATE: {
+    ar: 'راجع الأرقام من 2 إلى 7 (سنة وشهر ويوم الميلاد) في الرقم القومي.',
+    en: 'Check digits 2 through 7 (YYMMDD) in the National ID.',
+  },
+  ISSUE_NATIONAL_ID_GOVERNORATE: {
+    ar: 'كود المحافظة في الرقم القومي غير معروف.',
+    en: 'The governorate code in the National ID is not recognized.',
+  },
+  ACTION_CHECK_NATIONAL_ID_GOVERNORATE: {
+    ar: 'راجع الرقمين 8 و9 (كود المحافظة) في الرقم القومي.',
+    en: 'Check digits 8 and 9 (the governorate code) in the National ID.',
+  },
+  ISSUE_NATIONAL_ID_INVALID: {
+    ar: 'الرقم القومي غير صالح.',
+    en: 'The National ID is invalid.',
+  },
+  ISSUE_PROFILE_TYPE_NOT_ACCEPTED: {
+    ar: 'نوع الملف الشخصي غير مقبول.',
+    en: 'The profile type is not an accepted one.',
+  },
+  ACTION_PICK_PROFILE_TYPE_FROM_OPTIONS: {
+    ar: 'اختر نوع ملف شخصي من قائمة الخيارات.',
+    en: 'Choose a profile type from the options list.',
+  },
+  ISSUE_NATIONALITY_NOT_ACCEPTED: {
+    ar: 'الجنسية غير مقبولة.',
+    en: 'The nationality is not an accepted one.',
+  },
+  ACTION_PICK_NATIONALITY_FROM_OPTIONS: {
+    ar: 'اختر جنسية من قائمة الخيارات.',
+    en: 'Choose a nationality from the options list.',
+  },
 };
 
 export function resolveDetailText(

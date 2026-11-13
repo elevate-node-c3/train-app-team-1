@@ -8,6 +8,19 @@ export interface ValidationErrorDetail {
   action: string;
 }
 
+export function isValidationErrorDetail(
+  value: unknown,
+): value is ValidationErrorDetail {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.field === 'string' &&
+    typeof candidate.issue === 'string' &&
+    typeof candidate.action === 'string'
+  );
+}
+
 export interface ApiErrorDetail {
   code: ErrorCode | string;
   message: string;

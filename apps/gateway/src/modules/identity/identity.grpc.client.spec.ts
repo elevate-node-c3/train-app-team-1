@@ -41,6 +41,9 @@ const METHODS = [
   'signOut',
   'forgotPassword',
   'resetPassword',
+  'completeProfile',
+  'getProfile',
+  'getProfileOptions',
 ] as const;
 type Method = (typeof METHODS)[number];
 
@@ -349,6 +352,55 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     });
   });
 
+  it('forwards complete-profile, get-profile and get-profile-options', async () => {
+    const wireProfile = {
+      accountId: 'acc-1',
+      fullName: 'Ahmed Hussein',
+      phoneNumber: '01001234567',
+      nationalId: '28505150101235',
+      profileType: 'Regular',
+      nationality: 'Egyptian',
+      bookable: true,
+    };
+
+    const { adapter, fake } = adapterWith((method) => {
+      if (method === 'completeProfile') {
+        return {
+          response: {
+            tokens: WIRE_TOKENS,
+            profile: wireProfile,
+          },
+        };
+      }
+      if (method === 'getProfile') {
+        return { response: { profile: wireProfile } };
+      }
+      return {
+        response: {
+          profileTypes: [{ code: 'Regular', nameAr: 'عادي', nameEn: 'Regular' }],
+          nationalities: [{ code: 'Egyptian', nameAr: 'مصري', nameEn: 'Egyptian' }],
+        },
+      };
+    });
+
+    const completeResult = await adapter.completeProfile({
+      fullName: 'Ahmed Hussein',
+      phoneNumber: '01001234567',
+      nationalId: '28505150101235',
+      profileType: 'Regular',
+      nationality: 'Egyptian',
+    });
+    expect(completeResult.tokens).toEqual(WIRE_TOKENS);
+    expect(completeResult.profile).toEqual(wireProfile);
+
+    const getProfileResult = await adapter.getProfile();
+    expect(getProfileResult.profile).toEqual(wireProfile);
+
+    const optionsResult = await adapter.getProfileOptions();
+    expect(optionsResult.profileTypes).toHaveLength(1);
+    expect(optionsResult.nationalities).toHaveLength(1);
+  });
+
   it('propagates the verified caller to identity metadata', async () => {
     const cls = fakeCls({
       [CORRELATION_ID_KEY]: CORRELATION_ID,
@@ -397,6 +449,51 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     expect(error.getResponse()).toEqual({
       code: ErrorCode.RESEND_TOO_SOON,
       retryAfterSeconds: 90,
+    });
+  });
+
+  it('restores field-level validation details from the transport (BR-57)', async () => {
+    const details = [
+      {
+        field: 'fullName',
+        rejectedValue: 'Single',
+        issueKey: 'ISSUE_FULL_NAME_INVALID',
+        actionKey: 'ACTION_SEND_FIRST_AND_FAMILY_NAME',
+      },
+      {
+        field: 'phoneNumber',
+        rejectedValue: '123',
+        issueKey: 'ISSUE_PHONE_NOT_EGYPTIAN_MOBILE',
+        actionKey: 'ACTION_SEND_EGYPTIAN_MOBILE',
+      },
+    ];
+
+    const { adapter } = adapterWith(() => ({
+      error: serviceError(
+        grpc.status.INVALID_ARGUMENT,
+        JSON.stringify({
+          code: ErrorCode.VALIDATION_ERROR,
+          details,
+        }),
+      ),
+    }));
+
+    const error = await httpErrorOf(
+      adapter.completeProfile({
+        accountId: 'acc-1',
+        fullName: 'Single',
+        phoneNumber: '123',
+        nationalId: '123',
+        profileType: 'Regular',
+        nationality: 'Egyptian',
+      }),
+    );
+
+    expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    expect(error.getResponse()).toEqual({
+      code: ErrorCode.VALIDATION_ERROR,
+      details,
+      message: details,
     });
   });
 

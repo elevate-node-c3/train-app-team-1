@@ -6,6 +6,7 @@ import * as grpc from '@grpc/grpc-js';
 import {
   IDENTITY_SERVICE_NAME,
   ErrorCode,
+  type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
   type RefreshTokenRequestDto,
@@ -32,6 +33,7 @@ import {
 import { AuthError } from './auth-error.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
+import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
 
 /**
@@ -67,6 +69,19 @@ const GRPC_STATUS_BY_ERROR: Partial<Record<ErrorCode, grpc.status>> = {
   [ErrorCode.PASSWORD_RESET_INVALID]: grpc.status.INVALID_ARGUMENT,
   [ErrorCode.RATE_LIMITED]: grpc.status.RESOURCE_EXHAUSTED,
   [ErrorCode.PROFILE_INCOMPLETE]: grpc.status.PERMISSION_DENIED,
+
+  // Profile completion
+  [ErrorCode.PROFILE_ALREADY_COMPLETE]: grpc.status.FAILED_PRECONDITION,
+  [ErrorCode.INVALID_FULL_NAME]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.INVALID_NATIONAL_ID_LENGTH]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.INVALID_NATIONAL_ID_CENTURY]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.NATIONAL_ID_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
+  [ErrorCode.INVALID_PHONE_FORMAT]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.PHONE_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
+  [ErrorCode.INVALID_PROFILE_TYPE]: grpc.status.INVALID_ARGUMENT,
+  [ErrorCode.INVALID_NATIONALITY]: grpc.status.INVALID_ARGUMENT,
 };
 
 function toRpcException(error: unknown): unknown {
@@ -78,6 +93,9 @@ function toRpcException(error: unknown): unknown {
       code: error.code,
       ...(error.retryAfterSeconds
         ? { retryAfterSeconds: error.retryAfterSeconds }
+        : {}),
+      ...(error.details && error.details.length > 0
+        ? { details: error.details }
         : {}),
     }),
     message: error.message,
@@ -102,6 +120,16 @@ function tokenPairWire(tokens: TokenPairDto): TokenPairWire {
   };
 }
 
+interface ProfileWire {
+  accountId: string;
+  fullName: string;
+  phoneNumber: string;
+  nationalId: string;
+  profileType: string;
+  nationality: string;
+  bookable: boolean;
+}
+
 /**
  * The gRPC transport adapter. It owns no business rule: it reads the caller
  * from CLS (restored from metadata by the interceptor), calls one service, and
@@ -114,6 +142,7 @@ export class AuthGrpcController {
     private readonly accounts: AccountsService,
     private readonly sessions: SessionsService,
     private readonly passwords: PasswordsService,
+    private readonly profiles: ProfileService,
     private readonly cls: ClsService,
   ) {}
 
@@ -238,6 +267,76 @@ export class AuthGrpcController {
         correlationId: this.correlationId(),
       }),
     );
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'CompleteProfile')
+  async completeProfile(request: CompleteProfileRequestDto): Promise<{
+    tokens: TokenPairWire;
+    profile: ProfileWire;
+  }> {
+    return this.run(async () => {
+      const accountId = this.cls.get<string>(CALLER_ACCOUNT_ID_KEY);
+      if (!accountId) {
+        throw new AuthError(ErrorCode.UNAUTHORIZED);
+      }
+
+      const result = await this.profiles.completeProfile({
+        accountId,
+        correlationId: this.correlationId(),
+        fullName: request.fullName,
+        phoneNumber: request.phoneNumber,
+        nationalId: request.nationalId,
+        profileType: request.profileType,
+        nationality: request.nationality,
+      });
+
+      return {
+        tokens: tokenPairWire(result.tokens),
+        profile: {
+          accountId: result.profile.accountId,
+          fullName: result.profile.fullName ?? '',
+          phoneNumber: result.profile.phoneNumber ?? '',
+          nationalId: result.profile.nationalId ?? '',
+          profileType: result.profile.profileType ?? '',
+          nationality: result.profile.nationality ?? '',
+          bookable: result.profile.bookable,
+        },
+      };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'GetProfile')
+  async getProfile(): Promise<{ profile: ProfileWire }> {
+    return this.run(async () => {
+      const accountId = this.cls.get<string>(CALLER_ACCOUNT_ID_KEY);
+      if (!accountId) {
+        throw new AuthError(ErrorCode.UNAUTHORIZED);
+      }
+
+      const profile = await this.profiles.getProfile(accountId);
+
+      return {
+        profile: {
+          accountId: profile.accountId,
+          fullName: profile.fullName ?? '',
+          phoneNumber: profile.phoneNumber ?? '',
+          nationalId: profile.nationalId ?? '',
+          profileType: profile.profileType ?? '',
+          nationality: profile.nationality ?? '',
+          bookable: profile.bookable,
+        },
+      };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'GetProfileOptions')
+  async getProfileOptions(): Promise<{
+    profileTypes: { code: string; nameAr: string; nameEn: string }[];
+    nationalities: { code: string; nameAr: string; nameEn: string }[];
+  }> {
+    return this.run(async () => {
+      return this.profiles.getProfileOptions();
+    });
   }
 
   private correlationId(): string {

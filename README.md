@@ -42,6 +42,7 @@ can add a consumer without depending on another service.
 
 ```bash
 cp .env.example .env
+npm run keys:generate
 docker compose up
 ```
 
