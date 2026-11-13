@@ -53,7 +53,7 @@ const SIGN_OUT: SignOutResponseDto = { revoked: true };
 
 function harness(): {
   controller: AuthController;
-  identity: { [K in keyof IdentityService]: ReturnType<typeof vi.fn> };
+  identity: IdentityService;
 } {
   const identity = {
     signUp: vi.fn(async () => SIGN_UP),
@@ -67,7 +67,7 @@ function harness(): {
   };
   return {
     controller: new AuthController(identity as unknown as IdentityService),
-    identity,
+    identity: identity as unknown as IdentityService,
   };
 }
 

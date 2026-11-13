@@ -56,5 +56,66 @@ export class PassengerRepository {
       .getRepository(PassengerEntity)
       .count({ where: { accountId } });
   }
-}
 
+  async findAllByAccountId(
+    ctx: TransactionContext | null,
+    accountId: string,
+  ): Promise<PassengerEntity[]> {
+    const repo = ctx
+      ? entityManagerOf(ctx).getRepository(PassengerEntity)
+      : this.dataSource.getRepository(PassengerEntity);
+    return repo
+      .createQueryBuilder('passenger')
+      .where('passenger.account_id = :accountId', { accountId })
+      .orderBy('passenger.is_self', 'DESC')
+      .addOrderBy('passenger.created_at', 'ASC')
+      .getMany();
+  }
+
+  async findByIdAndAccountId(
+    ctx: TransactionContext | null,
+    id: string,
+    accountId: string,
+    options?: { forUpdate?: boolean },
+  ): Promise<PassengerEntity | null> {
+    const repo = ctx
+      ? entityManagerOf(ctx).getRepository(PassengerEntity)
+      : this.dataSource.getRepository(PassengerEntity);
+    const query = repo
+      .createQueryBuilder('passenger')
+      .where('passenger.id = :id', { id })
+      .andWhere('passenger.account_id = :accountId', { accountId });
+
+    if (options?.forUpdate && ctx) {
+      query.setLock('pessimistic_write');
+    }
+
+    return query.getOne();
+  }
+
+  async delete(
+    ctx: TransactionContext | null,
+    id: string,
+  ): Promise<void> {
+    if (ctx) {
+      await entityManagerOf(ctx).delete(PassengerEntity, { id });
+    } else {
+      await this.dataSource.getRepository(PassengerEntity).delete({ id });
+    }
+  }
+
+  async countCompanionsByAccountId(
+    ctx: TransactionContext | null,
+    accountId: string,
+  ): Promise<number> {
+    const repo = ctx
+      ? entityManagerOf(ctx).getRepository(PassengerEntity)
+      : this.dataSource.getRepository(PassengerEntity);
+    return repo.count({
+      where: {
+        accountId,
+        isSelf: false,
+      },
+    });
+  }
+}

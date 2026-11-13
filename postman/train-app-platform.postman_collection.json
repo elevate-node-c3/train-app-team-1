@@ -1022,6 +1022,311 @@
       ]
     },
     {
+      "name": "Passengers (Gateway)",
+      "description": "Saved companion passengers management endpoints (Sprint 2). Requires verified traveller authentication. Supports listing, adding, updating, and deleting companion passengers (up to 10 companions per account).",
+      "item": [
+        {
+          "name": "List Saved Passengers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Saved passengers list returned successfully\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.passengers).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passengers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passengers"
+              ]
+            },
+            "description": "Lists all saved passengers for the authenticated traveller (self passenger first, then companion passengers)."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Saved Passenger",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Saved passenger created successfully\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.passenger).to.be.an(\"object\");",
+                  "    pm.expect(json.data.passenger.id).to.be.a(\"string\");",
+                  "    pm.expect(json.data.passenger.fullName).to.eql(\"Mona Ahmed\");",
+                  "    pm.expect(json.data.passenger.nationalId).to.eql(\"29001010101235\");",
+                  "    pm.expect(json.data.passenger.profileType).to.eql(\"Regular\");",
+                  "    pm.expect(json.data.passenger.isSelf).to.be.false;",
+                  "    pm.environment.set(\"passengerId\", json.data.passenger.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Mona Ahmed\",\n  \"nationalId\": \"29001010101235\",\n  \"profileType\": \"Regular\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passengers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passengers"
+              ]
+            },
+            "description": "Adds a new companion passenger for the authenticated traveller. Caps at 10 companions per account."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Saved Passenger - Invalid 11-digit National ID (Refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"INVALID_NATIONAL_ID_LENGTH error returned\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.error.code).to.eql(\"INVALID_NATIONAL_ID_LENGTH\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Mona Ahmed\",\n  \"nationalId\": \"26582264865\",\n  \"profileType\": \"Regular\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passengers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passengers"
+              ]
+            },
+            "description": "Attempting to add a passenger with an invalid 11-digit Egyptian National ID is refused with INVALID_NATIONAL_ID_LENGTH."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Saved Passenger",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Saved passenger updated successfully\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.passenger).to.be.an(\"object\");",
+                  "    pm.expect(json.data.passenger.id).to.eql(pm.environment.get(\"passengerId\"));",
+                  "    pm.expect(json.data.passenger.fullName).to.eql(\"Mona Mahmoud Ahmed\");",
+                  "    pm.expect(json.data.passenger.nationalId).to.eql(\"29502020101235\");",
+                  "    pm.expect(json.data.passenger.profileType).to.eql(\"Regular\");",
+                  "    pm.expect(json.data.passenger.isSelf).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Mona Mahmoud Ahmed\",\n  \"nationalId\": \"29502020101235\",\n  \"profileType\": \"Regular\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passengers/{{passengerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passengers",
+                "{{passengerId}}"
+              ]
+            },
+            "description": "Updates details of a saved companion passenger."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Saved Passenger",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passengers/{{passengerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passengers",
+                "{{passengerId}}"
+              ]
+            },
+            "description": "Deletes a saved companion passenger. Deleting self passenger or another traveller's passenger is refused."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Trip Search (Gateway)",
       "description": "TA-17 one-way search: `GET /api/v1/trips/search`.\n\nRequires a verified traveller, so run **Authentication (Gateway) > Sign In**\nfirst -- these requests inherit the bearer `{{accessToken}}` it stores. There is\nno guest mode.\n\nThe station, travel-class and train-number variables are the fixed ids of the\ncatalog search fixture; load it with `npm run catalog:seed:search` after catalog\nhas migrated. `{{searchDepartureDate}}` is filled in automatically with the Cairo\ndate three days out (the day the fixture puts trips on) whenever it is left blank.\n\nEvery response uses the platform envelope: `success`, `data`, `error`. A refusal\nnames the field to change in `error.details[].field`; a 503 or 504 from a slow or\nstopped catalog carries `error.retryAfterSeconds`.\n\n### TA-18: round trip, filters, stops and recent searches\n\nThe later requests cover the second half of the story. `{{searchReturnDate}}` and `{{searchToday}}` are filled in automatically like the departure date; `{{outboundTripId}}` is stored by **Round Trip - Outbound Leg**, so run that before the return call or the stops request.\n\nThe filter requests use the Tanta -> Ramsis pair, which the fixture gives two train types and two fares -- the only pair where a train-type filter and a fare sort have anything to do.\n\nRecent searches are per traveller: sign in as somebody else and the list is empty, which is the rule rather than a bug.",
       "auth": {
