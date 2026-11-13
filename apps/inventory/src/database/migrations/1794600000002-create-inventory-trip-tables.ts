@@ -17,7 +17,7 @@ export class CreateInventoryTripTables1794600000002 implements MigrationInterfac
     await queryRunner.query(`
       CREATE TABLE "trip_stop" (
         "trip_id" uuid NOT NULL,
-        "position" integer NOT NULL CHECK ("position" >= 0),
+        "position" integer NOT NULL,
         "station_id" uuid NOT NULL,
 
         PRIMARY KEY ("trip_id", "position"),
@@ -28,7 +28,10 @@ export class CreateInventoryTripTables1794600000002 implements MigrationInterfac
           ON DELETE CASCADE,
 
         CONSTRAINT "uq_trip_stop_station"
-          UNIQUE ("trip_id", "station_id")
+          UNIQUE ("trip_id", "station_id"),
+
+        CONSTRAINT "chk_trip_stop_position"
+          CHECK ("position" >= 0)
       )
     `);
 
@@ -45,7 +48,12 @@ export class CreateInventoryTripTables1794600000002 implements MigrationInterfac
           ON DELETE CASCADE,
 
         CONSTRAINT "uq_trip_coach_number"
-          UNIQUE ("trip_id", "coach_number")
+          UNIQUE ("trip_id", "coach_number"),
+
+        -- Gives trip_seat's composite FK a target, so a seat can't reference
+        -- a coach from a different trip than the one it claims.
+        CONSTRAINT "uq_trip_coach_trip_id"
+          UNIQUE ("trip_id", "id")
       )
     `);
 
@@ -58,9 +66,11 @@ export class CreateInventoryTripTables1794600000002 implements MigrationInterfac
         "travel_class_id" uuid NOT NULL,
         "side" varchar(10) NOT NULL,
 
+        -- Composite FK: Postgres rejects a seat whose trip_id disagrees with
+        -- the trip its trip_coach_id actually belongs to.
         CONSTRAINT "fk_trip_seat_coach"
-          FOREIGN KEY ("trip_coach_id")
-          REFERENCES "trip_coach"("id")
+          FOREIGN KEY ("trip_id", "trip_coach_id")
+          REFERENCES "trip_coach" ("trip_id", "id")
           ON DELETE CASCADE,
 
         CONSTRAINT "uq_trip_seat_number"
