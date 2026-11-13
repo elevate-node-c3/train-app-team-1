@@ -1,13 +1,19 @@
 import type { CallOptions } from '@grpc/grpc-js';
 import type {
+  CreateStationRequest,
   GetTripStopsRequest,
   ListRecentSearchesRequest,
   ListRecentSearchesResponse,
+  ListStationsRequest,
+  ListStationsResponse,
   SearchOneWayTripsRequest,
   SearchOneWayTripsResponse,
   SearchReturnTripsRequest,
   SearchReturnTripsResponse,
+  StationIdRequest,
+  StationResponse,
   TripStopsResponse,
+  UpdateStationRequest,
 } from '@app/contracts';
 import type { Observable } from 'rxjs';
 
@@ -19,6 +25,36 @@ import type { Observable } from 'rxjs';
  * third argument has nowhere to go, and the call would wait forever.
  */
 export interface CatalogGrpcClient {
+  listStations(
+    data: ListStationsRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<ListStationsResponse>;
+
+  getStation(
+    data: StationIdRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<StationResponse>;
+
+  createStation(
+    data: CreateStationRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<StationResponse>;
+
+  updateStation(
+    data: UpdateStationRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<StationResponse>;
+
+  deactivateStation(
+    data: StationIdRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<StationResponse>;
+
   searchOneWayTrips(
     data: SearchOneWayTripsRequest,
     metadata?: unknown,

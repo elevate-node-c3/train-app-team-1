@@ -14,6 +14,7 @@ import { downstreamGrpcUrlsFromEnv } from '../../config/grpc-settings.js';
 import { CatalogController } from './catalog.controller.js';
 import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import { CatalogService } from './catalog.service.js';
+import { StationsController } from './stations.controller.js';
 import {
   CATALOG_GRPC_CLIENT,
   type CatalogGrpcClient,
@@ -68,7 +69,7 @@ const CATALOG_CLIENT = 'CATALOG_GRPC';
       },
     ]),
   ],
-  controllers: [CatalogController],
+  controllers: [CatalogController, StationsController],
   providers: [
     {
       provide: CATALOG_GRPC_CLIENT,
