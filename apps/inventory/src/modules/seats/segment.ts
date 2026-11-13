@@ -42,6 +42,8 @@ export function parseInt4Range(literal: string): Segment {
 
 // Returns stations from origin to destination inclusive: the passenger occupies
 // the destination station for fare/inventory purposes even though the seat is free from it.
+// seat-usage.repository.ts mirrors this inclusive rule in SQL (BETWEEN lower/upper) for its
+// bounded query; keep both ends in sync if this rule ever changes.
 export function stationsInUse(segment: Segment): number[] {
   const stations: number[] = [];
   for (let i = segment.from; i <= segment.to; i += 1) {

@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DataSourceInitializer } from '../../libs/common/src/persistence/data-source-initializer.js';
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 
-import { segmentOf } from '../../apps/inventory/src/modules/seats/segment.js';
+import { segmentOf, stationsInUse } from '../../apps/inventory/src/modules/seats/segment.js';
 import { seatPlanFrom, type SeatPlan } from '../../apps/inventory/src/modules/seats/seat-plan.js';
 import { sixStopPayload, twoStopPayload } from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
 import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/seat-plan.repository.js';
@@ -336,5 +336,31 @@ describe('seat usage for catalog', () => {
 
     expect(one.queries).toHaveLength(1);
     expect(twenty.queries).toHaveLength(one.queries.length);
+  });
+
+  it('does not double a count when the same trip id is requested twice', async () => {
+    await occupy(seat44, segmentOf(0, 2), 'sold');
+
+    const result = await usageFor([tripId, tripId]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(
+      expect.objectContaining({ tripId, soldCount: 1, heldCount: 0 }),
+    );
+  });
+
+  it('agrees with stationsInUse on which stations an occupied segment touches', async () => {
+    const segment = segmentOf(1, 3);
+    await occupy(seat44, segment, 'sold');
+
+    // Derived from the same source stationsInUse reads, not hardcoded, so this
+    // test fails if the SQL's inclusive-both-ends rule ever drifts from it.
+    const expectedStationIds = stationsInUse(segment).map(
+      (position) => SIX_STOP_TRIP.stationIds[position],
+    );
+
+    const [usage] = await usageFor([tripId]);
+
+    expect(usage.stationIdsInUse.slice().sort()).toEqual(expectedStationIds.slice().sort());
   });
 });
