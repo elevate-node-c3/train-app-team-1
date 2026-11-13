@@ -50,6 +50,9 @@ export const SIX_STOP_TRIP = {
     '50000000-0000-0000-0000-000000000001',
     '50000000-0000-0000-0000-000000000002',
   ],
+  trainId: '60000000-0000-0000-0000-000000000001',
+  trainNumber: 123,
+  serviceDate: '2026-11-20',
 } as const;
 
 /**
@@ -59,9 +62,11 @@ export const SIX_STOP_TRIP = {
 export async function seedSixStopTrip(source: DataSource): Promise<void> {
   const f = SIX_STOP_TRIP;
 
-  await source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'on_sale')`, [
-    f.tripId,
-  ]);
+  await source.query(
+    `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
+     VALUES ($1, 'on_sale', 1, $2, $3, $4)`,
+    [f.tripId, f.trainId, f.trainNumber, f.serviceDate],
+  );
 
   for (const [position, stationId] of f.stationIds.entries()) {
     await source.query(

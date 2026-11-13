@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { EntityManager } from 'typeorm';
 
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
@@ -33,40 +34,50 @@ interface ExistingCoachRow {
 export class SeatPlanRepository {
   async apply(ctx: TransactionContext, plan: SeatPlan): Promise<ApplyOutcome> {
     const manager = entityManagerOf(ctx);
-    const tripRepository = manager.getRepository(InventoryTripEntity);
 
-    // Lock the trip row so two concurrent publications serialize here instead
-    // of each reading a stale version and both deciding to write.
-    const trip = await tripRepository.findOne({
-      where: { id: plan.tripId },
-      lock: { mode: 'pessimistic_write' },
-    });
+    // A savepoint, not a second transaction: the version-guard upsert below
+    // must be reversible when refusalFor finds an occupied seat the new plan
+    // would drop, without discarding anything the caller already wrote to ctx.
+    const savepoint = `seat_plan_apply_${randomUUID().replaceAll('-', '_')}`;
+    await manager.query(`SAVEPOINT ${savepoint}`);
 
-    if (
-      trip &&
-      (trip.status === 'closed' || trip.timetableVersion >= plan.timetableVersion)
-    ) {
+    // Single atomic statement so a brand-new trip and a republished one share
+    // one decision point: whichever version is higher always wins, regardless
+    // of which concurrent INSERT ... ON CONFLICT reaches Postgres first (a
+    // plain INSERT with no conflict target would let two concurrent
+    // first-time applies race on commit order instead of version).
+    const upserted: { id: string }[] = await manager.query(
+      `INSERT INTO inventory_trip
+         (id, status, timetable_version, train_id, train_number, service_date)
+       VALUES ($1, 'on_sale', $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE
+         SET timetable_version = EXCLUDED.timetable_version,
+             updated_at = now()
+         WHERE inventory_trip.status <> 'closed'
+           AND inventory_trip.timetable_version < EXCLUDED.timetable_version
+       RETURNING id`,
+      [plan.tripId, plan.timetableVersion, plan.trainId, plan.trainNumber, plan.serviceDate],
+    );
+
+    if (upserted.length === 0) {
+      // WHERE filtered out the update: either closed, or stale/equal version.
+      await manager.query(`RELEASE SAVEPOINT ${savepoint}`);
       return { kind: 'skipped', reason: 'stale-version' };
     }
 
     const refusal = await this.refusalFor(manager, plan);
-    if (refusal) return refusal;
-
-    if (trip) {
-      trip.timetableVersion = plan.timetableVersion;
-      await tripRepository.save(trip);
-    } else {
-      await tripRepository.insert({
-        id: plan.tripId,
-        status: 'on_sale',
-        timetableVersion: plan.timetableVersion,
-      });
+    if (refusal) {
+      await manager.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await manager.query(`RELEASE SAVEPOINT ${savepoint}`);
+      return refusal;
     }
 
     await this.replaceStops(manager, plan);
     await this.dropUnplannedSeatsAndCoaches(manager, plan);
     const coachIdByNumber = await this.upsertCoaches(manager, plan);
     await this.upsertSeats(manager, plan, coachIdByNumber);
+
+    await manager.query(`RELEASE SAVEPOINT ${savepoint}`);
 
     return {
       kind: 'created',
