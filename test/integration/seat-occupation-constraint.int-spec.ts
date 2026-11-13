@@ -23,11 +23,25 @@ let source: DataSource;
 function occupy(
   seatId: string,
   segment: ReturnType<typeof segmentOf>,
+  state: 'sold',
+): Promise<string>;
+function occupy(
+  seatId: string,
+  segment: ReturnType<typeof segmentOf>,
+  state: 'held',
+  holdExpiresAt: Date,
+): Promise<string>;
+function occupy(
+  seatId: string,
+  segment: ReturnType<typeof segmentOf>,
   state: 'held' | 'sold',
-  options?: { holdExpiresAt?: Date | null },
+  holdExpiresAt?: Date,
 ): Promise<string> {
-  return occupySeat(source, seatId, tripId, segment, state, options);
+  if (state === 'held') return occupySeat(source, seatId, tripId, segment, 'held', holdExpiresAt as Date);
+  return occupySeat(source, seatId, tripId, segment, 'sold');
 }
+
+const anHourFromNow = (): Date => new Date(Date.now() + 60 * 60_000);
 
 function release(id: string): Promise<void> {
   return releaseSeat(source, id);
@@ -67,9 +81,9 @@ beforeEach(async () => {
 describe('the seat-occupation exclusion constraint', () => {
   it('refuses two overlapping occupations of one seat', async () => {
     await occupy(seat44, segmentOf(0, 5), 'sold');
-    await expect(occupy(seat44, segmentOf(1, 2), 'held')).rejects.toThrow(
-      /excl_seat_occupation_overlap/,
-    );
+    await expect(
+      occupy(seat44, segmentOf(1, 2), 'held', anHourFromNow()),
+    ).rejects.toThrow(/excl_seat_occupation_overlap/);
   });
 
   it('accepts two touching occupations of one seat', async () => {
@@ -103,7 +117,7 @@ describe('the seat-occupation exclusion constraint', () => {
   });
 
   it('stops blocking once released', async () => {
-    const id = await occupy(seat44, segmentOf(0, 5), 'held');
+    const id = await occupy(seat44, segmentOf(0, 5), 'held', anHourFromNow());
     await release(id);
     await expect(occupy(seat44, segmentOf(1, 2), 'sold')).resolves.toBeDefined();
   });
@@ -111,7 +125,7 @@ describe('the seat-occupation exclusion constraint', () => {
   it('keeps blocking while a hold is merely expired', async () => {
     // The index predicate cannot call now(), so an expired hold still blocks
     // until something writes released_at (spec §6.3).
-    await occupy(seat44, segmentOf(0, 5), 'held', { holdExpiresAt: inThePast });
+    await occupy(seat44, segmentOf(0, 5), 'held', inThePast);
     await expect(occupy(seat44, segmentOf(1, 2), 'sold')).rejects.toThrow(
       /excl_seat_occupation_overlap/,
     );
