@@ -1,3 +1,6 @@
+// Segment represents a half-open range [from, to) on the route: the seat is occupied
+// from the origin station (inclusive) through the destination (exclusive).
+// Touching segments do not overlap: [0,2) and [2,5) share a seat, but [0,5) and [1,2) collide.
 export interface Segment {
   readonly from: number;
   readonly to: number;
@@ -19,10 +22,10 @@ export function toInt4Range(segment: Segment): string {
 }
 
 export function parseInt4Range(literal: string): Segment {
-  // Parse formats like [0,2) or [0,2]
+  // Postgres normalizes to either bound style; we normalize to exclusive.
   const match = literal.match(/^\[(\d+),(\d+)([)\]])$/);
   if (!match) {
-    throw new Error(`Invalid int4range format: ${literal}`);
+    throw new RangeError(`Invalid int4range format: ${literal}`);
   }
 
   const from = parseInt(match[1], 10);
@@ -37,6 +40,8 @@ export function parseInt4Range(literal: string): Segment {
   return { from, to };
 }
 
+// Returns stations from origin to destination inclusive: the passenger occupies
+// the destination station for fare/inventory purposes even though the seat is free from it.
 export function stationsInUse(segment: Segment): number[] {
   const stations: number[] = [];
   for (let i = segment.from; i <= segment.to; i += 1) {
