@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+
+import { toInt4Range } from '../../../apps/inventory/src/modules/seats/segment.js';
+import type { Segment } from '../../../apps/inventory/src/modules/seats/segment.js';
 
 /**
  * Cairo -> Alexandria, six stops. Fixed literal ids so later tasks (5-10) can
@@ -83,4 +87,43 @@ export async function seedSixStopTrip(source: DataSource): Promise<void> {
       );
     }
   }
+}
+
+export interface OccupySeatOptions {
+  readonly holdExpiresAt?: Date | null;
+}
+
+/**
+ * Raw SQL only — these back the seat-occupation constraint tests, which must
+ * bypass the application to prove Postgres, not a repository, refuses overlap.
+ * A 'held' occupation defaults to an hour-out expiry unless the caller
+ * overrides it, satisfying chk_seat_occupation_hold_expiry.
+ */
+export async function occupy(
+  source: DataSource,
+  tripSeatId: string,
+  tripId: string,
+  segment: Segment,
+  state: 'held' | 'sold',
+  options: OccupySeatOptions = {},
+): Promise<string> {
+  const id = randomUUID();
+  const holdExpiresAt =
+    options.holdExpiresAt !== undefined
+      ? options.holdExpiresAt
+      : state === 'held'
+        ? new Date(Date.now() + 60 * 60_000)
+        : null;
+
+  await source.query(
+    `INSERT INTO seat_occupation (id, trip_seat_id, trip_id, segment, state, hold_expires_at)
+     VALUES ($1, $2, $3, $4::int4range, $5, $6)`,
+    [id, tripSeatId, tripId, toInt4Range(segment), state, holdExpiresAt],
+  );
+
+  return id;
+}
+
+export async function release(source: DataSource, id: string): Promise<void> {
+  await source.query(`UPDATE seat_occupation SET released_at = now() WHERE id = $1`, [id]);
 }

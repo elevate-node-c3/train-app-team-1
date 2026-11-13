@@ -7,6 +7,7 @@ import { InventoryTripEntity } from '../modules/seats/entities/inventory-trip.en
 import { TripStopEntity } from '../modules/seats/entities/trip-stop.entity.js';
 import { TripCoachEntity } from '../modules/seats/entities/trip-coach.entity.js';
 import { TripSeatEntity } from '../modules/seats/entities/trip-seat.entity.js';
+import { SeatOccupationEntity } from '../modules/seats/entities/seat-occupation.entity.js';
 
 /**
  * CLI connection. The service uses createTypeOrmAsyncOptions and
@@ -17,6 +18,12 @@ export default new DataSource({
   type: 'postgres',
   url: databaseUrlFromEnv(),
   synchronize: false,
-  entities: [InventoryTripEntity, TripStopEntity, TripCoachEntity, TripSeatEntity],
+  entities: [
+    InventoryTripEntity,
+    TripStopEntity,
+    TripCoachEntity,
+    TripSeatEntity,
+    SeatOccupationEntity,
+  ],
   migrations,
 });

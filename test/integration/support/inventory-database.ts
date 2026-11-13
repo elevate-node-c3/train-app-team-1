@@ -1,6 +1,11 @@
 import { DataSource } from 'typeorm';
 
 import { migrations } from '../../../apps/inventory/src/database/migrations/index.js';
+import { InventoryTripEntity } from '../../../apps/inventory/src/modules/seats/entities/inventory-trip.entity.js';
+import { TripStopEntity } from '../../../apps/inventory/src/modules/seats/entities/trip-stop.entity.js';
+import { TripCoachEntity } from '../../../apps/inventory/src/modules/seats/entities/trip-coach.entity.js';
+import { TripSeatEntity } from '../../../apps/inventory/src/modules/seats/entities/trip-seat.entity.js';
+import { SeatOccupationEntity } from '../../../apps/inventory/src/modules/seats/entities/seat-occupation.entity.js';
 import { assertReachable, countStatements } from './catalog-database.js';
 
 export { countStatements };
@@ -17,6 +22,7 @@ export const INVENTORY_DATABASE_URL =
 
 /** Every inventory table, children before parents, for truncation. */
 export const INVENTORY_TABLES = [
+  'seat_occupation',
   'trip_seat',
   'trip_coach',
   'trip_stop',
@@ -47,7 +53,13 @@ export async function inventoryDataSource(): Promise<DataSource> {
     url: INVENTORY_DATABASE_URL,
     synchronize: false,
     migrations,
-    entities: [],
+    entities: [
+      InventoryTripEntity,
+      TripStopEntity,
+      TripCoachEntity,
+      TripSeatEntity,
+      SeatOccupationEntity,
+    ],
     extra: { connectionTimeoutMillis: 5000 },
   });
 
