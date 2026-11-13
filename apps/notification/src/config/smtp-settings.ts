@@ -7,10 +7,7 @@ export interface SmtpSettings {
   handlerTimeoutMs: number;
 }
 
-/**
- * Composition-root parsing for the mailer. The values have already passed the
- * Joi schema in `main.ts`; the fallbacks keep a host-run unit test safe too.
- */
+/** Read validated SMTP settings; defaults also support local tests. */
 export function smtpSettingsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): SmtpSettings {

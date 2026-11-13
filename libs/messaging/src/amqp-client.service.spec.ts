@@ -9,12 +9,7 @@ const connect = amqp.connect as unknown as ReturnType<typeof vi.fn>;
 
 const URL = 'amqp://guest:guest@localhost:5672';
 
-/**
- * Real EventEmitters rather than `{ on: vi.fn() }`: the behaviour under test is
- * precisely that a replaced connection's listeners are detached, and a fake
- * that only records subscriptions cannot tell an attached handler from a
- * removed one.
- */
+/** Real EventEmitters let tests check listener removal from old connections. */
 class FakeChannel extends EventEmitter {
   close = vi.fn(async () => {});
   assertQueue = vi.fn(async () => ({ queue: 'amq.gen-probe' }));
@@ -52,8 +47,7 @@ describe('AmqpClientService connection replacement', () => {
     const client = new AmqpClientService();
     await client.connect(URL);
 
-    // A channel can die while its connection survives. That is the path that
-    // used to dial a second connection on top of the first.
+    // Replace dead channels without leaking their surviving connection.
     first.channels[0].emit('close');
     await client.ensureChannel();
 
@@ -75,9 +69,7 @@ describe('AmqpClientService connection replacement', () => {
     const live = await client.ensureChannel();
     expect(live).toBe(second.channels[0]);
 
-    // The orphan finally closes. Before the identity guard and the detach,
-    // its handler nulled the connection and channel its successor was using,
-    // and every later publish and ack failed against a healthy broker.
+    // Closing an old connection must not clear its replacement's state.
     first.emit('close');
     await flush();
 
@@ -136,10 +128,7 @@ describe('AmqpClientService connection replacement', () => {
       client.onReconnect(reattach);
       await client.connect(URL);
 
-      // Nothing is going to ask for a channel: a consuming-only service makes
-      // no outbound calls after bootstrap, and its container has no Compose
-      // healthcheck to poll readiness either. Waiting to be asked is how
-      // notification stayed deaf until someone restarted it.
+      // Consumer-only services must reconnect without a request or readiness poll.
       first.emit('close');
       expect(connect).toHaveBeenCalledTimes(1);
 
@@ -167,8 +156,7 @@ describe('AmqpClientService connection replacement', () => {
       await client.connect(URL);
       first.emit('close');
 
-      // 500ms, then 1s, then 2s — a broker that is down for a while must still
-      // be picked up rather than needing an operator.
+      // Keep retrying longer outages without needing an operator.
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(connect).toHaveBeenCalledTimes(4);
@@ -190,16 +178,13 @@ describe('AmqpClientService connection replacement', () => {
       const reattach = vi.fn();
       client.onReconnect(reattach);
 
-      // `onModuleInit` swallows the failure so the service still boots and
-      // reports the truth through readiness.
+      // Report startup failures through readiness, not a crashed process.
       await client.onModuleInit();
       expect(connect).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(600);
 
-      // The consumer's own bootstrap subscription already failed, so unlike the
-      // ordinary first connect this one has to be announced or the queue is
-      // never read.
+      // Announce startup recovery so failed consumers subscribe again.
       expect(connect).toHaveBeenCalledTimes(2);
       expect(reattach).toHaveBeenCalledTimes(1);
       expect(await client.ensureChannel()).toBe(recovered.channels[0]);
@@ -221,8 +206,7 @@ describe('AmqpClientService connection replacement', () => {
       await client.onApplicationShutdown();
       await vi.advanceTimersByTimeAsync(10_000);
 
-      // Still just the original dial: a process on its way out must not
-      // reconnect to the broker it is leaving.
+      // Do not reconnect once the process starts draining.
       expect(connect).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -243,8 +227,7 @@ describe('AmqpClientService connection replacement', () => {
         : { healthy: false, detail: 'Not consuming: notification.q' },
     );
 
-    // The broker round-trip succeeds either way; this is the gap a pure
-    // reachability check cannot see.
+    // Connection reachability alone does not prove a consumer is working.
     expect(await client.checkHealth()).toEqual({
       status: 'not_ready',
       message: 'Not consuming: notification.q',

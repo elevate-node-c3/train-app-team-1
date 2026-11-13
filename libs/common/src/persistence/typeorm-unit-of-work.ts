@@ -9,9 +9,8 @@ import { DataSourceInitializer } from './data-source-initializer.js';
 const DRIVER = 'typeorm';
 
 /**
- * The only object that may hold an EntityManager on behalf of the application
- * layer. Repositories unwrap it with `entityManagerOf()`; use-cases see the
- * `TransactionContext` interface and nothing more.
+ * Holds the EntityManager for repositories to unwrap with entityManagerOf().
+ * Use-cases see only the opaque TransactionContext.
  */
 class TypeOrmTransactionContext implements TransactionContext {
   readonly driver = DRIVER;
@@ -21,11 +20,8 @@ class TypeOrmTransactionContext implements TransactionContext {
 
 /**
  * Unwraps a context opened by {@link TypeOrmUnitOfWork}.
- *
- * Throws rather than returning null: being handed a context from a different
- * adapter means two unit-of-work implementations are wired at once, and
- * quietly opening a second connection would reintroduce exactly the dual-write
- * bug ADR-0001 removes.
+ * Rejects other adapters' contexts instead of opening a second connection,
+ * which would split domain and outbox writes across transactions.
  */
 export function entityManagerOf(ctx: TransactionContext): EntityManager {
   if (!(ctx instanceof TypeOrmTransactionContext)) {
@@ -43,9 +39,7 @@ export class TypeOrmUnitOfWork implements UnitOfWorkPort {
   async withTransaction<T>(
     work: (ctx: TransactionContext) => Promise<T>,
   ): Promise<T> {
-    // Connecting is shared with the readiness probe and the migration runner,
-    // because two callers racing to initialize() throws
-    // CannotConnectAlreadyConnectedError.
+    // Share initialization with readiness and migrations to avoid races.
     const dataSource = await this.initializer.ensureInitialized();
     return dataSource.transaction((manager) =>
       work(new TypeOrmTransactionContext(manager)),

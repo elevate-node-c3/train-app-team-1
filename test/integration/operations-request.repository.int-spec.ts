@@ -9,14 +9,8 @@ import { OperationsRequestRepository } from '../../apps/catalog/src/modules/oper
 import { catalogDataSource, closeCatalogDataSource } from './support/catalog-database.js';
 
 /**
- * Idempotency keys, against real Postgres.
- *
- * Task 6's review found that a rollback asserted with an in-memory double
- * proves nothing about the production path, and that hand-rolled SQL
- * verified only against a JS reimplementation is not verified. Both lessons
- * apply here: `record` goes through a real `TypeOrmUnitOfWork`, opening a
- * real transaction against this table, and the primary key is a real
- * Postgres constraint.
+ * Use real TypeOrmUnitOfWork transactions and Postgres primary-key enforcement;
+ * in-memory rollback and SQL reimplementations do not test this path.
  */
 
 describe('the operations request store', () => {
@@ -65,9 +59,7 @@ describe('the operations request store', () => {
       });
     });
 
-    // The property that makes the key trustworthy: a crash between commit
-    // and response must not lose it, which only holds if a rejected
-    // transaction truly leaves nothing behind.
+    // Idempotency keys must commit or roll back with the operation.
     it('stores nothing when the transaction rejects', async () => {
       await expect(
         unitOfWork.withTransaction(async (ctx) => {

@@ -6,7 +6,7 @@ import {
   type ValidatorConstraintInterface,
 } from 'class-validator';
 
-/** Boarding and alighting have to be two different places. */
+/** Boarding and destination stations must differ. */
 @ValidatorConstraint({ name: 'differentStopStations', async: false })
 class DifferentStopStations implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
@@ -19,19 +19,13 @@ class DifferentStopStations implements ValidatorConstraintInterface {
   }
 }
 
-/**
- * The query half of `GET /api/v1/trips/:tripId/stops`.
- *
- * The pair is required rather than defaulted to the whole trip: this answers
- * "what the design's '4 Stops' opens", which is the passenger's own segment,
- * and a client that sent neither would be shown a journey it did not offer.
- */
+/** Require the passenger's boarding and destination pair, not the whole trip. */
 export class TripStopsQueryDto {
-  /** Where the passenger boards. */
+  /** Boarding station. */
   @IsUUID()
   from!: string;
 
-  /** Where they alight. */
+  /** Destination station. */
   @IsUUID()
   @Validate(DifferentStopStations, {
     context: {
@@ -46,12 +40,7 @@ export class TripStopsQueryDto {
   language?: EventLanguage;
 }
 
-/**
- * The path half, validated separately because it is a `@Param`.
- *
- * A class rather than `ParseUUIDPipe` so the refusal reads like every other
- * one in this module -- named field, stated reason.
- */
+/** Validate tripId separately so UUID errors name the field. */
 export class TripIdParamDto {
   @IsUUID()
   tripId!: string;

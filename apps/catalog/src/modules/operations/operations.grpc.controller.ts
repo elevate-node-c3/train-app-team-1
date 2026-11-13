@@ -54,7 +54,6 @@ export interface PublishTimetableRpcFare {
   amountPiastres: number;
 }
 
-/** Everything `catalog.proto`'s `PublishTimetableRequest` carries on the wire. */
 export interface PublishTimetableRpcRequest {
   trainNumber: string;
   runningDays: number[];
@@ -150,14 +149,8 @@ function toAuditEntryRpc(entry: OperationsAuditEntity): AuditEntryRpc {
 }
 
 /**
- * The operator's side of the catalogue (TA-20): publishing a timetable
- * version, changing a fare, and reading the BR-52 trail both write.
- *
- * Unlike `TripsGrpcController`'s search, a write here is refused outright
- * when the caller or the `Idempotency-Key` is missing -- BR-52 requires
- * every change to be attributable, and "safe to retry" is a rule, not a
- * client option. Search still answers an unidentified caller because its
- * results are identical for everyone; nothing here is.
+ * Writes require an actor and Idempotency-Key so every change is attributable
+ * and safe to retry. Unlike search, unidentified writes are refused.
  */
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
@@ -211,11 +204,7 @@ export class OperationsGrpcController {
     }
   }
 
-  /**
-   * A read, not a change -- BR-52's "no change without attribution" does not
-   * apply to reading the trail, so unlike the two writes above this never
-   * refuses an unidentified caller.
-   */
+  /** Audit reads do not require actor attribution; only writes do. */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'ListAuditEntries')
   async listAuditEntries(
     request: ListAuditEntriesRpcRequest,
@@ -243,11 +232,9 @@ export class OperationsGrpcController {
   }
 
   /**
-   * Catalog never verifies a JWT itself, so a missing actor here is not an
-   * anonymous traveller -- it is a gateway that stopped forwarding one, and
-   * BR-52 refuses to record a change nobody can be named for. The same
-   * refusal covers a missing `Idempotency-Key`: whether a retry is safe is
-   * the service's rule, not something a client opts out of by omitting it.
+   * Catalog does not verify JWTs; the gateway must forward the actor.
+   * Refuse missing actors or Idempotency-Key values: attribution and safe retries
+   * are mandatory for writes.
    */
   private requireActor(metadata: Metadata | undefined): {
     actorAccountId: string;
@@ -281,9 +268,7 @@ export class OperationsGrpcController {
     }
 
     if (details.length > 0) {
-      // Thrown bare: the caller's own try/catch maps it through
-      // `toRpcException`, same as every other refusal in this file. Wrapping
-      // it here too would be a second place that knows how to do that.
+      // Let the caller map the refusal through toRpcException once.
       throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, details);
     }
 

@@ -4,12 +4,7 @@ import {
 } from '@app/common/config/env.defaults.js';
 import type { EventSubscription } from './event-subscription.js';
 
-/**
- * A subscription's own delays win; the variable is the platform default.
- *
- * Takes only the field it reads, so a caller that declares a queue before it
- * has a handler can size the retry queues the same way a consumer would.
- */
+/** Subscription delays override defaults; queue setup and consumers share this choice. */
 export function retryDelaysFor(
   subscription: Pick<EventSubscription, 'retryDelaysMs'>,
 ): readonly number[] {

@@ -48,16 +48,12 @@ export interface ResendVerificationCommand extends ResendVerificationRequestDto 
 type VerifyOutcome =
   { failed: AuthError } | { account: AccountEntity; issued: IssuedTokens };
 
-/** BR-56: anything that is not English falls back to Arabic. */
+/** Unsupported languages fall back to Arabic. */
 function languageOf(language: string | undefined): EventLanguage {
   return language === 'en' ? 'en' : 'ar';
 }
 
-/**
- * Email is normalized on the way in. The database also has a unique index on
- * `lower(email)`, so a repository bug cannot create two accounts for one
- * mailbox.
- */
+/** The lower(email) unique index also prevents duplicate accounts. */
 function normalizeEmail(value: string): string {
   const email = value.trim().toLowerCase();
   if (!email.includes('@')) {
@@ -76,9 +72,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Sign-up writes the account, the code hash, the request counter and the
- * outbox row in one transaction. The password is hashed and the code prepared
- * before the transaction opens; neither CPU-bound step holds a row lock.
+ * Save account, code hash, quota and outbox events in one transaction.
+ * Hash passwords and prepare codes first to avoid holding row locks.
  */
 @Injectable()
 export class AccountsService {
@@ -149,8 +144,7 @@ export class AccountsService {
         );
       });
     } catch (error: unknown) {
-      // Two simultaneous sign-ups for one address: the database's lower(email)
-      // index decides, and the loser gets the documented conflict.
+      // The lower(email) index resolves concurrent sign-ups for the same address.
       if (isUniqueViolation(error)) {
         throw new AuthError(ErrorCode.EMAIL_ALREADY_REGISTERED);
       }
@@ -270,9 +264,8 @@ export class AccountsService {
   }
 
   /**
-   * An unverified account may sign up again. Its credentials are replaced in
-   * place, every live code dies, and the resend window still applies — this is
-   * not a way to bypass the durable counter.
+   * Re-sign-up replaces pending credentials and invalidates live codes.
+   * The resend window and durable quota still apply.
    */
   private async reissueForPending(
     existing: AccountEntity,
@@ -334,9 +327,8 @@ export class AccountsService {
   }
 
   /**
-   * Returns the error to raise *after* the transaction commits, or null when
-   * the code matches. The attempt counter is the only write on the failure
-   * path, and it must survive the rejected request (BR-05).
+   * Return failures, not thrown errors, so attempt counts commit.
+   * The caller throws only after commit.
    */
   private async checkCode(
     ctx: TransactionContext,

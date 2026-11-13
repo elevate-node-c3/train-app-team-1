@@ -10,9 +10,7 @@ import {
 import type { Relation } from 'typeorm';
 import type { CityEntity } from './city.entity.js';
 
-/*
-  Display order is explicit: the design's order is not alphabetical, and it must be identical in Arabic and English.
- */
+/** Use explicit, nonalphabetical display order, identical in Arabic and English. */
 @Entity('governorate')
 @Check('governorate_name_ar_not_empty', `name_ar <> ''`)
 @Check('governorate_name_en_not_empty', `name_en <> ''`)

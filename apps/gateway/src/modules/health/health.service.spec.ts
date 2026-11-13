@@ -61,7 +61,7 @@ async function harness(clients: Map<string, HealthGrpcClient>): Promise<{
         },
       },
       { provide: ClsService, useValue: { get: () => undefined } },
-      // Present so the override below exercises the same token the module uses.
+      // Register the real token so overrideProvider can replace it.
       { provide: HEALTH_GRPC_CLIENTS, useValue: new Map() },
     ],
   })

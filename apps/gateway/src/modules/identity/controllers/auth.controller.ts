@@ -28,11 +28,7 @@ import {
   VerifyEmailDto,
 } from '../dto/auth.dto.js';
 
-/**
- * The public authentication surface. Only sign-out requires a token; every
- * other route is explicitly `@Public()` because the gateway guard denies by
- * default.
- */
+/** Only sign-out requires a token; other routes opt out of deny-by-default access. */
 @Controller('auth')
 export class AuthController {
   constructor(private readonly identity: IdentityService) {}

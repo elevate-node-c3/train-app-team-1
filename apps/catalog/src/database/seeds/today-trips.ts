@@ -5,21 +5,13 @@ import { seedDatabaseUrlFromEnv } from '../../config/database-settings.js';
 import { SEARCH_FIXTURE, SEARCH_FIXTURE_IDS as IDS } from './search-fixture.js';
 
 /**
- * Trips for the e2e tier, anchored to the real clock.
- *
- * The shared fixture dates its trips in June 2026, which the integration specs
- * can search because they pass a frozen `now`. The e2e tier cannot: it goes
- * through the real gateway, so a date in the past is simply refused as outside
- * the booking window. These trips are therefore placed relative to today.
- *
- * Everything date-independent -- stations, trains, classes, layouts,
- * timetables, fares -- is reused from the shared fixture, so only the dated
- * rows are duplicated here.
+ * E2e uses the real clock, so place trips inside today's booking window rather
+ * than using the frozen June fixture. Reuse its date-independent network data.
  */
 
 const CATALOG_DATABASE_URL = seedDatabaseUrlFromEnv();
 
-/** Ids clear of both the shared fixture's groups and the load spec's. */
+/** Keep IDs separate from the shared fixture and load specs. */
 function e2eUuid(group: number, item: number): string {
   return `0000${String(group).padStart(4, '0')}-0000-4000-8000-${String(
     item,
@@ -41,7 +33,6 @@ export interface E2eSearchFixture {
   trainNumbers: { mainLine: number; sleeper: number; returning: number };
 }
 
-/** Loads the network and a handful of trips relative to today. */
 export async function seedSearchE2e(): Promise<E2eSearchFixture> {
   const source = new DataSource({
     type: 'postgres',
@@ -77,14 +68,7 @@ export async function seedSearchE2e(): Promise<E2eSearchFixture> {
   }
 }
 
-/**
- * Empties the recent-search table.
- *
- * "The last five, newest first" is a count, so a suite asserting on it has to
- * know where the count started. Separate from the seed because the searches
- * that fill it are made by the specs, not by the fixture, and a suite that
- * runs after another one's searches needs to reset without re-seeding trips.
- */
+/** Reset latest-five search assertions without reseeding trips. */
 export async function clearRecentSearches(): Promise<void> {
   const source = new DataSource({
     type: 'postgres',
@@ -128,7 +112,6 @@ async function insert(
   );
 }
 
-/** The date-independent half, straight from the shared fixture. */
 async function insertNetwork(source: DataSource): Promise<void> {
   const f = SEARCH_FIXTURE;
 
@@ -269,12 +252,7 @@ async function insertNetwork(source: DataSource): Promise<void> {
   );
 }
 
-/**
- * The main-line trip, on a date three days out.
- *
- * Times carry an explicit Cairo offset so the instants are unambiguous
- * whatever the host's zone, and the response's local times are predictable.
- */
+/** Use explicit Cairo offsets so the host timezone cannot change seeded instants. */
 async function insertDatedTrips(
   source: DataSource,
   serviceDate: string,
@@ -338,18 +316,9 @@ async function insertDatedTrips(
 }
 
 /**
- * A day with two train types on one pair, for the filters to choose between.
- *
- * Deliberately on **Tanta -> Ramsis**, not the Alexandria -> Ramsis pair the
- * TA-17 specs use: those assert that the day holds exactly one trip, and that
- * is a real assertion about the one-way search rather than a detail of the
- * fixture. Adding a second trip there would have made me weaken them.
- *
- * Tanta -> Ramsis already has the main line (07:05 -> 08:40) but no fare, so
- * both fares are added here too -- an unpriced trip is dropped as unsellable,
- * which would leave the pair with one result and nothing to filter. The
- * sleeper is dearer, so the fare sort and the maximum-fare filter both have an
- * order to produce.
+ * Use Tanta -> Ramsis to leave Alexandria's single-trip assertions unchanged.
+ * Price both train types; unpriced trips are unsellable. The later sleeper costs
+ * more than the express, giving fare sorts and filters distinct results.
  */
 async function insertFilterPairTrips(
   source: DataSource,
@@ -412,7 +381,6 @@ async function insertFilterPairTrips(
       'effective_from',
     ],
     [
-      // The cheap one: express, leaving in the morning.
       [
         e2eUuid(84, 1),
         IDS.trains.mainLine,
@@ -422,7 +390,6 @@ async function insertFilterPairTrips(
         9_000,
         new Date('2026-01-01T00:00:00Z'),
       ],
-      // The dear one: sleeper, leaving later.
       [
         e2eUuid(84, 2),
         IDS.trains.overnight,
@@ -437,20 +404,11 @@ async function insertFilterPairTrips(
 }
 
 /**
- * The reverse route, so a round trip has a second list.
- *
- * Three trips across two dates, each on its own train because `dated_trip` is
- * unique on (train_id, service_date):
- *
- * - one on the OUTBOUND date, departing 06:30 -- before the outbound trip
- *   reaches Ramsis at 08:40, so a same-day return finds only a train that has
- *   already gone. That is the story's "nothing leaves after your outbound
- *   arrives" case, reachable without a 23:50 trip.
- * - two on the return date, which any outbound arrival precedes.
- *
- * The timetable stops matter even though search reads `trip_stop`: the
- * empty-result probes ask the timetables whether the reverse pair is served at
- * all, and without them an empty return list would blame the stations.
+ * The 06:30 same-day return leaves before the 08:40 outbound arrival; two trips
+ * on the later return date leave after it. Use separate trains for same-date
+ * trips to satisfy train/date uniqueness.
+ * Keep timetable stops for empty-result probes, which check reverse service
+ * even when no dated return matches.
  */
 async function insertReturnTrips(
   source: DataSource,
@@ -619,9 +577,7 @@ function cairoOffsetOn(civilDate: string): string {
     .find((part) => part.type === 'timeZoneName')?.value;
 
   const raw = (name ?? '').replace('GMT', '').trim();
-  // ICU may spell it '+3' rather than '+03:00', and '+3' is not a valid ISO
-  // offset -- `new Date('...T06:00:00+3')` is an Invalid Date, which would
-  // seed null instants and fail far from the cause.
+  // Normalize ICU's '+3' to '+03:00' to avoid invalid seeded dates.
   const match = /^([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(raw);
   if (!match) return '+02:00';
 

@@ -1,15 +1,11 @@
 import type { EventLanguage } from '../events/event-envelope.js';
 
 /**
- * The shapes carried by `train.catalog.v1`. Responses are interfaces here, as
- * the house rule has it; the gateway's request DTO is a class-validator class
- * in `apps/gateway/src/modules/catalog/dto/`.
- *
- * Field names match catalog.proto exactly, and `catalog.grpc.spec.ts` fails if
- * the two drift apart in either direction.
+ * Shared wire interfaces; gateway classes own HTTP validation.
+ * Tests keep fields in sync with catalog.proto.
  */
 
-/** ISO 4217. The `fare` column stores piastres with no currency of its own. */
+/** ISO 4217 currency; EGP fares use piastres. */
 export const FARE_CURRENCY = 'EGP';
 
 export type SearchEmptyReason =
@@ -27,11 +23,7 @@ export type SearchSort =
   | 'SEARCH_SORT_FARE_ASC'
   | 'SEARCH_SORT_ARRIVAL_ASC';
 
-/**
- * A Cairo wall-clock moment. `localTime` is printed verbatim by the client;
- * nothing downstream should re-format it through a platform date formatter,
- * which would shift the hour for a client in another zone.
- */
+/** Print Cairo localTime unchanged so the user's timezone cannot shift it. */
 export interface CivilDateTime {
   localDate: string;
   localTime: string;
@@ -46,7 +38,7 @@ export interface LocalizedName {
 }
 
 export interface Money {
-  /** Integer piastres, excluding the booking fee (BR-19). */
+  /** Whole piastres, excluding booking fees. */
   amountMinor: number;
   currency: string;
 }
@@ -62,38 +54,35 @@ export interface SearchFilters {
 export interface TrainTypeOption {
   id: string;
   name: LocalizedName;
-  /** How many of the day's unfiltered trips are this type. */
+  /** Count this train type before applying filters. */
   tripCount: number;
 }
 
-/** The choices the day offers, computed before the request's filters apply. */
+/** Available choices from the unfiltered day. */
 export interface FilterOptions {
   trainTypes: TrainTypeOption[];
-  /** Cheapest priced trip of the day, excluding the booking fee. */
+  /** Cheapest fare before booking fees. */
   minFareMinor: number;
-  /** Most expensive priced trip of the day, excluding the booking fee. */
+  /** Most expensive fare before booking fees. */
   maxFareMinor: number;
 }
 
 export interface SearchOneWayTripsRequest {
   originStationId: string;
   destinationStationId: string;
-  /** 'YYYY-MM-DD', a Cairo civil date. */
+  /** YYYY-MM-DD in Cairo. */
   departureDate: string;
   travelClassId: string;
-  /** The caller's declared preference; absent means the platform fallback. */
+  /** Optional preference; defaults to the platform language. */
   language?: EventLanguage | '';
-  /** Absent means "any train"; BR-18's optional narrowing filter. */
+  /** Missing means any train. */
   trainNumber?: number;
   /**
-   * A round trip's return date, carried by the outbound search.
-   *
-   * Does not change the outbound list. It is what lets BR-20 refuse an
-   * impossible return date before the traveller picks an outbound trip, and
-   * what tells catalog the search is a round trip rather than a one-way.
+   * Validate and record the round trip before the outbound choice.
+   * Outbound results stay unchanged.
    */
   returnDate?: string;
-  /** Applied in memory over the day's cached results, never as a new query. */
+  /** Filter the cached day in memory, without another database query. */
   sort?: SearchSort;
   filters?: SearchFilters;
 }
@@ -127,10 +116,10 @@ export interface TripResult {
   trainNumber: number;
   trainType: LocalizedName;
   travelClass: TravelClass;
-  /** The passenger's origin, not the train's first station. */
+  /** Passenger's boarding station, not the train's origin. */
   departure: TripEndpoint;
   arrival: TripEndpoint;
-  /** Computed from instants, so midnight and DST crossings are irrelevant. */
+  /** Compute from timestamps so midnight and DST do not affect duration. */
   durationMinutes: number;
   /** Excludes both endpoints. */
   intermediateStops: number;
@@ -141,7 +130,7 @@ export interface TripResult {
 
 export interface EmptyResult {
   reason: SearchEmptyReason;
-  /** Values for the gateway's localized sentence, e.g. `lastBookableDate`. */
+  /** Values inserted into the gateway's localized message. */
   params: Record<string, string>;
 }
 
@@ -156,15 +145,14 @@ export interface SearchOneWayTripsResponse {
 }
 
 /**
- * The return leg. There is deliberately no arrival time: BR-20 makes the
- * server read the outbound trip's arrival, and no train number, because that
- * narrowed the outbound leg only.
+ * Catalog reads the outbound arrival; callers cannot supply one.
+ * Train numbers narrow only the outbound leg.
  */
 export interface SearchReturnTripsRequest {
   outboundTripId: string;
   outboundOriginStationId: string;
   outboundDestinationStationId: string;
-  /** 'YYYY-MM-DD', a Cairo civil date. */
+  /** YYYY-MM-DD in Cairo. */
   returnDate: string;
   travelClassId: string;
   language?: EventLanguage | '';

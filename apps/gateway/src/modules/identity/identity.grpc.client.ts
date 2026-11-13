@@ -47,22 +47,14 @@ import {
   type WireSignInResponse,
 } from './identity.types.js';
 
-/** The HTTP request must not hang longer than this on identity. */
+/** Maximum wait for identity. */
 export const ACCOUNTS_CALL_TIMEOUT_MS = 2500;
 
 type Callback<T> = (error: grpc.ServiceError | null, response?: T) => void;
 
 /**
- * The one transport between the gateway and identity's gRPC contract.
- *
- * A business failure arrives as a gRPC status plus a JSON `details` string.
- * The details are trusted only when they name a known `ErrorCode`; anything
- * else falls back to the generic status mapping, so an internal message never
- * becomes a client-visible code.
- *
- * Responses stay wire-shaped here. `IdentityService` owns the HTTP shaping
- * (Bearer token pairs, null-versus-missing decisions); this class only speaks
- * the contract.
+ * Only known business codes reach clients; unknown JSON details use gRPC status.
+ * Returns wire responses; IdentityService shapes them for HTTP.
  */
 @Injectable()
 export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
@@ -78,8 +70,7 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       this.client = new Service(url, grpc.credentials.createInsecure());
       this.logger.log(`Connected identity client to ${url}`);
     } catch (error: unknown) {
-      // Degrade, don't crash: the readiness probe and the 503 below are the
-      // honest signals. A bad URL should not take the whole gateway down.
+      // Initialization failures degrade readiness and return 503 instead of crashing.
       this.logger.warn(
         `Failed to initialize identity client: ${
           error instanceof Error ? error.message : String(error)

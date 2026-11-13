@@ -47,7 +47,7 @@ describe('validating the search filters', () => {
   });
 
   it('names every refusal with a field and an action to take', () => {
-    // BR-57: the traveller has to know which filter to change.
+    // Refusals must name the filter to change.
     const details = validateFilters({
       trainTypeIds: ['not-a-uuid'],
       departAfterMinutes: -1,
@@ -92,8 +92,7 @@ describe('validating the search filters', () => {
       ]);
     });
 
-    // BR-18 scopes the window to one civil day. Reinterpreting 22:00-02:00 as
-    // wrapping would quietly search tomorrow as well.
+    // Overnight filters would search another Cairo date and must be refused.
     it('refuses a window that would wrap past midnight, naming the later bound', () => {
       const details = validateFilters({
         departAfterMinutes: 22 * 60,
@@ -268,8 +267,7 @@ describe('applying the search filters', () => {
       trip({ farePiastres: 5_000 }),
     ];
 
-    // The filter is a valid narrowing that happened to match nothing; the
-    // service reports that as FILTERS_EXCLUDED_ALL rather than a refusal.
+    // Valid filters with no matches yield FILTERS_EXCLUDED_ALL, not refusal.
     expect(applyFilters(trips, { maxFareMinor: 2_999 })).toEqual([]);
     expect(validateFilters({ maxFareMinor: 2_999 })).toEqual([]);
   });

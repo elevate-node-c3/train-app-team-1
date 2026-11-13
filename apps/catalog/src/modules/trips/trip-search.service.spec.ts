@@ -78,7 +78,6 @@ function cachedTrip(
   };
 }
 
-/** A service with every collaborator stubbed, and handles to each. */
 function makeService(
   options: {
     rows?: TripSearchRow[];
@@ -119,9 +118,7 @@ function makeService(
 
   const availability = new SeatAvailabilityService();
 
-  // The real day service over the mocked repository and cache: the cache key
-  // and the TTL are its decisions, and this spec asserts on both, so stubbing
-  // it would stub out the thing being checked.
+  // Keep the real TripDayService so key and TTL assertions test its decisions.
   const day = new TripDayService(repository as never, cache as never);
 
   const recentSearches = {
@@ -217,8 +214,7 @@ describe('the search service', () => {
       expect(repository.findCandidates).not.toHaveBeenCalled();
     });
 
-    // BR-20 on the outbound call: the traveller learns their return date is
-    // impossible now, not after choosing an outbound trip.
+    // Refuse impossible return dates before the traveller chooses an outbound trip.
     it('refuses an impossible return date before touching the database', async () => {
       const { service, repository, references } = makeService();
 
@@ -238,11 +234,7 @@ describe('the search service', () => {
     });
   });
 
-  /**
-   * BR-21, from the search side. The traveller's five slots are filled here,
-   * and the two promises that matter are that recording never changes the
-   * answer and never delays it.
-   */
+  /** Recording must not alter or delay the search response. */
   describe('recording the search', () => {
     const TRAVELLER = '66666666-6666-4666-8666-666666666666';
 
@@ -311,8 +303,7 @@ describe('the search service', () => {
       expect(recentSearches.record).not.toHaveBeenCalled();
     });
 
-    // A refusal throws several steps earlier, which is what makes "an invalid
-    // request is not recorded" true by construction.
+    // Invalid searches are refused before recording.
     it('records nothing for a refused search', async () => {
       const { service, recentSearches } = makeService();
 
@@ -323,12 +314,7 @@ describe('the search service', () => {
       expect(recentSearches.record).not.toHaveBeenCalled();
     });
 
-    /**
-     * Recording never slows a search down and never makes it fail (BR-21).
-     * A rejecting recorder must leave the answer untouched -- and because the
-     * call is not awaited, this also pins that the response does not wait for
-     * the write.
-     */
+    /** Recorder rejection must not fail or delay a successful response. */
     it('answers normally when recording fails', async () => {
       const { service, recentSearches } = makeService();
       recentSearches.record.mockRejectedValue(new Error('deadlock detected'));
@@ -340,9 +326,8 @@ describe('the search service', () => {
   });
 
   /**
-   * The return date is an intent and a validation input. The outbound leg is
-   * the same search either way, so nothing about this list may change -- not
-   * the results, and not the cache key the day is stored under.
+   * Return-date intent affects validation and recent-search kind, never outbound
+   * results or the shared day cache key.
    */
   describe('a round-trip outbound search', () => {
     it('returns the same trips and uses the same cache key as a one-way', async () => {
@@ -417,13 +402,8 @@ describe('the search service', () => {
   });
 
   /**
-   * The rule this whole design exists to keep: a list cached at 13:50 must not
-   * offer, at 14:00, a trip whose sales closed at 13:55.
-   *
-   * What makes it a property rather than a promise is that the filter runs on
-   * the cache-hit path too -- so the test also asserts the repository was
-   * never consulted. If eligibility were applied only after a query, this
-   * would pass for the wrong reason.
+   * Recheck eligibility on hits: a cached 13:50 list must not offer trips closed
+   * at 13:55 when read at 14:00. Keep this on a query-free hit path.
    */
   describe('time-dependent eligibility', () => {
     const departsAt1410 = Date.parse('2026-06-20T11:10:00Z'); // 14:10 Cairo
@@ -623,8 +603,7 @@ describe('the search service', () => {
         minFareMinor: '15500',
         maxFareMinor: '15500',
       });
-      // A day whose trips the filters removed has already proved the route is
-      // served, so the probes are not worth a statement.
+      // Filtered-away trips prove the route is served; skip further SQL probes.
       expect(repository.probeRouteServed).not.toHaveBeenCalled();
     });
 
@@ -786,8 +765,7 @@ describe('the search service', () => {
       expect(trip.departure.at.timeZone).toBe('Africa/Cairo');
     });
 
-    // Every result's departure date is the date that was searched -- the
-    // inconsistency in the design's sample data must not be reproducible.
+    // Every result must depart on the passenger's searched Cairo date.
     it('departs on the date that was searched', async () => {
       const { service, cache } = makeService();
 
@@ -810,7 +788,7 @@ describe('the search service', () => {
 
       const [trip] = (await service.search(request(), NOW)).trips;
 
-      // Returned and marked, not hidden (BR-16).
+      // Return sold-out trips and mark them; do not hide them.
       expect(trip.soldOut).toBe(true);
       expect(trip.availableSeats).toBe(0);
     });
@@ -894,11 +872,7 @@ describe('the search service', () => {
     });
   });
 
-  /**
-   * TA-33: search is a read. Resisting "a search was performed" through the
-   * outbox is the point -- it would turn the most frequent read in the system
-   * into a write.
-   */
+  /** Search must not emit analytics events or write to the outbox. */
   describe('read-only', () => {
     it('never writes, on the miss path or the hit path', async () => {
       for (const cached of [null, [cachedTrip()]]) {

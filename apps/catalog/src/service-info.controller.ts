@@ -1,7 +1,6 @@
 import { Controller, Get, Optional } from '@nestjs/common';
 import { CacheMetrics } from '@app/common';
 
-/** The service's identity and cache metrics endpoint (§2.3 rule 8). */
 @Controller('catalog')
 export class ServiceInfoController {
   constructor(@Optional() private readonly metrics?: CacheMetrics) {}

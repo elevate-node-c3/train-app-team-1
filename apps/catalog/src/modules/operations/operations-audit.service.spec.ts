@@ -14,14 +14,12 @@ interface FakeContext extends TransactionContext {
   staging: OperationsAuditEntity[];
 }
 
-// Minimal unit of work: staged entries commit only when the callback resolves.
-// The real Postgres boundary is tested separately.
+// The fake commits only successful work; PostgreSQL boundaries are tested separately.
 function makeUnitOfWork(committed: OperationsAuditEntity[]) {
   const withTransaction = vi.fn(
     async (work: (ctx: FakeContext) => Promise<unknown>) => {
       const ctx: FakeContext = { driver: 'fake', staging: [] };
       const result = await work(ctx);
-      // Only reached if `work` resolved, so a rollback drops the stage.
       committed.push(...ctx.staging);
       return result;
     },
@@ -134,7 +132,7 @@ describe('OperationsAuditService', () => {
     expect(uow.withTransaction).toHaveBeenCalledOnce();
   });
 
-  // BR-52's teeth: no change without its record, no record without its change.
+  // Changes and audit records must commit or roll back together.
   it('leaves no entry behind when the transaction rolls back', async () => {
     const { committed, service, uow } = makeHarness();
 

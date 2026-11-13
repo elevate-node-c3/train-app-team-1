@@ -8,10 +8,7 @@ import type { TransactionContext } from '@app/common/persistence/unit-of-work.po
 import { OperationsRequestEntity } from './entities/operations-request.entity.js';
 import type { StoredOperationsRequest } from './operations-request.types.js';
 
-/**
- * Keyed by the client's `Idempotency-Key` (TA-20). `record` takes the caller's
- * transaction, so the key commits with the change it names.
- */
+/** Record keys in the caller's transaction so they commit with their changes. */
 @Injectable()
 export class OperationsRequestRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -40,8 +37,7 @@ export class OperationsRequestRepository {
     entity.idempotencyKey = request.idempotencyKey;
     entity.fingerprint = request.fingerprint;
     entity.responseJson = request.responseJson;
-    // insert, not save: save would silently UPDATE a reused key, and only a
-    // plain INSERT lets the primary key reject it.
+    // INSERT rejects reused keys; save would silently overwrite them.
     await repository.insert(entity);
   }
 }

@@ -15,7 +15,7 @@ interface BuildTimetablePublishedProps {
   stationIdsInOrder: readonly string[];
 }
 
-/** Carries the stations because CAT-5 bumps route versions from them. */
+/** Include stations so consumers can bump route versions. */
 export function buildTimetablePublished(
   props: BuildTimetablePublishedProps,
 ): TimetablePublishedEvent {

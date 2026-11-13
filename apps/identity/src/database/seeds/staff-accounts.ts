@@ -1,8 +1,4 @@
-/**
- * The two BR-01 staff accounts. The standalone seed creates them; the
- * passwords come from the environment so a production deployment never
- * inherits a development credential.
- */
+/** Production staff passwords must come from the environment, not dev defaults. */
 export const STAFF_SEED_ACCOUNTS = [
   {
     id: '00000000-0000-4000-8000-0000000000a1',

@@ -16,18 +16,18 @@ import {
 } from 'class-validator';
 import type { EventLanguage } from '@app/contracts';
 
-/** A time of day is 00:00..23:59, so a minute index never reaches 1440. */
+/** Valid minute indexes are 0..1439. */
 export const MINUTES_IN_A_DAY = 24 * 60;
 
 export const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** A time of day a traveller typed: '06:00', '23:59'. */
+/** HH:mm, from 00:00 to 23:59. */
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/** '٠'..'٩' and the Persian forms, which Arabic keyboards also produce. */
+/** Arabic-Indic and Persian digits. */
 const ARABIC_INDIC_DIGITS = /[٠-٩۰-۹]/g;
 
-/** The sort orders the wire accepts (BR-18). */
+/** Supported wire sort values. */
 export const SEARCH_SORTS = [
   'SEARCH_SORT_DEPARTURE_ASC',
   'SEARCH_SORT_DURATION_ASC',
@@ -35,14 +35,7 @@ export const SEARCH_SORTS = [
   'SEARCH_SORT_ARRIVAL_ASC',
 ] as const;
 
-/**
- * Every Arabic-Indic digit in a string, as its ASCII counterpart.
- *
- * Separate from `toAsciiDigits` because the time filters need the converted
- * *string* -- '٠٦:٠٠' is a valid time a traveller typed, and it is not a bare
- * number, so the number-or-original rule below would hand back the Arabic form
- * unchanged.
- */
+/** Normalize digits while keeping clock times as strings. */
 function asciiDigitsOf(value: string): string {
   return value
     .trim()
@@ -55,33 +48,16 @@ function asciiDigitsOf(value: string): string {
     );
 }
 
-/**
- * Turns Arabic-Indic digits into ASCII before validation.
- *
- * A traveller on an Arabic keyboard types ٨٠٣, and the rule says that is a
- * valid train number. Normalizing at the edge means catalog only ever sees
- * ASCII and needs no opinion about scripts -- which is why its own validator
- * refuses a non-number rather than trying to interpret one.
- */
+/** Convert Arabic-Indic numbers; keep invalid input for field validation. */
 export function toAsciiDigits(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
   const ascii = asciiDigitsOf(value);
 
-  // Left as the original string when it is not a number at all, so
-  // class-validator reports the field rather than silently producing NaN.
   return /^\d+$/.test(ascii) ? Number(ascii) : value;
 }
 
-/**
- * A traveller types a clock; the wire speaks minutes since midnight.
- *
- * Converted here rather than in catalog, because this is the only place that
- * knows a human typed it: `SearchFilters.departAfterMinutes` is an integer by
- * design, and a service that accepted both would have two representations of
- * one idea. An unparseable value is left alone so class-validator reports the
- * field instead of silently filtering by NaN.
- */
+/** Convert clock times to minutes since midnight; keep invalid input for validation. */
 export function clockTimeToMinutes(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
@@ -91,13 +67,7 @@ export function clockTimeToMinutes(value: unknown): unknown {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-/**
- * A query-string flag as a boolean.
- *
- * Only the two words are accepted. Anything else is left alone so
- * `@IsBoolean` reports the field -- the usual truthiness rules would read
- * `excludeSoldOut=no` as `true`, which is the opposite of what was asked.
- */
+/** Accept only "true" or "false"; keep other values for validation. */
 export function toBoolean(value: unknown): unknown {
   if (value === 'true') return true;
   if (value === 'false') return false;
@@ -105,7 +75,7 @@ export function toBoolean(value: unknown): unknown {
   return value;
 }
 
-/** A query string carries a list as CSV; the wire wants an array. */
+/** Convert a comma-separated query value to an array. */
 export function csvToArray(value: unknown): unknown {
   if (typeof value !== 'string') return value;
 
@@ -114,18 +84,11 @@ export function csvToArray(value: unknown): unknown {
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  // An empty or all-whitespace value means "no preference", which is an absent
-  // filter rather than a filter matching nothing.
+  // Empty input means no filter, not an empty result set.
   return parts.length === 0 ? undefined : parts;
 }
 
-/**
- * From and To must differ, and the refusal names To.
- *
- * A class-level constraint because it is the only rule here that needs two
- * fields at once. It reports against `to` deliberately: a traveller told
- * "from is invalid" would go and change the wrong one.
- */
+/** Require different stations and report errors on "to". */
 @ValidatorConstraint({ name: 'differentStations', async: false })
 class DifferentStations implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
@@ -139,18 +102,11 @@ class DifferentStations implements ValidatorConstraintInterface {
 }
 
 /**
- * `GET /api/v1/trips/search`.
- *
- * The shape is checked here so an obviously wrong request never reaches
- * catalog. Catalog validates again -- a gRPC peer is not a trusted caller --
- * and only it can answer the questions that need the catalogue, like whether a
- * station exists and is active.
- *
- * The global pipe already applies `whitelist` and `forbidNonWhitelisted`, so an
- * unknown query parameter is a 400 without anything here saying so.
+ * Validate query shape here; catalog owns business rules and rechecks inputs.
+ * The global pipe rejects unknown parameters.
  */
 export class SearchTripsDto {
-  /** Station uuids, as the station list (CAT-2) hands them out. */
+  /** Station IDs from the station list. */
   @IsUUID()
   from!: string;
 
@@ -163,21 +119,17 @@ export class SearchTripsDto {
   })
   to!: string;
 
-  /** A Cairo civil date. Whether it is bookable is catalog's to say. */
+  /** Cairo date; catalog checks whether it is bookable. */
   @Matches(CIVIL_DATE_PATTERN, {
     context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   departureDate!: string;
 
-  /** Required: every result's seats and fare are for exactly one class. */
+  /** Seats and fares use this one required travel class. */
   @IsUUID()
   travelClassId!: string;
 
-  /**
-   * Optional narrowing (BR-18). Arabic-Indic digits are accepted and
-   * normalized; `ValidateIf` keeps an absent value absent rather than letting
-   * `@IsOptional` swallow a malformed one.
-   */
+  /** Accept Arabic-Indic digits; skip only missing values, not invalid ones. */
   @ValidateIf((dto: SearchTripsDto) => dto.trainNumber !== undefined)
   @Transform(({ value }) => toAsciiDigits(value))
   @IsInt({ context: { issueKey: 'ISSUE_TRAIN_NUMBER_NOT_A_NUMBER' } })
@@ -185,12 +137,8 @@ export class SearchTripsDto {
   trainNumber?: number;
 
   /**
-   * A round trip's return date (BR-20).
-   *
-   * Does not change this list -- the outbound leg is the same search either
-   * way. Sending it lets catalog refuse an impossible return date now rather
-   * than after the traveller has chosen an outbound trip, and is what makes
-   * their recent-search entry a round trip.
+   * Catalog checks the return date and records a round trip.
+   * Outbound results stay unchanged.
    */
   @ValidateIf((dto: SearchTripsDto) => dto.returnDate !== undefined)
   @Matches(CIVIL_DATE_PATTERN, {
@@ -198,23 +146,14 @@ export class SearchTripsDto {
   })
   returnDate?: string;
 
-  /**
-   * The order (BR-18). Absent means departure time ascending, which is also
-   * what the wire's UNSPECIFIED decodes to, so the default lives in one place.
-   */
+  /** Defaults to departure time ascending. */
   @IsOptional()
   @IsIn(SEARCH_SORTS, {
     context: { issueKey: 'ISSUE_SORT_NOT_OFFERED' },
   })
   sort?: (typeof SEARCH_SORTS)[number];
 
-  /**
-   * Train types to keep, as CSV: `trainTypeIds=<uuid>,<uuid>`.
-   *
-   * A query string has no arrays, and the repeated-key form (`a=1&a=2`) gives a
-   * string for one value and an array for two -- a shape that changes with the
-   * data. CSV is one shape always.
-   */
+  /** Train type IDs as CSV: trainTypeIds=<uuid>,<uuid>. */
   @IsOptional()
   @Transform(({ value }) => csvToArray(value))
   @IsUUID('all', {
@@ -224,11 +163,8 @@ export class SearchTripsDto {
   trainTypeIds?: string[];
 
   /**
-   * The departure window, as Cairo wall-clock times: `departAfter=06:00`.
-   *
-   * Converted to minutes since midnight for the wire. The window must stay
-   * inside the selected day and start before it ends -- catalog refuses a
-   * wrapping window, naming the field, rather than silently searching two days.
+   * Cairo times, converted to minutes since midnight.
+   * Catalog requires an ordered window within one day.
    */
   @ValidateIf((dto: SearchTripsDto) => dto.departAfter !== undefined)
   @Transform(({ value }) => clockTimeToMinutes(value))
@@ -244,29 +180,20 @@ export class SearchTripsDto {
   @Max(MINUTES_IN_A_DAY - 1)
   departBefore?: number;
 
-  /**
-   * A price ceiling in piastres, compared with the fare *without* the booking
-   * fee (BR-19). Arabic-Indic digits are accepted, as for the train number.
-   */
+  /** Maximum fare in piastres, excluding fees; Arabic-Indic digits are accepted. */
   @ValidateIf((dto: SearchTripsDto) => dto.maxFare !== undefined)
   @Transform(({ value }) => toAsciiDigits(value))
   @IsInt({ context: { issueKey: 'ISSUE_FARE_NOT_A_NUMBER' } })
   @Min(0, { context: { issueKey: 'ISSUE_FARE_NEGATIVE' } })
   maxFare?: number;
 
-  /**
-   * Hide sold-out trips. Absent and `false` both mean "show them, marked",
-   * which is BR-16's default: a full train is information, not noise.
-   */
+  /** Missing or false keeps sold-out trips in the results. */
   @IsOptional()
   @Transform(({ value }) => toBoolean(value))
   @IsBoolean({ context: { issueKey: 'ISSUE_MUST_BE_YES_OR_NO' } })
   excludeSoldOut?: boolean;
 
-  /**
-   * The caller's declared preference. Absent means the platform default, and
-   * `Accept-Language` is what actually decides the response language (BR-56).
-   */
+  /** Optional preference; Accept-Language controls the response language. */
   @IsOptional()
   @IsIn(['ar', 'en'])
   language?: EventLanguage;

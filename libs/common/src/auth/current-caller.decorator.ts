@@ -1,10 +1,7 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { AccessLevel, StaffRole } from '@app/contracts';
 
-/**
- * The verified caller the gateway's guard attached to the request. It is a
- * projection of the access-token claims, never a client-supplied value.
- */
+/** Caller claims verified by the gateway guard, never supplied by the client. */
 export interface AuthenticatedCaller {
   accountId: string;
   sessionId: string;

@@ -63,33 +63,20 @@ import type {
   TripChange,
 } from './timetable-publish.types.js';
 
-/**
- * One day past what search offers, matching `TripsService`'s own margin: the
- * diff has to cover every date generation will produce, or a publish would
- * report fewer trips than it causes.
- */
+/** Match generation's one-day margin so counts cover every generated date. */
 const PUBLISH_WINDOW_MARGIN_DAYS = 1;
 
-/** A unique violation -- here, a reused `Idempotency-Key`. */
+/** A unique violation can indicate a reused Idempotency-Key. */
 const UNIQUE_VIOLATION = '23505';
 
 /**
- * An exclusion-constraint violation: `excl_timetable_published_overlap`.
- *
- * `TimetableVersionService.supersede` deliberately does not bound a published
- * predecessor whose `effective_from` is on or after the new one's -- a
- * same-day republish, or a publish behind an already-published future version
- * -- so those arrive here as a raw Postgres code. Nothing else in this
- * codebase matches `23P01`, and without this an operator would get a 500 for
- * a legitimate conflict.
+ * excl_timetable_published_overlap reports same-day or out-of-order publication
+ * conflicts when supersede leaves predecessors unbounded. Return a refusal,
+ * not a server error.
  */
 const EXCLUSION_VIOLATION = '23P01';
 
-/**
- * Both `code` and `driverError.code`, because TypeORM wraps the driver's
- * error and which of the two carries the SQLSTATE depends on where the
- * failure was raised. Same shape as `trips.service.ts`'s `isUniqueViolation`.
- */
+/** TypeORM may expose SQLSTATE on code or driverError.code. */
 function hasPostgresCode(error: unknown, sqlState: string): boolean {
   if (typeof error !== 'object' || error === null) return false;
 
@@ -103,14 +90,14 @@ function hasPostgresCode(error: unknown, sqlState: string): boolean {
   );
 }
 
-/** What every re-point in one pass shares, read once rather than per trip. */
+/** Shared data read once for each repoint pass. */
 interface RepointTemplate {
   timetableStops: TimetableStopEntity[];
   capacity: number;
   compositionSnapshot: DatedTripEntity['compositionSnapshot'];
 }
 
-/** A stop, reduced to what "the same shape" means for a sold trip. */
+/** Fields used to compare a sold trip's stop shape. */
 interface StopShape {
   stationId: string;
   arrivalAt: number | null;
@@ -118,23 +105,12 @@ interface StopShape {
 }
 
 /**
- * Publishing a whole timetable for one train, in one call (TA-20).
- *
- * The governing rule, from which every refusal below follows: a published
- * timetable is a promise someone may already have bought. The publish may
- * change the future and must never rewrite the past. So:
- *
- *   * nothing is written until the request validates *as a whole* and
- *     inventory has answered about every trip the publish would touch;
- *   * the version row, its stops, the fares, the audit entry, the
- *     `TimetablePublished` event and the idempotency key commit in **one**
- *     transaction, or none of them exist;
- *   * the counts the operator is told come from the diff computed before the
- *     commit, never from what the generation pass happened to insert;
- *   * no dated trip before the new effective date is touched at all.
- *
- * `TimetablesService.publishTimetable` is the *seeding* path and does
- * something different on purpose -- see its doc comment.
+ * Validate the whole request and get inventory usage for every affected trip before writes.
+ * Commit the version, stops, fares, audit, TimetablePublished event, and
+ * idempotency key in one transaction.
+ * Report precommit diff counts, not generation return values.
+ * Never change trips before the new effective date.
+ * TimetablesService.publishTimetable is a separate seed-only path.
  */
 @Injectable()
 export class TimetablePublishService {
@@ -154,11 +130,6 @@ export class TimetablePublishService {
     private readonly cls: ClsService,
   ) {}
 
-  /**
-   * The eight steps in `§6.2`'s order. It is "validate whole, then write", and
-   * the order is the design: steps 1-5 read and refuse, step 6 is the single
-   * transaction, and step 7 only ever runs against a committed version.
-   */
   async publish(
     request: PublishTimetableRequest,
     idempotencyKey: string,
@@ -166,12 +137,10 @@ export class TimetablePublishService {
   ): Promise<PublishTimetableResult> {
     const fingerprint = fingerprintOf(request);
 
-    // 1. A genuine retry gets the first answer back; a reused key on
-    //    different content is a client bug, not a replay.
+    // Matching retries replay; reject keys reused for different content.
     const replayed = await this.replay(idempotencyKey, fingerprint);
     if (replayed) return replayed;
 
-    // 2. What the catalogue actually holds for the ids this request named.
     const references = await this.resolveReferences(request);
     const train = references.train;
 
@@ -186,8 +155,6 @@ export class TimetablePublishService {
       ]);
     }
 
-    // 3. Every problem in one answer. A fault on stop 14 of 15 must not hide
-    //    the other four.
     const details = [
       ...this.validateRequestShape(request),
       ...this.validateReferences(request, references),
@@ -201,13 +168,11 @@ export class TimetablePublishService {
       throw this.refusal(ErrorCode.VALIDATION_ERROR, details);
     }
 
-    // 4. What the publish would do, before it does any of it.
     const diff = await this.computeDiff(request, train.id);
 
-    // 5. The one question a publish must never guess at.
+    // Never guess inventory usage.
     await this.refuseIfSeatsAreInUse(request, diff);
 
-    // 6. One transaction.
     const result = await this.commit({
       request,
       references,
@@ -217,9 +182,8 @@ export class TimetablePublishService {
       actorAccountId,
     });
 
-    // 7/8. Apply the committed version, and answer with step 4's counts. A
-    // null timetable means a concurrent publish of the same key committed
-    // first: its answer is the answer, and it applies its own diff.
+    // A null timetable means another request committed this key first; replay
+    // its response and leave application of its diff to that request.
     if (result.timetable) {
       await this.applyDiff(diff, result.timetable);
     }
@@ -244,10 +208,7 @@ export class TimetablePublishService {
   }
 
   /**
-   * Step 1. A stored key with a matching fingerprint replays; a stored key
-   * with a different fingerprint is refused, because the client has reused a
-   * key for a different change and silently applying it would be worse than
-   * either answer.
+   * Replay stored keys with matching fingerprints; refuse keys reused for different changes.
    */
   private async replay(
     idempotencyKey: string,
@@ -270,7 +231,6 @@ export class TimetablePublishService {
     return JSON.parse(stored.responseJson) as PublishTimetableResult;
   }
 
-  /** Step 2. */
   private resolveReferences(
     request: PublishTimetableRequest,
   ): Promise<PublishReferences> {
@@ -288,10 +248,8 @@ export class TimetablePublishService {
   }
 
   /**
-   * The two things only this service can judge: when the version takes
-   * effect, and which days it runs. Both are refusals the shared validator
-   * deliberately knows nothing about -- it validates a candidate, not a
-   * request.
+   * Validate effective date and running days here; candidate validation has no
+   * request-level context.
    */
   private validateRequestShape(
     request: PublishTimetableRequest,
@@ -299,9 +257,7 @@ export class TimetablePublishService {
     const details: ValidationIssueRef[] = [];
     const today = cairoToday(new Date());
 
-    // The whole point of versioning: a publish changes the future. A date
-    // already past has trips somebody may have bought, and rewriting them is
-    // exactly what this service exists to prevent.
+    // A new version can change the future, never already-past trips.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(request.effectiveFrom)) {
       details.push({
         field: 'effectiveFrom',
@@ -343,9 +299,8 @@ export class TimetablePublishService {
   }
 
   /**
-   * The ids the shared validator does not cover. It is handed the real
-   * station and layout sets and reports those itself; travel classes it never
-   * sees, because a candidate carries resolved classes rather than ids.
+   * Candidate validation handles stations and layouts; validate travel-class IDs
+   * here before resolving them.
    */
   private validateReferences(
     request: PublishTimetableRequest,
@@ -414,9 +369,7 @@ export class TimetablePublishService {
       coachLayoutId: coach.coachLayout.id,
     }));
 
-    // By value on the four fields that matter, in position order -- never by
-    // object identity, and never by array order, which the client is free to
-    // send in any sequence.
+    // Compare the four fields by value in position order, independent of request order.
     const byPosition = (
       left: { position: number },
       right: { position: number },
@@ -463,18 +416,9 @@ export class TimetablePublishService {
   }
 
   /**
-   * Step 3's input.
-   *
-   * Two things worth stating. The known-reference sets are the **real** ones
-   * from the catalogue, not sets derived from the request -- generation's
-   * permissive pattern is right for generation, whose rows are already
-   * FK-constrained, and would make the unknown-station and unknown-layout
-   * rules validate nothing here.
-   *
-   * And the fare index is the train's existing fares with this request's
-   * layered over them, which is what the table will look like after the
-   * upsert. Validating against the submitted fares alone would refuse a
-   * publish that only corrects one segment of an otherwise complete table.
+   * Use catalog-resolved references, not request-derived IDs.
+   * Overlay submitted fares on existing fares so partial corrections validate
+   * against the same coverage the upsert will produce.
    */
   private async buildCandidate(
     request: PublishTimetableRequest,
@@ -498,10 +442,8 @@ export class TimetablePublishService {
   }
 
   /**
-   * The submitted composition, resolved against the catalogue. A coach naming
-   * a layout that does not exist still becomes a candidate coach -- with an
-   * empty layout -- so `validateCapacityIssues` can report it as unknown
-   * rather than the whole publish failing on a missing row.
+   * Use empty layouts for unknown IDs so validation reports bad references
+   * rather than aborting on a missing row.
    */
   private candidateCoaches(
     request: PublishTimetableRequest,
@@ -543,8 +485,7 @@ export class TimetablePublishService {
       );
       const prices = index.get(key) ?? [];
 
-      // Newest first, as `buildFareIndex` leaves it: `resolveFareAmount`
-      // takes the first price that had already taken effect.
+      // Newest first: resolveFareAmount takes the first price already in effect.
       index.set(key, [
         { effectiveFrom, amountPiastres: fare.amountPiastres },
         ...prices.filter(
@@ -557,26 +498,17 @@ export class TimetablePublishService {
   }
 
   /**
-   * Midnight in Cairo on the version's first day. A stop's departure on that
-   * day is at or after it, so the new price resolves for the first trip the
-   * version generates and not for any trip before it.
+   * Use Cairo midnight on effectiveFrom so new fares apply from the first trip,
+   * never to earlier trips.
    */
   private fareEffectiveFrom(effectiveFrom: string): Date {
     return cairoInstantOf(effectiveFrom, '00:00');
   }
 
   /**
-   * Step 4. What each service date in the booking window gains, keeps or
-   * loses.
-   *
-   * The scan starts at the later of today and the effective date, which is
-   * what "never rewrites the past" means concretely: a date before the new
-   * version takes effect still belongs to its predecessor and is not looked
-   * at. From the effective date on, every date in the window belongs to the
-   * new version -- `supersede` bounds the predecessor and
-   * `excl_timetable_published_overlap` refuses the insert if any other
-   * published row still claims one of those days, so this is a database fact
-   * rather than an assumption.
+   * Compare dates from max(today, effectiveFrom); earlier dates belong to the predecessor.
+   * Supersession bounds the predecessor, and exclusion constraints reject any
+   * remaining overlap, so every scanned date belongs to the new version.
    */
   private async computeDiff(
     request: PublishTimetableRequest,
@@ -589,14 +521,11 @@ export class TimetablePublishService {
     const changes: TripChange[] = [];
 
     if (start > windowEnd) {
-      // The version takes effect beyond the booking window: nothing to do
-      // now, and generation will pick it up as the window rolls forward.
+      // Generation picks up dates beyond the window as it advances.
       return { changes, created: 0, changed: 0, withdrawn: 0 };
     }
 
-    // Withdrawn rows included: a withdrawn trip still owns its (train,
-    // service_date), so a date whose trip was withdrawn is not a date with no
-    // trip -- see `tripsBetween`.
+    // Withdrawn rows still own their train/date pair; they are not missing trips.
     const trips = await this.repository.tripsBetween(trainId, start, windowEnd);
     const tripsByDate = new Map(trips.map((trip) => [trip.serviceDate, trip]));
     const stopsByTrip = await this.repository.tripStopsOf(
@@ -628,8 +557,7 @@ export class TimetablePublishService {
       const current = (stopsByTrip.get(trip.id) ?? []).map(shapeOfTripStop);
 
       if (!runs) {
-        // Already withdrawn and still not running: nothing changes, and
-        // counting it would report a withdrawal that did not happen.
+        // Do not count a withdrawal when the trip is already withdrawn.
         if (withdrawn) continue;
 
         changes.push({
@@ -642,26 +570,17 @@ export class TimetablePublishService {
         continue;
       }
 
-      // Re-pointed in place. Even an identical route is a change: the trip's
-      // `timetable_id` and `timetable_version` move to the new row, or it
-      // would keep naming a version that has been superseded.
-      //
-      // A *withdrawn* trip on a date the new version runs is re-pointed too,
-      // which resurrects it: the train genuinely runs that day, so the honest
-      // outcome is a published trip with `TripPublished` emitted, and
-      // inventory has to hear that to recreate the seats it destroyed. It is
-      // counted as `changed` rather than `created` because the row and its
-      // trip id are the ones that already existed -- `created` would promise
-      // a new trip id to whatever reads the counts.
+      // Even identical routes change timetable ID/version in place.
+      // Resurrect withdrawn rows with TripPublished so inventory recreates seats.
+      // Count resurrection as changed, not created, because the trip ID survives.
       const proposed = this.proposedShape(request, serviceDate);
 
       changes.push({
         serviceDate,
         kind: 'changed',
         tripId: trip.id,
-        // A resurrection moves more than the shape, and a withdrawn trip has
-        // no seats to protect anyway -- if inventory somehow reports some,
-        // refusing is the safe answer.
+        // Treat resurrection as a shape change; refuse if inventory unexpectedly
+        // reports seats on a withdrawn trip.
         movesShape: withdrawn || !sameShape(current, proposed),
         removedStationIds: current
           .map((stop) => stop.stationId)
@@ -681,9 +600,8 @@ export class TimetablePublishService {
   }
 
   /**
-   * The same window generation uses, restated rather than reached for: it is
-   * one day past what search offers, always from today so a job that was down
-   * for three days still fills the gap it left.
+   * Match generation: today through the one-day margin beyond search.
+   * Recompute from today so downtime cannot leave gaps.
    */
   private publishWindow(): [string, string] {
     const start = cairoToday(new Date());
@@ -694,11 +612,7 @@ export class TimetablePublishService {
     ];
   }
 
-  /**
-   * Running days only. Whether the date is inside the version's effective
-   * range is the caller's question, and `computeDiff` has already answered it
-   * by starting its scan at the effective date.
-   */
+  /** Check running days only; the caller must restrict the effective range. */
   private runsOn(
     request: PublishTimetableRequest,
     serviceDate: string,
@@ -709,7 +623,6 @@ export class TimetablePublishService {
     return request.runningDays.includes(date.getUTCDay());
   }
 
-  /** The route this request would give one service date, as instants. */
   private proposedShape(
     request: PublishTimetableRequest,
     serviceDate: string,
@@ -733,17 +646,9 @@ export class TimetablePublishService {
   }
 
   /**
-   * Step 5. §6.2: a dated trip with sold or held seats may not have its times
-   * or its stop set rewritten, and may not be withdrawn. The operator is told
-   * which trips and how many seats, and offered the one thing that does work
-   * -- a later effective date.
-   *
-   * The seam is consulted on **every** publish, including one with no
-   * affected trip. `SeatUsageUnavailableError` means the question was not
-   * answered, and a publish that proceeded on an unanswered question would be
-   * treating silence as "no tickets" -- the exact failure the seam exists to
-   * prevent. An empty ask is the cheapest confirmation inventory can still
-   * answer at all.
+   * Consult inventory even with no affected trips. Missing answers are dependency
+   * failures, never proof of zero tickets. Sold or held seats prohibit changed
+   * stops/times and withdrawal; refusals name trips, counts, and a later effective date.
    */
   private async refuseIfSeatsAreInUse(
     request: PublishTimetableRequest,
@@ -789,8 +694,7 @@ export class TimetablePublishService {
     for (const change of affected) {
       const seats = usage.get(change.tripId);
 
-      // The client maps every requested id, so a gap is a broken inventory
-      // rather than a zero. Never read an absent answer as "no tickets".
+      // A missing trip answer is a dependency failure, never zero tickets.
       if (!seats) {
         throw new CatalogSearchError(
           ErrorCode.DEPENDENCY_UNAVAILABLE,
@@ -865,13 +769,8 @@ export class TimetablePublishService {
   }
 
   /**
-   * Step 6. The single transaction.
-   *
-   * Everything that makes the publish a fact goes in here together: the
-   * version row and its stops, the fares, the predecessor's new upper bound,
-   * the BR-52 audit entry, the `TimetablePublished` event and the idempotency
-   * key with the response the operator will be given. A crash anywhere inside
-   * leaves none of the six, so a retry is a clean retry.
+   * Commit the predecessor bound, version, stops, fares, audit, event, and replay
+   * response/key atomically. A crash rolls back all of them.
    */
   private async commit(params: {
     request: PublishTimetableRequest;
@@ -893,8 +792,7 @@ export class TimetablePublishService {
       return await this.unitOfWork.withTransaction(async (ctx) => {
         const manager = this.repository.managerOf(ctx);
 
-        // Read before `supersede` rewrites it: the audit's `before` is the
-        // predecessor as it stood, not as this publish left it.
+        // Snapshot the predecessor before supersession changes it.
         const published = await this.repository.publishedVersionsOf(
           train.id,
           manager,
@@ -941,8 +839,7 @@ export class TimetablePublishService {
           trainId: train.id,
           before,
           after: snapshotOfRequest(timetable, request),
-          // 0 this sprint: inventory has no ticket tables yet, and any trip
-          // with seats in use was refused in step 5.
+          // No ticket tables yet; changes to trips with seats in use are refused.
           ticketsAffected: 0,
           correlationId,
         });
@@ -978,20 +875,9 @@ export class TimetablePublishService {
   }
 
   /**
-   * The two Postgres refusals a legitimate publish can earn, and nothing
-   * else.
-   *
-   * `23P01` is the exclusion constraint: another published version of this
-   * train already claims a day in the new range. `supersede` leaves that case
-   * alone on purpose -- it has nothing valid to bound a same-day predecessor
-   * to -- so it has to be answered here or the operator sees a 500.
-   *
-   * `23505` is a reused `Idempotency-Key`: `record` inserts rather than
-   * saves, so a concurrent publish that committed the same key first fails
-   * this transaction instead of overwriting its answer. Re-reading the key is
-   * what tells that race apart from any other unique violation -- a collision
-   * on `uq_timetable_train_version`, say, leaves no row to find and is
-   * rethrown untouched.
+   * 23P01 is a published-range conflict.
+   * For 23505, reread the key: only a stored matching key is a concurrent replay.
+   * Other unique violations, including train/version collisions, must propagate.
    */
   private async replayOrRefuse(
     error: unknown,
@@ -1009,9 +895,7 @@ export class TimetablePublishService {
     if (!hasPostgresCode(error, UNIQUE_VIOLATION)) return null;
 
     const stored = await this.requests.find(params.idempotencyKey);
-    // No stored key: the violation came from somewhere else -- a collision on
-    // `uq_timetable_train_version`, say -- and must not be dressed up as a
-    // replay. The caller rethrows.
+    // Without a stored key, this is another unique violation; let the caller rethrow.
     if (!stored) return null;
 
     if (stored.fingerprint !== params.fingerprint) {
@@ -1025,8 +909,7 @@ export class TimetablePublishService {
       ]);
     }
 
-    // A concurrent publish of the same request won the race. Its answer is
-    // the answer -- this transaction wrote nothing at all.
+    // Replay the winning request's response; this transaction wrote nothing.
     return JSON.parse(stored.responseJson) as PublishTimetableResult;
   }
 
@@ -1105,21 +988,15 @@ export class TimetablePublishService {
   }
 
   /**
-   * Step 7. Applies the committed version to the dated trips.
-   *
-   * One failure must not cost the other dates theirs, and none of it can undo
-   * the commit: the version is published, the operator already has the
-   * counts, and the generation loop fills in any date this pass missed on its
-   * next tick. A withdrawal or a re-point that failed here is logged loudly
-   * because nothing else will retry it.
+   * Apply only after commit; failures cannot undo publication or block other dates.
+   * The generator retries missing creations next tick. Failed withdrawals and
+   * repoints are logged but have no automatic retry.
    */
   private async applyDiff(
     diff: TimetableDiff,
     timetable: TimetableEntity,
   ): Promise<void> {
-    // Read once, not once per trip: the new version's stops and the train's
-    // coaches are the same for every date in the pass, and a 29-date
-    // republish was issuing 58 identical queries.
+    // Stops and composition are shared by every date; read them once.
     const repointTemplate = diff.changes.some(
       (change) => change.kind === 'changed',
     )
@@ -1150,11 +1027,7 @@ export class TimetablePublishService {
     }
   }
 
-  /**
-   * The parts of a re-point that do not vary by service date: the new
-   * version's stops, and the composition every trip it generates carries.
-   * Read outside the per-trip transactions, once.
-   */
+  /** Read date-independent stops and composition outside per-trip transactions. */
   private async repointTemplate(
     timetable: TimetableEntity,
   ): Promise<RepointTemplate> {
@@ -1169,13 +1042,9 @@ export class TimetablePublishService {
   }
 
   /**
-   * Moves one dated trip onto the new version, keeping its trip id, and
-   * re-announces it.
-   *
-   * `TripPublished` rather than a withdraw-and-recreate pair: the train still
-   * runs that day, and withdrawing would tell inventory to destroy seats
-   * travellers may hold. Consumers already treat `TripPublished` as an upsert
-   * keyed by trip id.
+   * Keep the trip ID and emit TripPublished, which consumers upsert by ID.
+   * Do not withdraw and recreate a running trip: withdrawal would destroy seats
+   * travellers may hold.
    */
   private async repointTrip(
     tripId: string,
@@ -1186,8 +1055,7 @@ export class TimetablePublishService {
     const correlationId = this.correlationId();
     const { timetableStops, capacity, compositionSnapshot } = template;
 
-    // Still one transaction per trip: a date that fails must not cost the
-    // other dates theirs.
+    // One transaction per trip keeps failures isolated to that date.
     await this.unitOfWork.withTransaction(async (ctx) => {
       const occurredAt = new Date();
       const tripStops = this.trips.buildTripStops(timetableStops, serviceDate);
@@ -1243,10 +1111,8 @@ function shapeOfTripStop(stop: TripStopEntity): StopShape {
 }
 
 /**
- * Same stations, same order, same instants. A stop whose clock reading moved
- * by a minute is a different shape -- that minute is the Sprint 5 delay, and
- * a traveller holding a seat on the old time has to be told, not quietly
- * moved.
+ * Stations, order, and instants must all match. Even a one-minute time change
+ * affects seat holders and must not be applied silently.
  */
 function sameShape(left: StopShape[], right: StopShape[]): boolean {
   if (left.length !== right.length) return false;
@@ -1262,7 +1128,6 @@ function sameShape(left: StopShape[], right: StopShape[]): boolean {
   });
 }
 
-/** The new version as it was submitted; its rows are already written. */
 function snapshotOfRequest(
   timetable: TimetableEntity,
   request: PublishTimetableRequest,

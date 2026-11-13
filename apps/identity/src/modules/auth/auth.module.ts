@@ -53,10 +53,6 @@ const ENTITIES = [
   DeviceCredentialEntity,
 ];
 
-/**
- * The auth feature's own wiring. Concrete repositories and helpers are the
- * provider tokens; only the validated token settings still need a symbol.
- */
 @Module({
   imports: [TypeOrmModule.forFeature(ENTITIES), OutboxModule],
   controllers: [AuthGrpcController],

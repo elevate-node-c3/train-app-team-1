@@ -11,15 +11,7 @@ import { VerificationEmailsModule } from './modules/verification-emails/verifica
 import { ProfileCompletedModule } from './modules/profile-completed/profile-completed.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
-/**
- * Root module: infrastructure wiring and feature modules only. Business
- * providers belong to the feature module that owns them.
- *
- * The migration list is passed to the same DataSource the consumer's store
- * uses; `MigrationRunnerService` applies it at bootstrap and no provider
- * connects in its constructor (the skeleton test compiles this module without
- * Docker).
- */
+/** Wires shared services and features; connections open only during startup. */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(

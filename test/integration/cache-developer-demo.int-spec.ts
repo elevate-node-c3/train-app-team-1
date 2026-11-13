@@ -29,7 +29,7 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
   const tomorrow = '2026-06-21';
   const travelClassId = '00000005-0000-4000-8000-000000000001'; // First Class AC
 
-  // Simulated Postgres database state for the demo
+  // Fake Postgres state.
   let dbFarePiastres = 15000; // 150.00 EGP
   let dbQueryCount = 0;
 
@@ -124,20 +124,17 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
 
     expect(trips).toHaveLength(1);
     expect(trips[0].farePiastres).toBe(15000);
-    // Database was NOT queried!
     expect(dbQueryCount).toBe(initialDbQueries);
 
     const snapshot = metrics.getSnapshot();
     expect(snapshot.search.hits).toBe(1);
     expect(snapshot.search.misses).toBe(1);
-    expect(snapshot.search.hitRate).toBe(0.5); // 50% hit rate
+    expect(snapshot.search.hitRate).toBe(0.5);
   });
 
   it('Step 3: Change fare through OPS-1 (the next search returns the new fare without waiting for TTL)', async () => {
-    // Fare update in database
     dbFarePiastres = 17500; // 175.00 EGP
 
-    // OPS-1 publishes catalog.fare.changed event
     await invalidationConsumer.handle({
       id: 'evt-fare-change-123',
       type: EVENT_TYPES.fareChanged,
@@ -154,19 +151,18 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
       },
     });
 
-    // Next search returns new fare immediately (cache miss on bumped route version)
+    // The bumped route version makes the next search miss.
     const { trips } = await executeSearch();
 
     expect(trips).toHaveLength(1);
     expect(trips[0].farePiastres).toBe(17500);
 
-    // Warm hit on subsequent search
     const warmTrips = await executeSearch();
     expect(warmTrips.trips[0].farePiastres).toBe(17500);
   });
 
   it('Step 4: Fire 200 identical searches at a cold key at once (database rebuilds it once)', async () => {
-    // Generate a new route pair to guarantee cold key
+    // Use a different pair to keep the key cold.
     const coldOrigin = '00000003-0000-4000-8000-000000000002';
     const coldDest = '00000003-0000-4000-8000-000000000004';
     let coldRebuilds = 0;
@@ -187,7 +183,6 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
       routeVersion: version,
     });
 
-    // Fire 200 concurrent requests simultaneously
     const promises = Array.from({ length: 200 }, () =>
       cache.getOrRebuild(coldKey, 'search', coldRebuildFn, 300),
     );
@@ -199,21 +194,18 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
       expect(res[0].tripId).toBe('trip-cold-001');
     }
 
-    // Exactly 1 rebuild executed across 200 concurrent requests!
     expect(coldRebuilds).toBe(1);
   });
 
   it('Step 5: Redis disconnected (searches still answer slower, health check says degraded)', async () => {
-    // Simulate Redis connection failure
     const privRedis = redisService as unknown as { handleConnectionError: (err: Error) => void };
     privRedis.handleConnectionError(new Error('ECONNREFUSED'));
 
-    // Health check returns degraded (not not_ready / 503)
+    // Redis loss degrades readiness instead of returning HTTP 503.
     const health = await healthService.checkReadiness('catalog');
     expect(health.status).toBe('degraded');
     expect(health.dependencies.redis.status).toBe('degraded');
 
-    // Searches continue to answer directly from Postgres fallback
     dbFarePiastres = 18000;
     const fallbackTrips = await cache.getOrRebuild(
       'some:degraded:key',
@@ -227,17 +219,14 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
   });
 
   it('Step 6: Redis reconnected (cache used again without restart)', async () => {
-    // Simulate Redis re-established
     const privRedis = redisService as unknown as { handleConnectionReady: () => void };
     privRedis.handleConnectionReady();
 
-    // Cache works again
     const testKey = 'catalog:reconnect-test:v1';
     await cache.set(testKey, { reconnected: true }, 60, 'search');
     const cached = await cache.get<{ reconnected: boolean }>(testKey, 'search');
     expect(cached?.reconnected).toBe(true);
 
-    // Health report returns ready
     const health = await healthService.checkReadiness('catalog');
     expect(health.status).toBe('ready');
     expect(health.dependencies.redis.status).toBe('ready');
@@ -254,7 +243,6 @@ describe("Developer Flow & Demo Verification Suite (Story TA-19)", () => {
     expect(snapshot.overall).toBeDefined();
     expect(snapshot.overall.total).toBeGreaterThan(0);
 
-    // Formatted demonstration output
     console.log('\n--- Cache Hit Rate Report (§2.3 rule 8) ---');
     console.log(`Search Hit Rate: ${(snapshot.search.hitRate * 100).toFixed(2)}% (Hits: ${snapshot.search.hits}, Misses: ${snapshot.search.misses}, Total: ${snapshot.search.total})`);
     console.log(`Trip Stops Hit Rate: ${(snapshot['trip-stops'].hitRate * 100).toFixed(2)}%`);

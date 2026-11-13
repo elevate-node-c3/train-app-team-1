@@ -1,4 +1,4 @@
-/** The readable half of an unknown throwable, for logs and stored reasons. */
+/** Readable error text for logs and stored failure reasons. */
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

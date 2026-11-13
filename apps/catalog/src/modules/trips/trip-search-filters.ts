@@ -9,22 +9,12 @@ import {
 import { isUuid } from './trip-search-validation.js';
 
 /**
- * Narrowing and sorting one day's trips (CAT-4).
- *
- * Everything here is in memory, over the list the query already produced. A
- * filter is not another cache key and not another statement: two travellers
- * asking for the same day with different filters share one cached day and
- * narrow it differently on the way out. That is also why the cache key will
- * never grow a filter segment.
- *
- * Pure throughout, so the rules are unit-testable without a database and the
- * service can compute the facets over the unfiltered day before applying the
- * request's own filters.
+ * Filter in memory over the shared cached day; filters never change cache keys
+ * or add SQL queries. Compute facets from the unfiltered day first.
  */
 
 const MINUTES_PER_DAY = 24 * 60;
 
-/** The fields this module needs from a cacheable trip. */
 export interface FilterableTrip {
   tripId: string;
   trainTypeId: string;
@@ -35,13 +25,8 @@ export interface FilterableTrip {
 }
 
 /**
- * Refusals for a filter a traveller supplied.
- *
- * Shape only: whether the ids name real train types is not a refusal. A
- * well-formed id that is no longer offered simply matches nothing, and the
- * empty-result reason then names the filters -- the traveller can see and
- * change them (BR-57), whereas a hard refusal would make a stale client's
- * remembered choice unusable.
+ * Validate filter shape only. A well-formed but unavailable train type matches
+ * nothing rather than causing refusal, so stale clients can change their filters.
  */
 export function validateFilters(
   filters: SearchFilters | undefined,
@@ -95,10 +80,8 @@ export function validateFilters(
     before >= 0 &&
     before < MINUTES_PER_DAY;
 
-  // A window that runs past midnight would silently search two Cairo dates --
-  // the date's own and the next one. BR-18 scopes the window to one civil day,
-  // so it is refused rather than reinterpreted, and named against the bound
-  // whose value has to move to make the window non-empty.
+  // Refuse empty or overnight windows; one search covers one Cairo day.
+  // Point at departBeforeMinutes so the traveller can fix the end bound.
   if (boundsAreValid && after >= before) {
     details.push({
       field: 'departBeforeMinutes',
@@ -140,12 +123,8 @@ export function validateFilters(
 }
 
 /**
- * Applies the request's filters, preserving the incoming order.
- *
- * The sold-out set comes from the batched availability call the response
- * already needs; filtering by it here adds no query. It is required only when
- * the request asks for it, so a caller cannot quietly ignore the flag by
- * forgetting the argument.
+ * Preserve incoming order. Use the existing batched sold-out set, without queries.
+ * Require it when excludeSoldOut is requested so missing arguments cannot ignore the filter.
  */
 export function applyFilters<T extends FilterableTrip>(
   trips: readonly T[],
@@ -160,8 +139,7 @@ export function applyFilters<T extends FilterableTrip>(
     );
   }
 
-  // An empty selection means "no type preference", not "no trips": that is
-  // what an untouched filter form sends.
+  // An empty type selection means any type, not no trips.
   const trainTypeIds =
     active.trainTypeIds === undefined || active.trainTypeIds.length === 0
       ? null
@@ -183,8 +161,7 @@ export function applyFilters<T extends FilterableTrip>(
       if (before !== undefined && departureMinute > before) return false;
     }
 
-    // An unpriced trip is dropped later as unsellable; it cannot satisfy a
-    // price ceiling because there is no price to compare.
+    // Unpriced trips cannot satisfy a price ceiling and are dropped as unsellable.
     if (
       maxFareMinor !== undefined &&
       (trip.farePiastres === null || trip.farePiastres > maxFareMinor)
@@ -201,11 +178,8 @@ export function applyFilters<T extends FilterableTrip>(
 }
 
 /**
- * The Cairo wall-clock minute this trip leaves the passenger's origin.
- *
- * BR-17 fixes the display zone, and BR-16 fixes which date the trip belongs
- * to, so the filter has to read the same wall clock the traveller sees rather
- * than the instant's UTC fields.
+ * Filter by the passenger's Cairo departure clock, not UTC fields, so the window
+ * matches the date and times shown to the traveller.
  */
 function cairoDepartureMinute(originDepartureMillis: number): number {
   const { localTime } = cairoLocalTimeOf(new Date(originDepartureMillis));
@@ -215,16 +189,9 @@ function cairoDepartureMinute(originDepartureMillis: number): number {
 }
 
 /**
- * The facets of a day, computed before the request's filters apply.
- *
- * Passing the unfiltered list is deliberate: a traveller who narrowed to one
- * train type must still see the other types, or the only way to undo the
- * filter would be to start over. The same holds for the fare range.
- *
- * Train types appear once each, ordered by English name with the id as a
- * tie-break, so two requests for the same day return the same facet order.
- * Unpriced trips still count towards a type -- the type does run that day --
- * but they cannot move the fare range, which is a range of actual prices.
+ * Compute facets from the unfiltered day so all type and fare choices remain visible.
+ * Deduplicate train types and sort by English name, then ID, for stable order.
+ * Unpriced trips count toward types but do not affect the fare range.
  */
 export function filterOptionsFor(
   trips: readonly FilterableTrip[],
@@ -257,8 +224,7 @@ export function filterOptionsFor(
         left.name.en.localeCompare(right.name.en) ||
         left.id.localeCompare(right.id),
     ),
-    // The wire carries int32s with no absence, so an unpriced or empty day
-    // reports the neutral range rather than inventing a price.
+    // Wire int32s cannot be absent; use a neutral zero range for empty or unpriced days.
     minFareMinor: minFareMinor === Number.POSITIVE_INFINITY ? 0 : minFareMinor,
     maxFareMinor: maxFareMinor === Number.NEGATIVE_INFINITY ? 0 : maxFareMinor,
   };

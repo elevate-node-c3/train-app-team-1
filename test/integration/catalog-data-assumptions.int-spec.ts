@@ -12,16 +12,8 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * What the search query assumes about the data TA-16 generates.
- *
- * Two of these assumptions fail silently if they stop holding: the query
- * returns fewer rows, or a wrong stop count, with no error anywhere. That is
- * the worst kind of coupling between two stories, so rather than agreeing the
- * rules in conversation and hoping, they are asserted against whatever is
- * actually in the database.
- *
- * If one fails after TA-16's generator lands, the generator and this file
- * disagree -- and the message says which assumption broke.
+ * Check generator invariants that search depends on; violations can silently
+ * hide trips or inflate stop counts.
  */
 describe("search's assumptions about generated trip data", () => {
   let source: DataSource;
@@ -36,11 +28,9 @@ describe("search's assumptions about generated trip data", () => {
   });
 
   /**
-   * The query prunes on `service_date BETWEEN date - MAX_TRIP_DAY_SPAN_DAYS
-   * AND date + 1` so the service_date index stays usable. A timetable whose
-   * stops reach further than that bound would have its trips pruned away
-   * before the departure range ever saw them: the trip simply would not appear,
-   * with nothing logged.
+   * The indexed service_date range looks back MAX_TRIP_DAY_SPAN_DAYS and
+   * forward one day. Timetable stops outside that bound would be silently
+   * pruned before the departure filter.
    */
   it('never plans a stop further ahead than the query looks back', async () => {
     const [{ max_offset: maxOffset }]: { max_offset: number | null }[] =
@@ -57,10 +47,8 @@ describe("search's assumptions about generated trip data", () => {
   });
 
   /**
-   * The intermediate-stop count is `destination.position - origin.position - 1`,
-   * which is only the number of stops between them while positions are dense
-   * and 1-based. A gap inflates the count, and a traveller sees a journey with
-   * stops that do not exist.
+   * destination.position - origin.position - 1 counts stops only when
+   * positions are dense and start at 1.
    */
   it('numbers every trip\'s stops densely from 1', async () => {
     const gaps: { trip_id: string; stops: number; highest: number }[] =
@@ -78,7 +66,7 @@ describe("search's assumptions about generated trip data", () => {
     ).toEqual([]);
   });
 
-  /** The same, for the plans the empty-result probes read. */
+  /** Empty-result probes read timetable positions too. */
   it("numbers every timetable's stops densely from 1", async () => {
     const gaps: { timetable_id: string }[] = await source.query(
       `SELECT timetable_id
@@ -91,9 +79,8 @@ describe("search's assumptions about generated trip data", () => {
   });
 
   /**
-   * A stop a passenger can board must have a departure, and one they can alight
-   * at must have an arrival -- the double join requires both, so a null makes
-   * the trip invisible for that pairing rather than wrong.
+   * The double join needs an origin departure and destination arrival;
+   * nulls silently hide the pairing.
    */
   it('gives interior stops both an arrival and a departure', async () => {
     const incomplete: { trip_id: string; position: number }[] =
@@ -112,11 +99,7 @@ describe("search's assumptions about generated trip data", () => {
     expect(incomplete).toEqual([]);
   });
 
-  /**
-   * Capacity is summed out of `composition_snapshot`, so a published trip with
-   * an empty snapshot can never be a result -- it would be filtered as "no
-   * coach of this class" whatever class was asked for.
-   */
+  /** Empty composition snapshots are filtered as having no coach of any class. */
   it('gives every sellable trip a composition to sell from', async () => {
     const empty: { id: string }[] = await source.query(
       `SELECT id FROM dated_trip
@@ -129,8 +112,7 @@ describe("search's assumptions about generated trip data", () => {
   });
 
   it('still describes the fixture it was seeded with', async () => {
-    // Guards the guards: if the fixture stopped loading, every assertion above
-    // would pass against an empty table and prove nothing.
+    // An empty fixture would make all invariant checks pass.
     const [{ count }]: { count: number }[] = await source.query(
       'SELECT count(*)::int AS count FROM trip_stop WHERE trip_id = $1',
       [IDS.trips.mainLine],

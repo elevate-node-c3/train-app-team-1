@@ -18,27 +18,17 @@ import { TripsGrpcController } from './trips.grpc.controller.js';
 import { CatalogModule } from '../../catalog.module.js';
 
 /**
- * The wiring, which no unit spec can reach.
- *
- * Every spec above builds its subject with `new`, so a provider missing from
- * the module is invisible to all of them and shows up as a container failure
- * when catalog boots. Compiling the module here turns that into a test
- * failure instead.
- *
- * The whole CatalogModule is compiled rather than TripsModule alone, because
- * `DataSource` comes from TypeORM's root module and `CacheAsideService` from
- * the global RedisModule -- neither exists in an isolated feature module, and
- * a spec that provided them itself would be testing a graph the application
- * never builds. Compiling does not run lifecycle hooks, so nothing connects;
- * the infrastructure is overridden so nothing tries to.
+ * Compile CatalogModule to catch missing providers with the real module graph.
+ * DataSource and CacheAsideService come from root/global modules, not isolated
+ * features. Override infrastructure; compilation does not run lifecycle hooks
+ * or connect to services.
  */
 describe('the trips module wiring', () => {
   async function compile() {
     return (
       Test.createTestingModule({ imports: [CatalogModule] })
         .overrideProvider(DataSource)
-        // Enough surface for @nestjs/typeorm's repository factories, which every
-        // feature module's forFeature() registers -- not just this one's.
+        // Support repository factories registered by every feature's forFeature.
         .useValue({
           options: { type: 'postgres' },
           entityMetadatas: [],
@@ -73,9 +63,7 @@ describe('the trips module wiring', () => {
 
     const controller = moduleRef.get(TripsGrpcController);
 
-    // Asserted on the controller's own dependencies: resolving a token
-    // container-wide would find a provider in any module, which says nothing
-    // about whether this controller can inject it.
+    // Check the controller's injected dependencies, not container-wide resolution.
     expect(
       (controller as unknown as { search?: unknown }).search,
     ).toBeInstanceOf(TripSearchService);
@@ -87,10 +75,7 @@ describe('the trips module wiring', () => {
     );
   });
 
-  /**
-   * Both legs must read a day through the same seam, or the round trip
-   * fragments the cache. Construction is the only place that can be checked.
-   */
+  /** Both legs must inject the same TripDayService to share cached days. */
   it('gives both search legs the same day service instance', async () => {
     const moduleRef = await compile();
 

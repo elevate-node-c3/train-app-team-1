@@ -15,7 +15,7 @@ import {
 import { TripSearchRepository } from './trip-search.repository.js';
 import type { TripSearchRow } from './trip-search.types.js';
 
-/** One day of one route in one class, as both legs ask for it. */
+/** Both search legs share this route/date/class query. */
 export interface TripDayQuery {
   originStationId: string;
   destinationStationId: string;
@@ -26,10 +26,7 @@ export interface TripDayQuery {
   trainNumber: number | null;
 }
 
-/**
- * A day's static trips, from the cache when they are there and from Postgres
- * when they are not.
- */
+/** Share the cached static day between outbound and return searches. */
 @Injectable()
 export class TripDayService {
   constructor(
@@ -38,16 +35,12 @@ export class TripDayService {
     @Optional() private readonly routeVersion?: RouteVersionService,
   ) {}
 
-  /**
-   * A cached entry that does not match the current shape is treated as a miss:
-   * it parses as JSON and would otherwise put `undefined` into a traveller's
-   * results.
-   */
+  /** Treat malformed cache payloads as misses, not partial responses. */
   async staticTripsFor(
     query: TripDayQuery,
     now: Date,
   ): Promise<CachedStaticTrip[]> {
-    // 1. Capture route version before database read (§6.3, interleaving protection)
+    // Capture version before querying so invalidation during rebuild makes this key stale.
     const capturedVersion = this.routeVersion
       ? await this.routeVersion.getRouteVersion(
           query.originStationId,
@@ -59,7 +52,7 @@ export class TripDayService {
     const baseTtl = cacheTtlSecondsFor(query.serviceDate, now);
     const ttl = jitteredTtlSeconds(baseTtl, SEARCH_CACHE_TTL_JITTER_FRACTION);
 
-    // 2. Coalesce concurrent requests on a cold key through stampede guard (§2.3 rule 3)
+    // Coalesce concurrent cold-key requests to prevent a cache stampede.
     const rebuild = async () => {
       const rows = await this.trips.findCandidates({ ...query, now });
       return rows.map((row) => toStatic(row));
@@ -87,7 +80,7 @@ export class TripDayService {
       return result;
     }
 
-    // Corrupted payload recovery fallback
+    // Recover malformed cached data; use a shorter TTL for empty results.
     const freshRows = await this.trips.findCandidates({ ...query, now });
     const freshStatics = freshRows.map((row) => toStatic(row));
     const recoveryTtl =
@@ -102,9 +95,6 @@ export class TripDayService {
   }
 }
 
-/**
- * A row becomes its cacheable projection.
- */
 function toStatic(row: TripSearchRow): CachedStaticTrip {
   return {
     tripId: row.tripId,

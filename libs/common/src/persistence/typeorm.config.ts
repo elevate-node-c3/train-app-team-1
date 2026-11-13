@@ -3,10 +3,8 @@ import type { DataSourceOptions } from 'typeorm';
 
 export interface TypeOrmExtraOptions {
   /**
-   * Hand-written migration classes, in the order they must run. Required for
-   * `MigrationRunnerService` to have anything to apply — `migrationsRun` is
-   * not used, because it only fires inside `initialize()` and
-   * `manualInitialization: true` means Nest never calls it.
+   * Ordered hand-written migrations, applied by MigrationRunnerService.
+   * Nest uses manual initialization, so migrationsRun is not used.
    */
   migrations?: DataSourceOptions['migrations'];
 }
@@ -27,10 +25,6 @@ export function createTypeOrmAsyncOptions(
       extra: {
         connectionTimeoutMillis: 5000,
       },
-      // Spread rather than assigned, so a service without migrations gets the
-      // same options object it did before this parameter existed. An explicit
-      // `migrations: undefined` would also be harmless to TypeORM but makes
-      // the no-argument call impossible to assert on.
       ...(extra.migrations ? { migrations: extra.migrations } : {}),
     }),
   };

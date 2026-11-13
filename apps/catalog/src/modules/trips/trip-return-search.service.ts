@@ -21,30 +21,11 @@ import { applyDynamicEligibility } from './trip-sellability.js';
 import type { PassengerSegmentRow } from './trip-search.types.js';
 
 /**
- * The return leg of a round trip.
- *
- * Two things make this a different service rather than a flag on the one-way
- * search. The list is computed *from a trip the traveller chose*, so it has an
- * input the first leg does not have and cannot have; and its lower bound is an
- * instant the server reads for itself.
- *
- * That bound is the whole of BR-20. The request carries no arrival time, and if
- * it did this service would ignore it: a client that could send one could widen
- * the window and be offered a return train it cannot physically catch. Strictly
- * after, with no minimum connection time -- a decision, not an oversight: the
- * platform does not know how long this station takes to cross, and inventing a
- * number would silently hide legal journeys.
- *
- * Everything else is deliberately the outbound leg's machinery. The reverse
- * route on the return date is a plain day query, so it goes through
- * `TripDayService` and lands on the same cache key any other search for that day
- * uses -- a round trip adds no cache key of its own -- and the list is narrowed,
- * ordered and mapped by `buildTripList`, so "filters apply to each list
- * separately" cannot drift into "the two lists filter by different rules".
- *
- * Read-only, like the first leg: no events, no outbox rows, no writes. It also
- * records no recent search -- the outbound call already did, and this is the
- * same search continued.
+ * Bound returns strictly after server-read outbound arrival; never trust client times.
+ * Do not invent a minimum connection time; the platform cannot measure it.
+ * Reuse the same day cache and list rules; apply filters separately per leg.
+ * Return search is read-only: no events, outbox rows, or other writes.
+ * Do not record another recent search; the outbound call already did.
  */
 @Injectable()
 export class TripReturnSearchService {
@@ -63,9 +44,7 @@ export class TripReturnSearchService {
   ): Promise<SearchReturnTripsResponse> {
     this.refuseMalformed(request);
 
-    // The chosen trip, read before the return date is judged: the date it has
-    // to be on or after is the trip's own departure date, which only the
-    // server knows.
+    // Validate against the server-read outbound departure's Cairo date, not client dates.
     const segment = await this.outboundSegment(request);
 
     const dateDetails = validateReturnDate(
@@ -79,9 +58,7 @@ export class TripReturnSearchService {
 
     await this.refuseUnknownReferences(request, segment);
 
-    // The exact reverse: back to where the traveller started, in the same
-    // class. No train number -- that narrowed the outbound leg only, and a
-    // return train has its own number.
+    // Reverse the pair in the same class; outbound train-number filters do not carry over.
     const statics = await this.day.staticTripsFor(
       {
         originStationId: segment.destinationStationId,
@@ -95,15 +72,13 @@ export class TripReturnSearchService {
 
     const eligible = applyDynamicEligibility(statics, now);
 
-    // The arrival bound comes BEFORE the filters, so a list the bound emptied
-    // is never blamed on a filter that had nothing to remove.
+    // Apply arrival bounds before filters so impossible connections are not blamed on filters.
     const arrivalMillis = segment.destinationArrivalAt.getTime();
     const afterArrival = eligible.filter(
       (trip) => trip.originDepartureMillis > arrivalMillis,
     );
 
-    // Facets describe what the traveller can actually choose from, which on
-    // this leg means after the arrival bound and before their own filters.
+    // Build return facets after the arrival bound and before request filters.
     const filterOptions = filterOptionsFor(afterArrival);
 
     const seats = await this.availability.availabilityFor(
@@ -177,14 +152,8 @@ export class TripReturnSearchService {
   }
 
   /**
-   * The chosen outbound trip, or a refusal.
-   *
-   * `findPassengerSegment` only answers for sellable trips, so a trip
-   * withdrawn between the two lists arrives here as nothing -- and that is the
-   * honest answer: the journey the traveller picked no longer exists, and
-   * computing a return list around it would be inventing a bound. Selling out
-   * is NOT this case: BR-16 returns a sold-out trip marked, so it stays a legal
-   * outbound choice.
+   * Refuse an outbound trip withdrawn since search rather than inventing return bounds.
+   * Sold-out trips remain valid outbound choices; they are returned and marked.
    */
   private async outboundSegment(
     request: SearchReturnTripsRequest,
@@ -210,12 +179,8 @@ export class TripReturnSearchService {
   }
 
   /**
-   * The class and the two stations, against the catalogue.
-   *
-   * The stations come from the segment rather than the request: they are the
-   * ones the return list will actually be searched between, and a deactivated
-   * station is refused rather than answered with an empty list -- "nothing runs
-   * that day" would send the traveller to change the date forever.
+   * Use the server-read segment's stations; refuse inactive stations rather than
+   * returning an empty list that would wrongly blame the return date.
    */
   private async refuseUnknownReferences(
     request: SearchReturnTripsRequest,
@@ -238,8 +203,7 @@ export class TripReturnSearchService {
       });
     }
 
-    // Named against the outbound fields, because those are what the traveller
-    // would change: the return origin IS the outbound destination.
+    // Name outbound fields: the return origin is the outbound destination.
     for (const [field, stationId] of [
       ['outboundDestinationStationId', segment.destinationStationId],
       ['outboundOriginStationId', segment.originStationId],
@@ -260,12 +224,8 @@ export class TripReturnSearchService {
   }
 
   /**
-   * Why the return list is empty, in terms of what to change.
-   *
-   * The two cases the story insists stay distinguishable are decided here
-   * without a query: if the day had trips and none survived the arrival bound,
-   * the route is served by construction, so the probes have nothing to add.
-   * Only a day that was empty to begin with pays for them.
+   * Distinguish no trips from departures before arrival without probes when the
+   * day had trips. Probe route existence only when the original day was empty.
    */
   private async explainEmpty(context: {
     request: SearchReturnTripsRequest;

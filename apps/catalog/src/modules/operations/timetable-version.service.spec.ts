@@ -34,7 +34,6 @@ interface FindOptions {
   order?: { version?: 'ASC' | 'DESC' };
 }
 
-// Applies the train and status filters, so a forgotten filter fails here.
 function makeService(rows: TimetableEntity[]) {
   const saved: TimetableEntity[] = [];
 
@@ -84,11 +83,11 @@ describe('TimetableVersionService', () => {
       timetable({ version: 3, effectiveFrom: '2026-01-01', status: 'draft' }),
     ]);
 
-    // The day the successor takes effect belongs to the successor.
+    // The successor owns its effectiveFrom date.
     expect(await service.effectiveOn(TRAIN, '2026-06-20')).toMatchObject({
       version: 2,
     });
-    // `effective_until` is the last day it applies, not the first it does not.
+    // effective_until is inclusive.
     expect(await service.effectiveOn(TRAIN, '2026-06-19')).toMatchObject({
       version: 1,
     });
@@ -122,8 +121,7 @@ describe('TimetableVersionService', () => {
     expect(history.effectiveUntil).toBe('2025-12-31');
     expect(saved).toEqual([live]);
 
-    // The bounded version keeps the last day before its successor, so no day
-    // is ownerless.
+    // End the predecessor the day before its successor, leaving no gap.
     expect(await service.effectiveOn(TRAIN, '2026-06-19')).toBe(live);
     expect(await service.effectiveOn(TRAIN, '2026-06-20')).toBeNull();
   });
@@ -148,8 +146,7 @@ describe('TimetableVersionService', () => {
 });
 
 describe('isEffectiveVersionOn', () => {
-  // Must identify one row, not one `(effective_from, version)` pair; two trips
-  // on a service date is the failure.
+  // Compare row IDs, not effectiveFrom/version pairs, to prevent duplicate generation.
   it('treats exactly one of two rows sharing a version as effective', () => {
     const first = timetable({
       id: 'tt-a',
@@ -189,8 +186,7 @@ describe('isEffectiveVersionOn', () => {
     expect(isEffectiveVersionOn(superseded, rows, '2026-06-21')).toBe(true);
   });
 
-  // Draft/withdrawn ranges may overlap a published one; neither may resolve as
-  // effective.
+  // Draft and withdrawn ranges may overlap published ones but are never effective.
   it('never resolves to a row that is not published', () => {
     const draft = timetable({
       id: 'tt-draft',

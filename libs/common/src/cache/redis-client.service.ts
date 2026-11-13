@@ -9,20 +9,10 @@ import type { DependencyHealthContributor } from '../health/dependency-health.js
 
 export const REDIS_CLIENT = Symbol('REDIS_CLIENT');
 
-/**
- * The process's one Redis connection.
- *
- * Before this service existed every consumer of Redis built its own client, so
- * "the Redis client" was whichever module happened to be asked. One client
- * means one reconnect policy, one place to observe availability and one
- * dependency to report on readiness.
- */
+// One Redis connection per process, with shared reconnect and readiness state.
 @Injectable()
 export class RedisClientService
-  implements
-    OnModuleInit,
-    OnModuleDestroy,
-    DependencyHealthContributor
+  implements OnModuleInit, OnModuleDestroy, DependencyHealthContributor
 {
   readonly name = 'redis';
 
@@ -33,7 +23,7 @@ export class RedisClientService
   private outageLogged = false;
   private readonly listeners = new Set<(available: boolean) => void>();
 
-  /** Register a callback for Redis connection state changes. Returns an unsubscribe function. */
+  // Subscribes to availability changes; returns an unsubscribe function.
   onAvailabilityChange(listener: (available: boolean) => void): () => void {
     this.listeners.add(listener);
     return () => {
@@ -72,7 +62,7 @@ export class RedisClientService
     const wasConnected = this.connected;
     this.connected = false;
 
-    // Log the outage ONCE rather than once per request or duplicate error (§2.3 rule 7)
+    // Log once per outage, not once per request.
     if (!this.outageLogged) {
       const reason = error?.message ? `: ${error.message}` : '';
       this.logger.warn(
@@ -118,7 +108,9 @@ export class RedisClientService
       // Boot must not block on Redis: the platform degrades around it.
       await this.client.connect().catch(() => {
         this.handleConnectionError(
-          new Error('Redis is unavailable at boot; service continues in degraded mode (§2.3 rule 7).'),
+          new Error(
+            'Redis is unavailable at boot; service continues in degraded mode (§2.3 rule 7).',
+          ),
         );
       });
     } catch (error: unknown) {

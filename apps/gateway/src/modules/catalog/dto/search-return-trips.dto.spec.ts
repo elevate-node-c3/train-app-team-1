@@ -12,7 +12,7 @@ const ALEX = '22222222-2222-4222-8222-222222222222';
 const FIRST = '33333333-3333-4333-8333-333333333333';
 const TRIP = '44444444-4444-4444-8444-444444444444';
 
-/** As the global pipe does it: plain query object in, validated class out. */
+/** Validate queries like the global pipe. */
 function validateAs<T extends object>(
   cls: new () => T,
   query: Record<string, unknown>,
@@ -71,11 +71,7 @@ describe('the return-search query parameters', () => {
     ]);
   });
 
-  /**
-   * The two rules that must NOT be here. BR-20 says the server reads the
-   * outbound trip's arrival itself, so there is no field for a client to send
-   * one in; and a train number narrowed the outbound leg only.
-   */
+  /** Arrival time is server-owned; train numbers narrow only the outbound search. */
   it('has no field for an arrival time or a train number', () => {
     expect(
       validate(validQuery({ outboundArrivalAt: '2026-06-25T23:50:00Z' }))
@@ -186,8 +182,7 @@ describe('the stops parameters', () => {
   it('requires both ends of the passenger segment', () => {
     const { fields } = validateAs(TripStopsQueryDto, { from: RAMSIS });
 
-    // Not defaulted to the whole trip: this answers what the search result
-    // offered, which is the passenger's own segment.
+    // Use the passenger's segment, not the whole trip.
     expect(fields).toContain('to');
   });
 
@@ -243,11 +238,7 @@ describe('the recent-searches parameters', () => {
     ).toEqual([]);
   });
 
-  /**
-   * There is no account parameter and there will not be one: the traveller
-   * comes from the verified token. `forbidNonWhitelisted` turns an attempt to
-   * name one into a 400 rather than something quietly ignored.
-   */
+  /** Account IDs come from the verified token; query overrides are rejected. */
   it('refuses an attempt to name an account', () => {
     expect(
       validateAs(RecentSearchesQueryDto, {

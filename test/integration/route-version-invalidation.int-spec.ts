@@ -40,7 +40,7 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
   it('invalidates 100 search combinations in O(1) via route version without KEYS', async () => {
     const v1 = await routeVersion.getRouteVersion(originStationId, destinationStationId);
 
-    // Populate 100 distinct date keys for this route under version v1
+    // Use distinct dates under one route version.
     for (let day = 1; day <= 100; day++) {
       const date = `2026-06-${String(day).padStart(2, '0')}`;
       const key = searchCacheKey({
@@ -54,7 +54,6 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
       await cache.set(key, [{ tripId: `trip-${day}`, farePiastres: 10000 }], 300);
     }
 
-    // Verify key 50 is warm
     const key50v1 = searchCacheKey({
       originStationId,
       destinationStationId,
@@ -65,11 +64,9 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
     });
     expect(await cache.get(key50v1)).not.toBeNull();
 
-    // Now increment route version (O(1) invalidation)
     const v2 = await routeVersion.incrementRouteVersion(originStationId, destinationStationId);
     expect(v2).toBe(v1 + 1);
 
-    // Subsequent search for key 50 using current route version (v2) is a cold miss!
     const key50v2 = searchCacheKey({
       originStationId,
       destinationStationId,
@@ -80,7 +77,6 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
     });
     expect(await cache.get(key50v2)).toBeNull();
 
-    // Unrelated route remains intact!
     const otherOrigin = '99999999-9999-4999-8999-999999999999';
     const otherKey = searchCacheKey({
       originStationId: otherOrigin,
@@ -95,17 +91,15 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
   });
 
   it('guarantees slow rebuild interleaving does not poison the new route version', async () => {
-    // 1. Rebuild starts: captures version V_start
+    // Model invalidation arriving before a slow rebuild writes.
     const vStart = await routeVersion.getRouteVersion(originStationId, destinationStationId);
 
-    // 2. Database query happens in background (returns stale fare 10000)
     const staleData = [{ tripId: 'trip-slow', farePiastres: 10000 }];
 
-    // 3. Invalidation event arrives during the 50ms window! Fare changed to 15000!
     const vNew = await routeVersion.incrementRouteVersion(originStationId, destinationStationId);
     expect(vNew).toBeGreaterThan(vStart);
 
-    // 4. Slow rebuild completes and writes under captured vStart
+    // A late rebuild must write under its captured version, not the current one.
     const staleKey = searchCacheKey({
       originStationId,
       destinationStationId,
@@ -116,7 +110,6 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
     });
     await cache.set(staleKey, staleData, 300);
 
-    // 5. Traveller searches now: queries current version vNew
     const freshKey = searchCacheKey({
       originStationId,
       destinationStationId,
@@ -126,7 +119,6 @@ describe('Generational Route Versioning & Slow Rebuild Interleaving (§6.3 & §2
       routeVersion: vNew,
     });
 
-    // The fresh search MUST be a miss, NOT reading staleData!
     const result = await cache.get(freshKey);
     expect(result).toBeNull();
   });

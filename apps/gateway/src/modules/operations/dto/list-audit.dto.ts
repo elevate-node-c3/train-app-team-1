@@ -11,13 +11,13 @@ import {
 
 const MAX_AUDIT_LIST_LIMIT = 200;
 
-/** `limit` arrives as text; the wire wants an integer. */
+/** Convert the query limit to a wire integer. */
 function toInteger(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   return /^\d+$/.test(value) ? Number(value) : value;
 }
 
-/** A missing `trainId` reads every train; `from`/`to` bound `occurredAt` inclusively. */
+/** No trainId means all trains; date bounds include both endpoints. */
 export class ListAuditQueryDto {
   @IsOptional()
   @IsUUID()
@@ -38,7 +38,7 @@ export class ListAuditQueryDto {
   @Max(MAX_AUDIT_LIST_LIMIT)
   limit?: number;
 
-  /** The `id` of the last entry a previous page returned. */
+  /** Last entry ID from the previous page. */
   @IsOptional()
   @IsString()
   cursor?: string;

@@ -13,14 +13,10 @@ interface EmailDeliveryBase {
   accountId: string;
   recipientEmail: string;
   purpose: VerificationCodePurpose;
-  /** BR-03's clock start: stamped by identity inside the sign-up transaction. */
+  /** Delivery timing starts in identity's sign-up transaction. */
   issuedAt: Date;
 }
 
-/**
- * The outcome is a discriminated union so an `accepted` row cannot be built
- * without the measurement the database CHECK also requires.
- */
 export type EmailDeliveryRecord =
   | (EmailDeliveryBase & {
       outcome: 'accepted';

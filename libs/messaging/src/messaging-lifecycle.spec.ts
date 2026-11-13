@@ -16,10 +16,8 @@ import { GracefulShutdownService } from '@app/common';
 import type { EventEnvelope } from '@app/contracts';
 
 /**
- * These assertions pin Nest's shutdown contract as it actually behaves:
- * `onModuleDestroy` -> `beforeApplicationShutdown` -> dispose -> 
- * `onApplicationShutdown`. The repo's docs claimed the opposite, and following
- * them would close the channel before consumers could ack.
+ * Nest shutdown: onModuleDestroy -> beforeApplicationShutdown -> dispose ->
+ * onApplicationShutdown. Consumers must acknowledge before the channel closes.
  */
 describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
   it('keeps one correlation header constant across both libraries', () => {
@@ -43,8 +41,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
 
   it('does not promise an onModuleDestroy hook on the AMQP client', () => {
     const client = new AmqpClientService();
-    // Re-adding one would close the channel in step 1, before the relay and
-    // consumer drain in step 2. This assertion is the guard against that.
+    // Do not close the channel before the relay and consumers drain.
     expect('onModuleDestroy' in client).toBe(false);
     expect(typeof client.onApplicationShutdown).toBe('function');
   });
@@ -52,9 +49,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
   it('closes the channels only at onApplicationShutdown, after acks', async () => {
     const calls: string[] = [];
     const client = new AmqpClientService() as any;
-    // amqplib channels and connections are EventEmitters, and the client
-    // detaches its handlers before closing so a teardown cannot re-enter them.
-    // The fakes carry `removeAllListeners` for that reason.
+    // Fakes need removeAllListeners because closing detaches handlers first.
     client.confirmChannel = {
       removeAllListeners: () => {},
       close: async () => {
@@ -74,8 +69,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
       },
     };
 
-    // A drain participant's ack is recorded first; the client must not close
-    // before it. This mirrors Nest's real hook order (step 2 then step 4).
+    // Finish acknowledgment during drain before client shutdown.
     calls.push('ack');
     await client.onApplicationShutdown();
 
@@ -97,10 +91,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
     expect('onApplicationShutdown' in shutdown).toBe(false);
   });
 
-  // The order Nest actually calls: onModuleDestroy -> beforeApplicationShutdown
-  // -> dispose -> onApplicationShutdown. The ack must be on the channel before
-  // it closes; otherwise the broker redelivers every in-flight message and a
-  // clean deploy sends duplicate emails.
+  // Acknowledge before closing channels to prevent duplicate delivery on deploy.
   it('acks an in-flight message before the channel closes, in Nest hook order', async () => {
     const events: string[] = [];
     let releaseHandler: () => void = () => {};
@@ -196,8 +187,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
       properties: { headers: {} },
     } as unknown as ConsumeMessage);
 
-    // Let claim and handler entry happen, then start the drain while the
-    // handler is still in flight.
+    // Start draining while the handler is still running.
     await Promise.resolve();
     await Promise.resolve();
     const drain = consumer.beforeApplicationShutdown(); // step 2
@@ -214,11 +204,7 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
   });
 });
 
-/**
- * `channel.consume` dies with its channel. Subscribing once at bootstrap left
- * notification connected and deaf after any broker restart, while the readiness
- * probe still answered `ready` because the connection itself was fine.
- */
+/** Reconnects must restore subscriptions, not just a healthy connection. */
 describe('Consumer re-attachment after a broker restart', () => {
   const QUEUE = 'notification.verification-code-issued';
   const EVENT_TYPE = 'identity.verification-code.issued';
@@ -308,7 +294,7 @@ describe('Consumer re-attachment after a broker restart', () => {
     const h = consumerHarness({ consumeFails: true });
     await h.consumer.onApplicationBootstrap();
 
-    // The broker is reachable, so only the consumer knows it is not reading.
+    // A reachable broker does not prove its consumer is reading.
     expect(h.probe()).toEqual({
       healthy: false,
       detail: `Not consuming: ${QUEUE}`,
@@ -356,17 +342,12 @@ describe('Consumer re-attachment after a broker restart', () => {
       deliveringChannel,
     );
 
-    // A delivery tag is scoped to its channel: acking on whatever
-    // `ensureChannel()` returns addresses nothing after a reconnect.
+    // Delivery tags are valid only on the channel that delivered them.
     expect(ack).toHaveBeenCalledTimes(1);
   });
 });
 
-/**
- * The producer's exchange assertion was latched to a boolean, so a rebuilt
- * broker meant `train.events` was never re-asserted and every relay publish
- * failed 404 in a permanent loop.
- */
+/** Rebuilt brokers need exchanges declared again on the new channel. */
 describe('Producer topology re-assertion', () => {
   it('re-asserts the exchange on a replacement channel', async () => {
     const envelope: EventEnvelope = {

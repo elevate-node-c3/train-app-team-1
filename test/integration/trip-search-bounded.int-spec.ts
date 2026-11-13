@@ -13,18 +13,14 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * TA-28: the whole day comes back, in order, and the number of statements does
- * not grow with the number of trips.
- *
- * "No N+1" is the kind of claim that is easy to assert and hard to keep, so it
- * is measured here: the same search is run against a handful of trips and then
- * against thirty, and the statement count has to be identical.
+ * Measure one ordered, complete day query before and after adding 30 trips.
+ * The statement count must stay fixed as results grow.
  */
 
 const NOW = new Date('2026-06-15T09:00:00Z');
 const EXTRA_TRIPS = 30;
 
-/** Ids well clear of the fixture's own groups. */
+/** Use IDs outside the fixture's groups. */
 function loadUuid(group: number, item: number): string {
   return `0000${String(group).padStart(4, '0')}-0000-4000-8000-${String(
     item,
@@ -32,11 +28,9 @@ function loadUuid(group: number, item: number): string {
 }
 
 /**
- * Adds many more published trips on the same pair and date.
- *
- * Each needs its own train, because `dated_trip` is unique on
- * (train_id, service_date), and its own timetable, because `timetable` is
- * unique on (train_id, version).
+ * Each load trip needs its own train for unique (train_id, service_date),
+ * and its own timetable for unique (train_id, version). All share a route
+ * pair and date.
  */
 async function addManyTrips(source: DataSource, count: number): Promise<void> {
   const snapshot = JSON.stringify([
@@ -60,8 +54,7 @@ async function addManyTrips(source: DataSource, count: number): Promise<void> {
     const trainId = loadUuid(90, index + 1);
     const timetableId = loadUuid(91, index + 1);
     const tripId = loadUuid(92, index + 1);
-    // Spread departures across the morning so the ordering assertion has
-    // something to order.
+    // Vary departures so sorting is exercised.
     const minute = String(index % 60).padStart(2, '0');
     const hour = String(6 + Math.floor(index / 60)).padStart(2, '0');
 
@@ -113,12 +106,9 @@ async function addManyTrips(source: DataSource, count: number): Promise<void> {
 }
 
 /**
- * Removes the load trips, so a run measures growth it caused itself.
- *
- * The inserts are idempotent and the database persists between runs, which
- * means a second run would otherwise find the extra trips already there, see
- * no growth, and fail an assertion about its own setup rather than about the
- * query. Children before parents, in one statement each.
+ * Clear load trips before reruns so idempotent inserts produce measurable
+ * growth, even when the database persists. Delete children before parents,
+ * one table per statement.
  */
 async function removeManyTrips(source: DataSource): Promise<void> {
   await source.query(
@@ -148,8 +138,7 @@ describe('search stays bounded and complete (TA-28)', () => {
   });
 
   afterAll(async () => {
-    // Leave the database as the other specs expect to find it: thirty extra
-    // trips on the Alexandria-Ramsis pair would change their row counts.
+    // Remove extra Alexandria-Ramsis trips so other specs keep their fixture counts.
     await removeManyTrips(source);
     await closeCatalogDataSource();
   });
@@ -171,7 +160,6 @@ describe('search stays bounded and complete (TA-28)', () => {
     expect(queries).toHaveLength(1);
   });
 
-  // The actual anti-N+1 proof: thirty times the rows, the same one statement.
   it('still takes one statement when the result set grows thirtyfold', async () => {
     const before = await countStatements(source, search);
 
@@ -189,17 +177,13 @@ describe('search stays bounded and complete (TA-28)', () => {
   it('returns the whole day, with no pagination', async () => {
     const { queries } = await countStatements(source, search);
 
-    // The statement does contain one LIMIT -- the fare subquery's LIMIT 1, which
-    // picks the price in force -- so the check has to be about the OUTER query.
-    // Its ORDER BY is the last one in the text, so anything after that belongs
-    // to the top level. A LIMIT there would silently truncate the day, and
-    // CAT-4's filters and sorts are specified to apply to all of it rather than
-    // to a page.
+    // The fare subquery needs LIMIT 1; the outer day query must not paginate.
+    // Its ORDER BY is last, so inspect that tail for LIMIT/OFFSET without
+    // mistaking the fare limit for pagination.
     const outerTail = queries[0].slice(queries[0].lastIndexOf('ORDER BY'));
 
     expect(outerTail).not.toMatch(/\bLIMIT\b/i);
     expect(outerTail).not.toMatch(/\bOFFSET\b/i);
-    // And exactly one LIMIT overall, so adding pagination anywhere trips this.
     expect(queries[0].match(/\bLIMIT\b/gi)).toHaveLength(1);
   });
 
@@ -250,10 +234,8 @@ describe('search stays bounded and complete (TA-28)', () => {
   });
 
   /**
-   * CAT-5: filtering and sorting happen on the day the query already returned,
-   * so a new filter combination is never a new statement. Measured rather than
-   * asserted in a comment, because the cheap mistake -- pushing a filter into
-   * the SQL -- would multiply both the queries and the cache keys.
+   * Filter and sort the day in memory. Moving filters into SQL would add
+   * queries and multiply cache keys.
    */
   describe('filters and sorts cost nothing extra', () => {
     const everyFilter = {
@@ -277,7 +259,6 @@ describe('search stays bounded and complete (TA-28)', () => {
         durationMinutes: 0,
       }));
 
-      // The whole narrow-order-map tail, over rows already in hand.
       const narrowed = buildTripList({
         eligible: eligible as never,
         seats,
@@ -288,7 +269,6 @@ describe('search stays bounded and complete (TA-28)', () => {
 
       expect(queries).toHaveLength(1);
       expect(narrowed.trips.length).toBeGreaterThan(0);
-      // Fare ascending, as asked, over the same single statement.
       const fares = narrowed.trips.map((trip) => trip.fare.amountMinor);
       expect(fares).toEqual([...fares].sort((a, b) => a - b));
     });
@@ -303,17 +283,13 @@ describe('search stays bounded and complete (TA-28)', () => {
           trainNumber,
         });
 
-      // Filters are not key inputs at all -- there is nowhere to put them --
-      // which is the structural form of "filters do not multiply the cache".
+      // Filters are not cache-key inputs.
       expect(key(null)).toBe(key(null));
       expect(key(null)).not.toBe(key(903));
     });
   });
 
-  /**
-   * The return leg is a plain day query plus one segment read, so a round trip
-   * costs two statements on a cache miss and no more.
-   */
+  /** A cache miss costs one segment read plus one return-day query. */
   describe('the return leg', () => {
     it('costs one segment read plus one day query', async () => {
       const { queries } = await countStatements(source, async () => {
@@ -350,7 +326,7 @@ describe('search stays bounded and complete (TA-28)', () => {
 
       const { result, queries } = await countStatements(source, reverse);
 
-      // The load trips from the growth spec above are still in place here.
+      // The earlier growth test leaves its load trips in place.
       expect(result.length).toBeGreaterThan(EXTRA_TRIPS);
       expect(queries).toHaveLength(1);
     });

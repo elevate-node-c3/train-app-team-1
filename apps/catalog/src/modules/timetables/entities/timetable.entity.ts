@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 import { TrainEntity } from '../../trains/entities/train.entity.js';
 
-/** 0 = Sunday, matching `Date.getUTCDay()`, which the running-day check uses. */
+/** Match Date.getUTCDay(): Sunday is 0. */
 export enum Weekday {
   Sunday = 0,
   Monday = 1,

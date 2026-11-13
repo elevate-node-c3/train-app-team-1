@@ -4,10 +4,7 @@ export interface SignUpRequestDto {
   email: string;
   /** Plaintext only for the duration of the call; identity hashes it at once. */
   password: string;
-  /**
-   * Optional on the wire because the gRPC caller may omit it; identity then
-   * defaults the account to Arabic, the platform fallback (BR-56).
-   */
+  /** Omitted on the wire defaults the account to Arabic. */
   language?: EventLanguage;
 }
 
@@ -36,7 +33,7 @@ export interface SignOutRequestDto {
   /** Verified by the gateway; identity never trusts a client-supplied value. */
   sessionId: string;
   jti: string;
-  /** ISO-8601. Keeps a revocation marker alive only as long as it matters. */
+  /** ISO-8601 expiry; revocation markers need no longer TTL. */
   accessTokenExpiresAt: string;
 }
 

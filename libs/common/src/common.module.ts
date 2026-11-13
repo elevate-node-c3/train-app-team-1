@@ -12,16 +12,12 @@ import { RedisModule } from './cache/redis.module.js';
 
 @Module({
   imports: [
-    // Global, so the single DataSourceInitializer is resolvable from a feature
-    // module without that module importing persistence plumbing.
+    // Global so feature modules share one DataSourceInitializer.
     PersistenceModule,
     RedisModule,
     ClsModule.forRoot({
       global: true,
-      // Mounted explicitly in `configure` below. The automatic mount point is
-      // derived from the Express version and the gateway's global prefix, which
-      // left correlation running before the store existed on excluded routes
-      // such as /health/live. One ordered chain is simpler and correct.
+      // Mount CLS before correlation on every route, including health routes.
       middleware: { mount: false },
     }),
     LoggerModule.forRootAsync({
@@ -52,8 +48,7 @@ import { RedisModule } from './cache/redis.module.js';
 export class CommonModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     consumer
-      // ClsMiddleware must be first: it owns the AsyncLocalStorage context that
-      // the next two middlewares write into.
+      // CLS must run first so caller and correlation middleware have a context.
       .apply(ClsMiddleware, CallerMetadataMiddleware, CorrelationMiddleware)
       .forRoutes('*');
   }

@@ -77,19 +77,16 @@ describe('Cache resilience and metrics (§2.3 rule 7 & rule 8)', () => {
       });
 
       expect(typeof unsubscribe).toBe('function');
-      // Verify logging behavior doesn't spam on multiple errors
       const warnSpy = vi.spyOn((redis as unknown as { logger: { warn: (msg: string) => void } }).logger, 'warn');
 
       (redis as unknown as { handleConnectionError: (err: Error) => void }).handleConnectionError(new Error('ECONNREFUSED'));
       (redis as unknown as { handleConnectionError: (err: Error) => void }).handleConnectionError(new Error('ECONNREFUSED'));
 
-      // Outage message logged once, not per duplicate error
       const outageLogs = warnSpy.mock.calls.filter((call) =>
         call[0].includes('Operating in degraded cache mode'),
       );
       expect(outageLogs.length).toBe(1);
 
-      // Restore
       (redis as unknown as { handleConnectionReady: () => void }).handleConnectionReady();
       expect(redis.isAvailable()).toBe(true);
 

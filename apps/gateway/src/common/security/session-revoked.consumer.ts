@@ -7,11 +7,7 @@ import type {
 import { parseSessionRevokedPayload } from './session-revoked.parser.js';
 import { RevocationStore } from './stores/revocation.store.js';
 
-/**
- * Writes the gateway's revocation markers. The side effect is idempotent: a
- * redelivered event sets the same keys with the same TTLs, so the consumer's
- * at-least-once contract is safe here without extra bookkeeping.
- */
+/** Redelivery is safe: revocation writes repeat the same keys and expiry. */
 @Injectable()
 export class SessionRevokedConsumer implements EventHandlerPort {
   private readonly logger = new Logger(SessionRevokedConsumer.name);

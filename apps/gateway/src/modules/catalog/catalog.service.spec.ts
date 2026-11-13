@@ -70,8 +70,7 @@ describe('the gateway search service', () => {
       });
     });
 
-    // Absent stays absent rather than becoming 0 or an empty string: catalog
-    // distinguishes "any train" from a train number.
+    // Missing train numbers mean any train, not zero.
     it('omits an absent train number and language', async () => {
       const { service, searchOneWayTrips } = serviceWith(baseResponse);
 
@@ -111,7 +110,7 @@ describe('the gateway search service', () => {
           string,
           unknown
         >;
-        // Absent rather than `{}`: "no filters" stays legible in a log.
+        // Keep missing filters undefined.
         expect('filters' in sent).toBe(false);
         expect('sort' in sent).toBe(false);
       });
@@ -157,7 +156,7 @@ describe('the gateway search service', () => {
         expect(sent.filters).toEqual({ maxFareMinor: 9_000 });
       });
 
-      // `false` is a choice the traveller made, not an absent filter.
+      // Preserve explicit false values.
       it('forwards excludeSoldOut=false rather than dropping it', async () => {
         const { service, searchOneWayTrips } = serviceWith(baseResponse);
 
@@ -195,12 +194,7 @@ describe('the gateway search service', () => {
       expect(result.evaluatedAt).toEqual(baseResponse.evaluatedAt);
     });
 
-    /**
-     * proto3 omits an empty repeated field, so a day with no trips comes back
-     * with no `trips` key at all. A REST client must not have to know that
-     * absent means empty -- that is the difference between "no trains" and
-     * "the server forgot to tell me".
-     */
+    /** REST clients receive an empty trips array when proto3 omits it. */
     it('turns an omitted empty array back into an empty array', async () => {
       const { service } = serviceWith({
         ...baseResponse,
@@ -218,12 +212,7 @@ describe('the gateway search service', () => {
       expect(result.dateStrip).toEqual([]);
     });
 
-    /**
-     * The facets have the same problem twice over: `trainTypes` is a repeated
-     * field, so an empty one arrives as no key and a client reading `.length`
-     * would throw, and an int32 of 0 is omitted too -- which would otherwise
-     * be indistinguishable from a free trip.
-     */
+    /** Restore omitted trainTypes arrays and zero fare bounds. */
     it('always answers with a filterOptions object', async () => {
       const { service } = serviceWith({
         ...baseResponse,
@@ -266,11 +255,7 @@ describe('the gateway search service', () => {
     });
   });
 
-  /**
-   * Catalog returns a reason and the values; the words are chosen here. That
-   * is what keeps catalog free of any language, and it is why the catalogue is
-   * keyed by the wire enum -- there is no mapping table in between.
-   */
+  /** Catalog supplies reason codes; the gateway supplies the translated words. */
   describe('the empty-result sentence', () => {
     const withReason = (reason: string, params: Record<string, string> = {}) =>
       serviceWith({
@@ -308,8 +293,7 @@ describe('the gateway search service', () => {
       );
     });
 
-    // Each reason points at a different field to change (BR-57), so no two may
-    // render the same sentence.
+    // Each reason must tell the user a different action.
     it('says something different for each of the three reasons', async () => {
       const messages: string[] = [];
 
@@ -671,8 +655,7 @@ describe('the gateway return-search service', () => {
     expect(sent.filters).toEqual({ maxFareMinor: 9_000 });
   });
 
-  // The outbound call already sent the strip and the window; two copies could
-  // disagree, so this response carries neither.
+  // Only the outbound response carries the date strip and booking window.
   it('answers without a date strip or booking window', async () => {
     const { service } = serviceWith(returnResponse);
 
@@ -698,8 +681,7 @@ describe('the gateway return-search service', () => {
     expect(english.emptyResult?.reason).toBe(
       'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
     );
-    // The arrival the server read is quoted back, so the traveller knows what
-    // they are working around.
+    // Echo the server's arrival time so the user understands the return limit.
     expect(english.emptyResult?.message).toContain('23:50');
     expect(english.emptyResult?.message).toContain('return date');
   });
@@ -761,7 +743,7 @@ describe('the gateway recent-searches service', () => {
 
     await service.recentSearches({});
 
-    // An empty request: catalog reads the caller from gRPC metadata.
+    // Catalog reads the account from verified caller metadata.
     expect(listRecentSearches).toHaveBeenCalledWith({});
   });
 

@@ -31,10 +31,7 @@ import { TokenVerifierService } from '../security/token-verifier.service.js';
 import { RevocationStore } from '../security/stores/revocation.store.js';
 
 /**
- * Deny by default. A route with no `@Public()`, `@RequireAccess()` or
- * `@RequireRole()` metadata is closed, so a new controller cannot become
- * anonymous by forgetting a decorator. Health and service-info routes opt in
- * explicitly.
+ * Denies routes without @Public(), @RequireAccess() or @RequireRole() metadata.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {

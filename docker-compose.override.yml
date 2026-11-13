@@ -1,30 +1,8 @@
-# Local development and the integration test tier.
-#
-# Compose reads this file automatically alongside docker-compose.yml, so
-# nothing here needs a flag. It exists for one reason: the base file
-# deliberately publishes no Postgres port, which means a test running on the
-# host cannot open a connection, and the repository SQL that search is built on
-# would go unverified until the full e2e stack runs.
-#
-# The base file's posture is still the right default for anything deployed --
-# only the gateway should be reachable from outside the network. This override
-# is development-only and relaxes it as narrowly as it can:
-#
-#   * bound to 127.0.0.1, so the database is reachable from this machine and
-#     not from the network the machine is on;
-#   * on a non-default host port, so it cannot collide with a Postgres already
-#     installed locally and listening on 5432, and so a tool pointed at 5432
-#     out of habit does not silently reach the container.
-#
-# The ports are low and unremarkable on purpose. Windows reserves shifting
-# blocks of high ports for Hyper-V -- `netsh interface ipv4 show
-# excludedportrange protocol=tcp` lists them -- and a port chosen inside one
-# binds today and fails after a reboot with a permissions error that reads
-# like a firewall problem. 15432 and 16379 sit well clear of those blocks.
-#
-# Integration specs are `*.int-spec.ts` and run with `npm run test:int`. They
-# connect as the catalog service role, not the superuser, so they exercise the
-# same grants the service has.
+# Local-only database/cache ports for `npm run test:int`.
+# Compose loads this file automatically; do not use it in production.
+# Non-default ports avoid local service conflicts and Windows reserved ranges.
+# Check ranges: `netsh interface ipv4 show excludedportrange protocol=tcp`.
+# Integration tests use service roles, not the Postgres superuser.
 services:
   postgres:
     ports:

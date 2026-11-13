@@ -14,13 +14,10 @@ import {
 } from './support/stack.js';
 
 /**
- * BR-03 is a build gate: OTP delivery within 30 seconds, measured from the
- * payload's `issuedAt` (stamped inside identity's transaction) to
- * `accepted_at` (taken after Mailpit answers SMTP 250).
- *
- * The latency is read from notification's `email_delivery` rows, not from the
- * HTTP response. The sign-up response is deliberately independent of delivery;
- * timing it would measure the wrong thing.
+ * BR-03 requires OTP delivery within 30 seconds: identity's transactional
+ * issuedAt to accepted_at after Mailpit's SMTP 250 response.
+ * Read notification's email_delivery rows, not sign-up HTTP latency;
+ * the sign-up response is independent of delivery.
  */
 
 const SIGNUPS = 25;
@@ -79,8 +76,7 @@ describe('BR-03 OTP delivery latency', () => {
     expect(p95).toBeLessThan(BUDGET_MS);
     expect(worst).toBeLessThan(BUDGET_MS);
 
-    // The DB rows prove what the handler recorded; the inbox proves the mail
-    // actually left the process. A clean run has no skipped or failed rows.
+    // The inbox confirms actual delivery; a clean run has no skipped or failed rows.
     expect((await mailpitInbox()).total).toBe(SIGNUPS);
     expect(
       psql(

@@ -7,15 +7,13 @@ import {
 } from '@app/common/config/env.defaults.js';
 import { MAX_RELAY_POLL_INTERVAL_MS } from '@app/messaging/retry-budget.js';
 
-/** The producer's outbox knobs. Identity owns them; no other service relays. */
+/** Only identity runs the outbox relay. */
 export const identityEnvSchema = commonEnvSchema.keys({
   OUTBOX_RELAY_ENABLED: Joi.boolean()
     .truthy('true')
     .falsy('false')
     .default(OUTBOX_DEFAULTS.enabled),
-  // A derived upper bound, not a re-sum of the whole budget: the poll interval
-  // is the only term identity owns, and the consumer's timeout and delays
-  // never reach this process.
+  // Bound the relay's share of the delivery budget; notification owns the rest.
   OUTBOX_POLL_INTERVAL_MS: Joi.number()
     .integer()
     .min(1)
@@ -30,8 +28,7 @@ export const identityEnvSchema = commonEnvSchema.keys({
     .min(1)
     .max(1000)
     .default(OUTBOX_DEFAULTS.batchSize),
-  // The cap enforces "a code in a dead-lettered message dies within ten
-  // minutes". Do not raise it.
+  // Keep the ten-minute cap, including for dead-lettered codes.
   VERIFICATION_CODE_TTL_SECONDS: Joi.number()
     .integer()
     .min(1)
@@ -41,8 +38,7 @@ export const identityEnvSchema = commonEnvSchema.keys({
       'number.max':
         "Variable 'VERIFICATION_CODE_TTL_SECONDS' must be <= 600: a verification code must die within ten minutes",
     }),
-  // Identity is the only holder of the signing key. At least one of the inline
-  // value and the file path is required: there is no committed fallback.
+  // Identity alone holds the signing key; require inline PEM or a file.
   JWT_KEY_ID: Joi.string().default('dev-1'),
   JWT_PRIVATE_KEY: Joi.string().optional(),
   JWT_PRIVATE_KEY_FILE: Joi.string().optional(),

@@ -26,25 +26,9 @@ import {
 import { applyDynamicEligibility } from './trip-sellability.js';
 
 /**
- * One-way search.
- *
- * The order of the steps below is the design. Two of them are load-bearing:
- *
- * `now` is captured once by the caller and threaded through everything. The
- * window, the strip, the validator, the day range and the eligibility filter
- * must all agree about what time it is, or a response can contradict itself --
- * a strip that offers a date the validator would refuse, for instance.
- *
- * Eligibility is applied after the cache read, on the hit path and the miss
- * path alike. That is what makes "a list cached at 13:50 must not offer, at
- * 14:00, a trip whose sales closed at 13:55" a property of the code rather
- * than a thing to remember: there is only one path, and the cached payload
- * holds nothing about sales state to go stale.
- *
- * Read-only throughout (TA-33): no events, no outbox rows, no writes. The
- * temptation to publish "a search was performed" for analytics is exactly what
- * this resists -- it would turn the most frequent read in the system into a
- * write.
+ * Use one captured now for validation, dates, and eligibility.
+ * Recheck sellability after every cache read; cached data has no live sales state.
+ * Keep search queries read-only: no analytics events or outbox writes.
  */
 @Injectable()
 export class TripSearchService {
@@ -59,9 +43,8 @@ export class TripSearchService {
   ) {}
 
   /**
-   * `accountId` is the signed-in traveller, read from caller metadata by the
-   * transport. Absent means an unidentified caller, which search still answers
-   * -- the results are identical for everyone -- but records nothing for.
+   * accountId comes from verified caller metadata. Unidentified callers receive
+   * the same results, but their searches are not recorded.
    */
   async search(
     request: SearchOneWayTripsRequest,
@@ -85,15 +68,13 @@ export class TripSearchService {
       now,
     );
 
-    // Hit or miss, the same filter, so a cached list cannot outlive the sales
-    // it was cached with.
+    // Recheck sales eligibility on both cache hits and misses.
     const eligible = applyDynamicEligibility(statics, now);
 
-    // Facets describe the day before the request's own filters, so narrowing
-    // never hides the choices needed to undo the narrowing.
+    // Build facets before filtering so the traveller can undo any narrowing.
     const filterOptions = filterOptionsFor(eligible);
 
-    // One batched call for every segment at once.
+    // Batch availability for all segments to avoid per-trip calls.
     const seats = await this.availability.availabilityFor(
       eligible.map((trip) => ({
         tripId: trip.tripId,
@@ -137,20 +118,10 @@ export class TripSearchService {
   }
 
   /**
-   * Remembers the search, without the traveller waiting for it (BR-21).
-   *
-   * Not awaited, on purpose. Recording must never slow a search down and never
-   * make one fail, and this is the only shape that keeps both promises: the
-   * response is already built, and the write happens on its own.
-   *
-   * The `catch` is belt and braces. `RecentSearchesService.record` already
-   * swallows and logs its own failures, but an unawaited promise that rejects
-   * takes the process down on an unhandled rejection -- and this service should
-   * not stake its own crash-safety on another class's internal discipline.
-   *
-   * Reached only after a successful answer, which is what makes "a valid
-   * search is recorded whether or not it found trains; an invalid request is
-   * not" true by construction -- a refusal threw several steps ago.
+   * Record successful searches, including empty results, but never invalid requests.
+   * Do not await recording: it must not delay or fail the search response.
+   * Catch rejections here even though RecentSearchesService catches internally;
+   * unawaited rejections must not terminate the process.
    */
   private recordSearch(
     request: SearchOneWayTripsRequest,
@@ -160,8 +131,7 @@ export class TripSearchService {
   ): void {
     if (accountId === null) return;
 
-    // The return date is what tells a one-way search from a round trip, and it
-    // is the reason the outbound call carries one at all.
+    // A return date marks the outbound call as round-trip for recent-search identity.
     const returnDate =
       request.returnDate === undefined || request.returnDate === ''
         ? null
@@ -219,10 +189,8 @@ export class TripSearchService {
   }
 
   /**
-   * A trip with no fare for the segment cannot be booked, so offering it would
-   * strand the traveller one screen later. Logged, because a sellable trip
-   * without a price is a data gap someone should fix rather than a normal
-   * state.
+   * Drop unpriced segments: they cannot be booked. Warn so missing fare coverage
+   * is repaired as a data gap, not treated as normal emptiness.
    */
   private warnUnpriced(trip: { tripId: string; originStationId: string; destinationStationId: string }): void {
     this.logger.warn(
@@ -231,16 +199,8 @@ export class TripSearchService {
   }
 
   /**
-   * Why the list is empty, in terms of the field to change.
-   *
-   * Only asked when there is nothing to return, so the common path never pays
-   * for it. The values go in `params` and the sentence is assembled at the
-   * edge, which is what keeps catalog free of any language.
-   *
-   * Filters short-circuit the probes. A day whose trips the filters removed has
-   * already proved the route is served and the named train runs it, so asking
-   * Postgres again would spend a statement to learn what the result set just
-   * demonstrated.
+   * Probe only empty results; skip SQL probes when filters removed known candidates.
+   * Return reason codes and params for the edge to render in the chosen language.
    */
   private async explainEmpty(
     request: SearchOneWayTripsRequest,
@@ -259,8 +219,7 @@ export class TripSearchService {
         params: {
           searchedDate: request.departureDate,
           ...(trainNumber === null ? {} : { trainNumber: String(trainNumber) }),
-          // The edge uses these to say "change the filters, not the date": the
-          // day's actual range is what the filter has to admit.
+          // Give the day's fare range so the client can relax filters, not change dates.
           minFareMinor: String(filterOptions.minFareMinor),
           maxFareMinor: String(filterOptions.maxFareMinor),
         },

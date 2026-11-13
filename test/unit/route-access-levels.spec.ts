@@ -5,10 +5,8 @@ import { ACCESS_LEVEL_KEY, STAFF_ROLE_KEY } from '@app/common';
 import { GatewayModule } from '../../apps/gateway/src/gateway.module.js';
 
 /**
- * BR-01's public surface, written out literally. The route walk below proves
- * the guard's deny-by-default metadata is present on every registered handler;
- * this set proves the anonymous part is exactly what the story allows. Paths
- * are controller metadata, before the gateway's `/api/v1` prefix.
+ * BR-01's exact anonymous routes, checked alongside deny-by-default metadata.
+ * Paths omit the gateway's `/api/v1` prefix.
  */
 const BR01_PUBLIC_ROUTES = [
   'GET /',

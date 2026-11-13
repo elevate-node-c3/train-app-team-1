@@ -20,9 +20,7 @@ function envelope(): EventEnvelope {
 }
 
 describe('Event envelope contract (ADR-0005, §10.C)', () => {
-  // The claim in event-envelope.ts was false when it was written: no test
-  // existed. These assignments are compile-time assertions — if either union
-  // gains a member the other lacks, this file stops type-checking.
+  // Type assertions keep both language unions compatible in both directions.
   it('keeps EventLanguage and SupportedLanguage mutually assignable', () => {
     const toSupported = (language: EventLanguage): SupportedLanguage => language;
     const toEvent = (language: SupportedLanguage): EventLanguage => language;
@@ -46,14 +44,12 @@ describe('Event envelope contract (ADR-0005, §10.C)', () => {
     },
   );
 
-  // Additive is not breaking (ADR-0005). A producer may add a field without
-  // bumping the version, and a consumer must not dead-letter it for that.
+  // Extra fields must remain valid without a version bump.
   it('accepts an envelope carrying an unknown extra key', () => {
     expect(isEventEnvelope({ ...envelope(), futureField: 'ok' })).toBe(true);
   });
 
-  // A guard against the required-key list quietly shrinking: it must be the
-  // actual keys of a built envelope, in the order the builder emits them.
+  // Required keys must match a built envelope in its emitted order.
   it('lists exactly the keys a built envelope has', () => {
     expect(ENVELOPE_REQUIRED_KEYS).toEqual(Object.keys(envelope()));
   });

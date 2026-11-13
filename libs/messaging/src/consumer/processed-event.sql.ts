@@ -1,14 +1,6 @@
 /**
- * One statement, one round trip, no read-then-write window.
- *
- * Two instances receiving the same fresh duplicate: neither is a redelivery and
- * the lease is fresh, so exactly one `INSERT` wins and the other's `DO UPDATE`
- * matches no row — one email.
- *
- * `$3` (`redelivered`) bypasses the lease. A redelivery only happens because a
- * channel closed unacked — the consumer crashed — so no live process holds the
- * claim; waiting out the lease would make the redelivery skip and lose the
- * email. Fresh duplicates are unaffected because they are not redeliveries.
+ * Claim in one SQL statement so fresh duplicates have one winner.
+ * Redelivery bypasses the old lease so a retry is not skipped as a duplicate.
  */
 export const CLAIM_PROCESSED_EVENT_SQL = `
   INSERT INTO processed_event (event_id, event_type, status, attempt_count, claimed_at)
@@ -36,11 +28,7 @@ export const MARK_PROCESSED_EVENT_SKIPPED_SQL = `
    WHERE event_id = $1
 `;
 
-/**
- * Releasing the claim is load-bearing. Without this the one-second retry copy
- * meets a fresh sixty-second lease, the claim is refused, and the email is
- * silently dropped on the first SMTP blip (ADR-0003).
- */
+/** Release failed claims before retry publication so the next attempt is not skipped. */
 export const MARK_PROCESSED_EVENT_FAILED_SQL = `
   UPDATE processed_event
      SET status = 'failed', last_error = $2

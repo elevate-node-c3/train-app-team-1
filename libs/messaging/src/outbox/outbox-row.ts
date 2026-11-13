@@ -28,11 +28,7 @@ export interface OutboxRow {
   lastError: string | null;
 }
 
-/**
- * The routing key is stored on the row, not derived at publish time. A future
- * rename of a payload field must not silently reroute rows that were written
- * under the old contract.
- */
+/** Store routing keys with rows so later contract changes cannot reroute old events. */
 export function appendParams(envelope: EventEnvelope): OutboxAppendParams {
   return {
     id: envelope.id,

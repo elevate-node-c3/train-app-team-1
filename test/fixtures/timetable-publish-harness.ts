@@ -32,14 +32,13 @@ import {
   type FareIndex,
 } from '../../apps/catalog/src/modules/trips/trip-generation.types.js';
 
-// Doubles shared by both publish specs. Writes land only when the transaction
-// resolves; the real Postgres boundary is proven in the integration spec.
+// Stage writes until work succeeds; integration specs verify real Postgres rollback.
 
-/** Cairo civil 'today' for every spec that uses this harness. */
+/** Fixed Cairo civil date for the harness. */
 export const TODAY = '2026-06-20';
-/** The last date the booking window plus generation's margin reaches. */
+/** Booking-window end, including the generation margin. */
 export const WINDOW_END = '2026-07-20';
-/** When a republish in these specs takes effect. */
+/** Republish effective date. */
 export const EFFECTIVE_FROM = '2026-06-22';
 
 export const TRAIN_ID = '11111111-1111-4111-8111-111111111111';
@@ -105,7 +104,7 @@ function coachEntity(
   } as TrainCoachEntity;
 }
 
-/** The train's composition as the catalogue holds it, by default one coach. */
+/** Default catalog composition: one coach. */
 const ONE_COACH: TrainCoachEntity[] = [coachEntity(1, 1, TRAVEL_CLASS)];
 
 const TWO_COACHES: TrainCoachEntity[] = [
@@ -113,7 +112,7 @@ const TWO_COACHES: TrainCoachEntity[] = [
   coachEntity(2, 2, SECOND_TRAVEL_CLASS),
 ];
 
-// Highest position first; array order is the client's business.
+// Reverse positions to check that client array order does not matter.
 export function twoCoachesReversed(): PublishTimetableRequest['coaches'] {
   return [...TWO_COACHES]
     .sort((left, right) => right.position - left.position)
@@ -125,7 +124,7 @@ export function twoCoachesReversed(): PublishTimetableRequest['coaches'] {
     }));
 }
 
-/** Every in-order pair of the four-station route, cheapest-containment safe. */
+/** Fares cover every ordered station pair without undercutting contained segments. */
 const FARE_AMOUNTS: Record<string, number> = {
   [`${CAIRO}|${GIZA}`]: 5000,
   [`${CAIRO}|${BENI_SUEF}`]: 10000,
@@ -140,8 +139,7 @@ function faresFor(
 ): PublishTimetableRequest['fares'] {
   const fares: PublishTimetableRequest['fares'] = [];
 
-  // Both classes always; unused fares are ignored, and the two-coach harness
-  // shares this builder.
+  // Include both classes for the two-coach harness; unused fares are ignored.
   for (const travelClassId of [FIRST_CLASS, SECOND_CLASS]) {
     for (let i = 0; i < stationIds.length - 1; i += 1) {
       for (let j = i + 1; j < stationIds.length; j += 1) {
@@ -186,7 +184,7 @@ function stopsFor(
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
-/** The three-station route, running every day, effective in two days. */
+/** Three stations, daily service, effective two days after TODAY. */
 export function validRequest(
   overrides: Partial<PublishTimetableRequest> = {},
 ): PublishTimetableRequest {
@@ -210,7 +208,7 @@ export function validRequest(
   };
 }
 
-/** The same route with Asyut added: every existing trip's shape moves. */
+/** Adding Asyut changes the shape of existing trips. */
 export function republishWithExtraStop(): PublishTimetableRequest {
   const stations = [CAIRO, GIZA, BENI_SUEF, ASYUT];
 
@@ -220,14 +218,14 @@ export function republishWithExtraStop(): PublishTimetableRequest {
   });
 }
 
-/** The same route, no longer running on Fridays. */
+/** Same route without Friday service. */
 export function republishWithoutFridays(
   overrides: Partial<PublishTimetableRequest> = {},
 ): PublishTimetableRequest {
   return validRequest({ runningDays: [0, 1, 2, 3, 4, 6], ...overrides });
 }
 
-/** The same route, ten minutes later throughout. */
+/** Shift every stop by ten minutes. */
 export function republishTenMinutesLater(): PublishTimetableRequest {
   const stations = [CAIRO, GIZA, BENI_SUEF];
 
@@ -240,7 +238,7 @@ export function republishTenMinutesLater(): PublishTimetableRequest {
   });
 }
 
-/** A different body under the same key: one fare corrected. */
+/** Change one fare to produce a different body under the same key. */
 export function otherRequest(): PublishTimetableRequest {
   const request = validRequest();
 
@@ -252,7 +250,7 @@ export function otherRequest(): PublishTimetableRequest {
   };
 }
 
-// Three independent faults at once; all must be named in one answer.
+// Return all three independent validation errors in one response.
 export function requestWithThreeProblems(): PublishTimetableRequest {
   const unknown = 'aaaaaaaa-0000-4000-8000-0000000000ff';
 
@@ -314,7 +312,7 @@ function emptyStore(): Store {
 export interface PublishHarness {
   service: TimetablePublishService;
   store: Store;
-  /** How many `withTransaction` calls the whole publish opened. */
+  /** Total withTransaction calls for one publish. */
   transactions: () => number;
   timetableCount: () => Promise<number>;
   outboxCount: () => Promise<number>;
@@ -322,19 +320,19 @@ export interface PublishHarness {
   publishedEventTypes: () => string[];
   tripOn: (serviceDate: string) => Promise<DatedTripEntity>;
   stopStationIdsOn: (serviceDate: string) => Promise<string[]>;
-  /** Programs inventory's answer for one trip id. */
+  /** Set inventory's response for one trip. */
   answerSeatUsage: (tripId: string, usage: Omit<TripSeatUsage, 'tripId'>) => void;
-  /** Makes every seat-usage lookup fail with the given error. */
+  /** Fail all inventory lookups with the same error. */
   rejectSeatUsage: (error: Error) => void;
-  /** Trip ids the seam was asked about, in call order. */
+  /** Trip ID batches sent to inventory, in call order. */
   seatUsageAsks: () => string[][];
   /** Runs `work` after the first commit, when the generation timer can race. */
   afterFirstCommit: (work: () => void) => void;
   /** Inserts trips the way `TripsService`'s timer does. */
   simulateGeneration: (fromDate: string, toDate: string) => void;
-  /** Makes the next `find` of this key return null; the concurrent-publish race. */
+  /** Return null once for this key to simulate a concurrent publish. */
   hideNextFind: (idempotencyKey: string) => void;
-  /** Makes the next version insert fail, for mapping raw Postgres codes. */
+  /** Fail the next version insert to check Postgres error mapping. */
   failNextInsertWith: (error: Error) => void;
 }
 
@@ -345,8 +343,7 @@ export interface HarnessOptions {
   withTwoCoaches?: boolean;
 }
 
-// One wired service over an in-memory store; the pure `TripsService` parts
-// are the real ones.
+// Use real TripsService generation logic over an in-memory store.
 export function makeHarness(options: HarnessOptions = {}): PublishHarness {
   const store = emptyStore();
   let transactionCount = 0;
@@ -366,7 +363,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
         transactionCount += 1;
         const ctx: StagingContext = { driver: 'harness', staging: [] };
         const result = await work(ctx);
-        // Only reached if `work` resolved, so a rollback drops the stage.
+        // Apply staged writes only after work succeeds.
         for (const apply of ctx.staging) apply();
         const hook = firstCommitHook;
         firstCommitHook = null;
@@ -543,7 +540,7 @@ export function makeHarness(options: HarnessOptions = {}): PublishHarness {
   };
 }
 
-/** Civil-date arithmetic, duplicated here so the harness needs no clock. */
+/** Civil-date arithmetic without a clock dependency. */
 function addDays(civilDate: string, days: number): string {
   const date = new Date(`${civilDate}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -762,8 +759,8 @@ function makeRepository(
   };
 }
 
-// Real `TripsService`, reads replaced; create returns an existing trip like
-// the real one after a unique violation.
+// Replace TripsService reads; reuse existing trips to match its unique-violation
+// recovery.
 function makeTripsService(
   store: Store,
   coaches: TrainCoachEntity[],

@@ -6,10 +6,7 @@ import {
 } from '@app/common';
 import { AggregatedHealthReport } from '@app/contracts';
 
-/**
- * The explicit aggregate route. `/health` answers the same report through the
- * library's controller; this one is the documented name for it.
- */
+/** Returns the same aggregate report as the shared /health route. */
 @Controller()
 export class HealthController {
   constructor(

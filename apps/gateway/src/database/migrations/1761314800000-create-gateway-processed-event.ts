@@ -1,10 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * The gateway's consumer ledger. It is intentionally identical in shape to
- * notification's (ADR-0003); each service owns its database, so each keeps its
- * own copy of the claim table rather than sharing a schema.
- */
+/** Each service owns its consumer ledger; this matches notification's table. */
 export class CreateGatewayProcessedEvent1761314800000
   implements MigrationInterface
 {

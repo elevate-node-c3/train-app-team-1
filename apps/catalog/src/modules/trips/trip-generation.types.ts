@@ -2,10 +2,7 @@ import { addCivilDays, cairoInstantOf } from '@app/contracts';
 
 import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
 
-/**
- * A trip stop resolved to real instants for one service date. Shared by
- * generation and the publish validator.
- */
+/** Share resolved stop instants between generation and publish validation. */
 export interface TripStopDraft {
   station: TimetableStopEntity['station'];
   stationId: string;
@@ -14,10 +11,7 @@ export interface TripStopDraft {
   departureAt: Date | null;
 }
 
-/**
- * The one place `'HH:mm'` and `dayOffset` turn into real Cairo instants.
- * Generation and the publish validator both call it.
- */
+/** Resolve HH:mm and dayOffset into Cairo instants identically for generation and publication. */
 export function resolveStopTimes(
   anchorDate: string,
   dayOffset: number,

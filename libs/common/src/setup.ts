@@ -6,17 +6,11 @@ import { createValidationPipe } from './envelope/validation-exception.factory.js
 
 export interface SetupAppOptions {
   /**
-   * The public HTTP prefix for this process. Only the gateway sets one: it is
-   * the single door, so `/api/v1` exists there and nowhere else. Health routes
-   * stay unprefixed because orchestrators probe them by their stable path.
+   * Only the gateway sets a public prefix. Health probe paths stay unprefixed.
    */
   apiPrefix?: string;
 }
 
-/**
- * Applies cross-cutting global filters, interceptors, validation pipes, and logging
- * across all seven services uniformly.
- */
 export function setupApp(
   app: INestApplication,
   options: SetupAppOptions = {},

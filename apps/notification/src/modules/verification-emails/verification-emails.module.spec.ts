@@ -22,9 +22,7 @@ function tsFilesIn(dir: string): string[] {
     } else if (
       entry.endsWith('.ts') &&
       !entry.endsWith('.d.ts') &&
-      // Identity's own specs assert that SMTP keys are absent from its schema,
-      // so they name them. Scanning a test for a string it exists to forbid
-      // reports the proof as the violation.
+      // Skip tests: forbidden keys can appear in assertions.
       !entry.endsWith('.spec.ts')
     ) {
       files.push(full);

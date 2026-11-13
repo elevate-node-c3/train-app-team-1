@@ -18,9 +18,7 @@ describe('when sales close', () => {
     expect(salesCloseAt(DEPARTURE)).toBe(DEPARTURE - 15 * MINUTE);
   });
 
-  // The rule says "exactly 15 minutes before is closed", so the boundary is
-  // pinned to the millisecond rather than to the minute. An implementation
-  // using <= here would sell a seat the rule forbids.
+  // Exactly 15 minutes before departure is closed; test the boundary to the millisecond.
   it('is open one millisecond before the boundary', () => {
     expect(isSellableAt(DEPARTURE, new Date(DEPARTURE - 15 * MINUTE - 1))).toBe(
       true,
@@ -40,8 +38,7 @@ describe('when sales close', () => {
     expect(isSellableAt(DEPARTURE, new Date(DEPARTURE - 1))).toBe(false);
   });
 
-  // "Not departed" needs no rule of its own: it is strictly weaker than
-  // sales-closed, so one predicate enforces both.
+  // Sales closure already excludes departed trips.
   it('is closed at and after the departure itself', () => {
     expect(isSellableAt(DEPARTURE, new Date(DEPARTURE))).toBe(false);
     expect(isSellableAt(DEPARTURE, new Date(DEPARTURE + 60 * MINUTE))).toBe(
@@ -92,9 +89,7 @@ describe('applyDynamicEligibility', () => {
     expect(rows).toHaveLength(before);
   });
 
-  // This is the property the cache depends on: the filter is a function of
-  // `now` alone, so re-running it on a cached list at a later instant drops
-  // whatever has since closed.
+  // Rerunning eligibility with a later now must remove newly closed trips.
   it('drops more trips as now advances over the same list', () => {
     const counts = [
       DEPARTURE - 120 * MINUTE,
@@ -112,9 +107,7 @@ describe('the sellable statuses', () => {
   });
 
   it('is the one place a fourth status would have to be added', () => {
-    // dated_trip has no 'cancelled' value: draft and withdrawn are both
-    // not-sellable, and withdrawn is what an operator sets to pull a service.
-    // Centralizing it means the day cancelled arrives, one line changes.
+    // Only published trips sell; withdrawn stands in for the absent cancelled status.
     for (const notSellable of ['draft', 'withdrawn']) {
       expect(SELLABLE_TRIP_STATUSES).not.toContain(notSellable);
     }
@@ -123,10 +116,8 @@ describe('the sellable statuses', () => {
 
 describe('the trip day span', () => {
   it('reaches at least one day back, for overnight services', () => {
-    // A trip whose service_date is D can depart the passenger's origin on
-    // D+1, so the SQL's pruning range must look back this far. Understating
-    // it loses overnight trips silently -- which is why it is a named
-    // constant with a guard rather than a literal in the query.
+    // Prune far enough back for trips dated D with origin departures on D+1.
+    // A smaller bound would silently lose overnight trips.
     expect(MAX_TRIP_DAY_SPAN_DAYS).toBeGreaterThanOrEqual(1);
   });
 });

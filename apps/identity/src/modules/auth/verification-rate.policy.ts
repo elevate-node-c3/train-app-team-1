@@ -11,10 +11,7 @@ export interface RateDecision {
   secondsRemaining: number;
 }
 
-/**
- * Durable, Postgres-backed counters. Redis is allowed to be down; an attacker
- * must not get unlimited attempts just because the edge cache degraded.
- */
+/** Postgres counters keep rate limits active when Redis is down. */
 @Injectable()
 export class VerificationRatePolicy {
   constructor(private readonly requests: VerificationRequestRepository) {}
@@ -47,7 +44,7 @@ export class VerificationRatePolicy {
     return { allowed: true, secondsRemaining: 0 };
   }
 
-  /** The response advertises the wait even when the caller did not ask again. */
+  /** Advertise the wait without requiring another request. */
   nextAllowedSeconds(): number {
     return VERIFICATION_RESEND_WAIT_SECONDS;
   }

@@ -85,14 +85,9 @@ const AR_RESET: VerificationEmailCopy = {
 };
 
 /**
- * BR-56: the account's stored language, not the request's Accept-Language.
- * Anything that is not English renders in Arabic, so an unsupported locale
- * still produces a usable email instead of failing delivery.
- *
- * The code appears in the body only. A subject line is visible in inbox
- * previews and in mail-server logs, which is not where a live secret belongs.
- * Reset copy is purpose-separated so a code mailed for one flow is not
- * presented as usable in the other.
+ * Use the stored account language, not request headers; default to Arabic.
+ * Keep codes in the body, out of subjects and logs.
+ * Use different wording for sign-up and password reset.
  */
 export function renderVerificationEmail(props: {
   code: string;

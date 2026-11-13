@@ -14,10 +14,10 @@ import {
 
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** A naive Cairo wall-clock time of day, e.g. '06:00'. */
+/** Cairo local clock time, such as 06:00. */
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/** A naive Cairo wall-clock time plus a day offset, never an instant. */
+/** Cairo clock time with a day offset, not an absolute timestamp. */
 export class PublishTimetableStopDto {
   @IsUUID()
   stationId!: string;
@@ -59,7 +59,7 @@ export class PublishTimetableCoachDto {
   coachLayoutId!: string;
 }
 
-/** One fare the publish records, in integer piastres and excluding any fee. */
+/** Fare in whole piastres, excluding fees. */
 export class PublishTimetableFareDto {
   @IsUUID()
   travelClassId!: string;
@@ -75,13 +75,13 @@ export class PublishTimetableFareDto {
   amountPiastres!: number;
 }
 
-/** Shape only; catalog revalidates everything because a gRPC peer is not trusted. */
+/** Check request shape; catalog also validates untrusted RPC input. */
 export class PublishTimetableDto {
-  /** Echoed verbatim in refusals; resolved to the integer train column server-side. */
+  /** Return the submitted train ID in errors; catalog resolves the numeric ID. */
   @IsString()
   trainNumber!: string;
 
-  /** 0 = Sunday, matching `Date.getUTCDay()`. */
+  /** Sunday is 0, matching Date.getUTCDay(). */
   @IsArray()
   @ArrayMinSize(1)
   @IsInt({ each: true })
@@ -89,7 +89,7 @@ export class PublishTimetableDto {
   @Max(6, { each: true })
   runningDays!: number[];
 
-  /** A Cairo civil date. */
+  /** Cairo local date. */
   @Matches(CIVIL_DATE_PATTERN, {
     context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })

@@ -2,15 +2,15 @@ import type { CallOptions } from '@grpc/grpc-js';
 import type { Observable } from 'rxjs';
 import type { CivilDateTime } from '@app/contracts';
 
-/** The operations rpcs as this gateway calls them; these match `catalog.proto`. */
+/** Gateway RPC shapes match catalog.proto. */
 
 export interface PublishTimetableGrpcStop {
   stationId: string;
   position: number;
   dayOffset: number;
-  /** Absent on the wire at the first stop -- proto3 has no `null`. */
+  /** First stop has no arrival field; proto3 cannot send null. */
   arrivalTime?: string;
-  /** Absent on the wire at the last stop. */
+  /** No departure field at the last stop. */
   departureTime?: string;
 }
 
@@ -37,7 +37,7 @@ export interface PublishTimetableGrpcRequest {
   fares: PublishTimetableGrpcFare[];
 }
 
-/** The counts are optional so a genuine `0` is not an absent key. */
+/** Optional counts distinguish zero from missing values. */
 export interface PublishTimetableGrpcResponse {
   timetableId: string;
   version: number;
@@ -52,13 +52,13 @@ export interface ChangeFareGrpcRequest {
   originStationId: string;
   destinationStationId: string;
   amountPiastres: number;
-  /** ISO instant. */
+  /** ISO timestamp. */
   effectiveFrom: string;
 }
 
 export interface ChangeFareGrpcResponse {
   fareId: string;
-  /** Absent exactly on the pair's first-ever fare. */
+  /** Missing when the pair has no previous fare. */
   previousAmountPiastres?: number;
   newAmountPiastres: number;
   effectiveFrom: string;
@@ -79,7 +79,7 @@ export interface AuditEntryGrpc {
   trainId: string;
   beforeJson: string;
   afterJson: string;
-  /** Always 0 this sprint; optional so zero is not confused with absent. */
+  /** Always zero for now; keep it distinct from missing counts. */
   ticketsAffected?: number;
   correlationId: string;
   occurredAt: CivilDateTime;
@@ -90,7 +90,7 @@ export interface ListAuditEntriesGrpcResponse {
   nextCursor?: string;
 }
 
-/** `metadata`/`options` are declared on every method so a deadline can be threaded through. */
+/** Every RPC accepts metadata and options so deadlines reach catalog. */
 export interface OperationsGrpcClient {
   publishTimetable(
     data: PublishTimetableGrpcRequest,
@@ -111,5 +111,4 @@ export interface OperationsGrpcClient {
   ): Observable<ListAuditEntriesGrpcResponse>;
 }
 
-/** The resolved service proxy. */
 export const OPERATIONS_GRPC_CLIENT = Symbol('OPERATIONS_GRPC_CLIENT');

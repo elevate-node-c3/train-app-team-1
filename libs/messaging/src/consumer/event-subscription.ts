@@ -2,18 +2,14 @@ import type { EventHandlerPort } from './event-handler.port.js';
 
 export const EVENT_SUBSCRIPTIONS = Symbol('EVENT_SUBSCRIPTIONS');
 
-/**
- * One consumer queue, one event contract, one handler. Several subscriptions
- * are independent queues: a slow or failing consumer never competes with
- * another service for the same message.
- */
+/** Each consumer owns one queue and handler so services never compete for the same copy. */
 export interface EventSubscription {
   eventType: string;
-  /** The payload version this build understands; anything else dead-letters. */
+  /** Unsupported payload versions are dead-lettered. */
   version: number;
   /** The consumer's own queue name. */
   queueName: string;
   handler: EventHandlerPort;
-  /** Optional per-subscription override; defaults to the platform budget. */
+  /** Optional override; defaults to the platform retry budget. */
   retryDelaysMs?: readonly number[];
 }

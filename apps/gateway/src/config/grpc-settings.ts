@@ -1,9 +1,6 @@
 /**
- * Composition-root parsing for the gateway's gRPC targets.
- *
- * The values have already passed the Joi schema in `main.ts`; the fallbacks
- * keep a host-run test or a root-module compile safe without an environment.
- * Nothing outside `config/`, `main.ts` and `*.module.ts` reads `process.env`.
+ * Startup validates gRPC URLs; tests may use defaults.
+ * Read environment values only in config and app setup.
  */
 export const DOWNSTREAM_SERVICES = [
   'catalog',

@@ -14,25 +14,17 @@ export function createPinoConfig(
       timestamp: () => `,"time":"${new Date().toISOString()}"`,
       formatters: {
         level: (label: string) => ({ level: label }),
-        // The single place service and correlation id are stamped. pino-http's
-        // `customProps` is deliberately unused: it binds its result onto a
-        // child logger at request start, when the correlation id is not in the
-        // store yet, and binds it a second time at response finish — three
-        // copies of both keys per request log. Reading the store here, per
-        // record, keeps one copy and the value that was current when the line
-        // was written. It also covers gRPC and consumer logs, which have no
-        // request to carry props.
+        // Read service and correlation ID once per record, not via customProps.
+        // Request-start bindings run before CLS and duplicate fields at response
+        // time. Per-record lookup also covers gRPC and consumer logs.
         log: ({ req, res, err, ...rest }: Record<string, unknown>) => {
           const correlationId = cls.get<string>(CORRELATION_ID_KEY);
           return {
             service: currentService,
             ...(correlationId ? { correlationId } : {}),
-            // pino runs this formatter before the serializers, so whatever is
-            // returned here is what they receive. `req`/`res`/`err` must stay
-            // the live objects: `redactPii` rebuilds plain copies without a
-            // prototype, and the response serializer reads `headersSent` from
-            // there — through a copy it sees `undefined` and reports every
-            // status as null. Each of the three redacts its own projection.
+            // Serializers run later and need live req/res/err objects, including
+            // prototype fields such as res.headersSent. Each redacts its own
+            // projection; redactPii here would lose those fields.
             ...(req !== undefined ? { req } : {}),
             ...(res !== undefined ? { res } : {}),
             ...(err !== undefined ? { err } : {}),
@@ -53,8 +45,7 @@ export function createPinoConfig(
             },
             remoteAddress: req.remoteAddress,
           }),
-        // Not run through `redactPii`: a status code carries nothing personal,
-        // and `statusCode` matches that redactor's `code` rule.
+        // statusCode is not PII but matches redactPii's broad "code" rule.
         res: (res: any) => ({
           statusCode: res.statusCode,
         }),

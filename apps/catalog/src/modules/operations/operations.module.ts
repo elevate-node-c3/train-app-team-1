@@ -2,9 +2,7 @@ import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { getInventoryProtoPath, INVENTORY_PACKAGE_NAME } from '@app/contracts';
-// Deep import on purpose, as `trips.module.ts` does: the `@app/messaging`
-// barrel pulls the consumer side in too, and the cycle that creates leaves an
-// injected dependency undefined at runtime.
+// Import directly to avoid a consumer-side barrel cycle and undefined injection.
 import { OutboxModule } from '@app/messaging/outbox/outbox.module.js';
 
 import { inventoryGrpcUrl } from '../../config/operations-settings.js';
@@ -36,18 +34,10 @@ import { TimetablePublishService } from './timetable-publish.service.js';
 import { TimetableVersionService } from './timetable-version.service.js';
 
 /**
- * Must match inventory's own server loader options, or a `repeated` field
- * arrives in an unexpected shape -- see inventory's `main.ts`.
- *
- * `defaults: true` deviates from catalog's and the gateway's catalog client
- * (`apps/gateway/src/modules/catalog/catalog.module.ts`), which both omit
- * it deliberately. That reasoning does not transfer here: `inventory.proto`
- * is the first proto in this codebase with a plain scalar whose ordinary
- * value is zero (`soldCount`, `heldCount`). proto3 does not serialize a
- * zero-valued scalar, so without `defaults: true` an honest "nothing sold"
- * answer decodes with the counts *absent*, not zero -- which is exactly the
- * silence this task exists to tell apart from a real zero. Do not "unify"
- * this with the other two clients' loader options.
+ * Match inventory's server loader, including repeated-field shapes.
+ * Keep defaults: true: proto3 omits zero soldCount/heldCount scalars, which must
+ * decode as zero rather than unanswered counts. Catalog and gateway intentionally
+ * omit defaults for their different schemas; do not unify these options.
  */
 export const INVENTORY_GRPC_LOADER_OPTIONS = {
   enums: String,
@@ -56,16 +46,8 @@ export const INVENTORY_GRPC_LOADER_OPTIONS = {
 } as const;
 
 /**
- * The operator's side of the catalogue (TA-20): publishing a timetable
- * version, the audit trail BR-52 requires of it, the idempotency keys that
- * make a retried publish safe, and the seam that answers the one question a
- * publish must never guess at -- has this dated trip already sold or held
- * seats.
- *
- * Every entity any of those providers reads is registered here. `forFeature`
- * is per-module, so an entity another module registered is not injectable in
- * this one, and a missing registration fails at *runtime* rather than at
- * build time.
+ * Register every provider's entities locally: forFeature registrations do not
+ * cross module boundaries, and omissions fail at runtime.
  */
 @Module({
   imports: [

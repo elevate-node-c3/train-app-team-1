@@ -33,7 +33,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     if (host.getType() !== 'http') {
-      // In non-HTTP contexts (e.g. gRPC or microservices), rethrow or let Nest handle it
       throw exception;
     }
 
@@ -58,9 +57,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       status = exception.getStatus();
       const response = exception.getResponse();
 
-      // An adapter that knows *why* it failed can send a stable code. It is
-      // only trusted when it names a code in the enum, so a gRPC detail string
-      // can never become a client-visible code.
+      // Trust only enum error codes, never arbitrary upstream detail strings.
       if (response && typeof response === 'object') {
         const explicit = (response as Record<string, unknown>).code;
         if (
@@ -80,7 +77,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
           if (code === ErrorCode.INTERNAL_SERVER_ERROR) {
             code = ErrorCode.BAD_REQUEST;
           }
-          // Extract class-validator errors
           details = this.extractValidationDetails(response, lang);
           if (details && details.length > 0) {
             code = ErrorCode.VALIDATION_ERROR;
@@ -127,12 +123,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         details = this.extractValidationDetails(response, lang, false);
       }
     } else {
-      // Non-HttpException: Always 500, never leak stack trace or internal message to client
+      // Unexpected errors return 500 without internal messages or stack traces.
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       code = ErrorCode.INTERNAL_SERVER_ERROR;
     }
 
-    // Full detail goes to the service log with the correlation ID (§2.4)
+    // Keep full error details in correlated logs, not client responses.
     this.logger.error(
       `[${correlationId}] Handled exception: ${exception instanceof Error ? exception.stack : String(exception)}`,
     );
@@ -174,7 +170,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const defaultAction = resolveDetailText(ACTION_DEFAULT_KEY, lang);
 
-    // If message is an array of strings produced by ValidationPipe
     if (Array.isArray(messages)) {
       return messages.flatMap<ValidationErrorDetail>((msgItem) => {
         if (typeof msgItem === 'string') {

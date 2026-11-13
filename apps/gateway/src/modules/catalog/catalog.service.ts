@@ -30,25 +30,14 @@ export interface SearchTripsResult extends Omit<
 > {
   /** Always present, even when the day offered nothing to narrow. */
   filterOptions: FilterOptions;
-  /**
-   * Present only when `trips` is empty. The reason is kept beside the sentence
-   * so a client can branch on the code and still have something to show.
-   */
+  /** Empty results include both a reason code and a readable message. */
   emptyResult?: {
     reason: string;
     message: string;
   };
 }
 
-/**
- * Shapes a search for the HTTP edge.
- *
- * The one piece of real work here is the language. Catalog returns a reason
- * enum and the values that go in the sentence; the words are chosen here,
- * because `Accept-Language` is resolved at the edge and nowhere else (BR-56).
- * That is what keeps catalog free of any language at all, and why the message
- * catalogue is keyed by the wire enum -- no mapping table in between.
- */
+/** Choose localized HTTP messages from catalog's reason codes. */
 @Injectable()
 export class CatalogService {
   constructor(private readonly catalog: CatalogGrpcClientService) {}
@@ -133,10 +122,7 @@ export class CatalogService {
 
     return {
       ...rest,
-      // proto3 omits an empty repeated field, so a day with no trips arrives
-      // with no `trips` key at all. The REST contract must not make a client
-      // guess that absent means empty -- it is the difference between "no
-      // trains" and "the server forgot to tell me".
+      // Normalize omitted proto3 arrays to the REST contract.
       trips: response.trips ?? [],
       dateStrip: response.dateStrip ?? [],
       filterOptions: filterOptionsOf(response.filterOptions),
@@ -146,7 +132,7 @@ export class CatalogService {
     };
   }
 
-  /** The return leg: the same shaping, one fewer picker. */
+  /** Return-leg results omit the outbound date picker. */
   async searchReturn(
     query: SearchReturnTripsDto,
     language: SupportedLanguage,
@@ -176,13 +162,7 @@ export class CatalogService {
     };
   }
 
-  /**
-   * A trip's stops, between the two stations the search result offered.
-   *
-   * Nothing to shape but the absence: proto3 omits an empty repeated field,
-   * and a trip with no stops in range is a refusal from catalog rather than an
-   * empty list, so `stops: []` here only guards the key's existence.
-   */
+  /** Return stops for the passenger's segment; ensure the array key exists. */
   async tripStops(
     tripId: string,
     query: TripStopsQueryDto,
@@ -197,13 +177,7 @@ export class CatalogService {
     return { stops: response.stops ?? [] };
   }
 
-  /**
-   * The signed-in traveller's recent searches.
-   *
-   * No account travels in the request: catalog reads the traveller from the
-   * caller metadata the gRPC client attaches, which the gateway minted from a
-   * verified token.
-   */
+  /** Account identity travels in verified gRPC caller metadata, not the request. */
   async recentSearches(
     query: RecentSearchesQueryDto,
   ): Promise<ListRecentSearchesResponse> {
@@ -214,15 +188,7 @@ export class CatalogService {
     return { recentSearches: response.recentSearches ?? [] };
   }
 
-  /**
-   * An empty result's reason, with the sentence that explains it.
-   *
-   * The one piece of real work in this service, shared by both legs: catalog
-   * returns a reason enum and the values that go in the sentence, and the words
-   * are chosen here because `Accept-Language` is resolved at the edge and
-   * nowhere else (BR-56). The catalogue is keyed by the wire enum, so there is
-   * no mapping table in between.
-   */
+  /** Render the reason code with its values in the requested language. */
   private explain(
     emptyResult: EmptyResult,
     language: SupportedLanguage,
@@ -256,16 +222,9 @@ export interface SearchReturnTripsResult extends Omit<
   };
 }
 
-/**
- * The filter fields as one wire object, or nothing at all.
- *
- * Absent rather than `{}` when the traveller filtered nothing: proto3 would
- * send an empty message either way, but an explicit `undefined` keeps "no
- * filters" distinguishable in a log and in a test.
- */
+/** Keep absent filters undefined so logs and tests can distinguish them. */
 export function filtersFrom(
-  // Structural rather than a union of the two DTOs: both legs filter by the
-  // same five things, and that is the only part of them this reads.
+  // Both legs share these filter fields.
   query: Pick<
     SearchTripsDto,
     | 'trainTypeIds'
@@ -294,15 +253,7 @@ export function filtersFrom(
   return Object.keys(filters).length === 0 ? undefined : filters;
 }
 
-/**
- * The day's facets, with proto3's absences filled in.
- *
- * `trainTypes` is a repeated field, so an empty one arrives as no key at all,
- * and a client reading `filterOptions.trainTypes.length` would throw. The fare
- * range defaults to zero for the same reason: an int32 that is 0 is omitted on
- * the wire, which is indistinguishable from "a free trip" unless the edge
- * restores it.
- */
+/** Fill omitted proto3 arrays and numeric bounds with empty or zero defaults. */
 function filterOptionsOf(
   filterOptions: SearchOneWayTripsResponse['filterOptions'],
 ): FilterOptions {

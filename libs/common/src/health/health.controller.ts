@@ -12,8 +12,7 @@ import { Public } from '../auth/access-level.decorator.js';
 export class HealthController {
   constructor(
     private readonly healthService: HealthService,
-    // Unbound in six of seven services, which is what makes this a local
-    // report for them without the controller knowing where it runs.
+    // Only the gateway binds aggregation; other services report local health.
     @Optional()
     @Inject(AGGREGATE_READINESS)
     private readonly aggregate?: AggregateReadiness,

@@ -13,9 +13,8 @@ export const CALLER_ROLES_HEADER = 'x-caller-roles';
 export const CALLER_BOOKABLE_HEADER = 'x-caller-bookable';
 
 /**
- * Headers a client must never be able to supply. The gateway mints them after
- * verifying the token; anything that arrives with one of these names is an
- * imitation and is removed before any reader can see it.
+ * Only the gateway may set these headers after token verification. Strip
+ * client-supplied values before any reader sees them.
  */
 export const INTERNAL_CALLER_HEADER_PREFIXES = [
   'x-caller-',

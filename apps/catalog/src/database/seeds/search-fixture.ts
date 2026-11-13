@@ -1,19 +1,9 @@
 import type { TrainCoachCompositionSnapshotItem } from '../../modules/trips/entities/dated-trip.entity.js';
 
 /**
- * A small but coherent network, with one trip per scenario the search specs
- * need.
- *
- * It writes `dated_trip` and `trip_stop` directly rather than going through
- * TA-16's generator, which does not exist yet. That is what lets TA-17 ship
- * without waiting, and `search-fixture.spec.ts` doubles as the contract the
- * generator has to satisfy later: dense 1-based positions, time advancing
- * along the route, a departure at every boardable stop.
- *
- * Every id is fixed, so a spec can assert on one. Instants are written as
- * Cairo local times with an explicit offset -- clearer than arithmetic, and it
- * keeps the daylight-saving trip honest about which side of the transition it
- * sits on.
+ * Direct dated-trip fixtures follow the generator's contract: dense one-based
+ * positions, advancing times, and a departure at every boardable stop.
+ * Fixed IDs support assertions; explicit Cairo offsets disambiguate DST instants.
  */
 
 function fixtureUuid(group: number, item: number): string {
@@ -57,7 +47,7 @@ export const SEARCH_FIXTURE_IDS = {
     giza: fixtureUuid(3, 5),
     assiut: fixtureUuid(3, 6),
     aswan: fixtureUuid(3, 7),
-    /** Exists but closed: a search naming it is refused, not answered empty. */
+    /** Inactive stations cause refusal, not empty results. */
     inactive: fixtureUuid(3, 8),
   },
   trainTypes: {
@@ -78,10 +68,8 @@ export const SEARCH_FIXTURE_IDS = {
     singleClass: fixtureUuid(7, 3),
     loop: fixtureUuid(7, 4),
     /**
-     * TA-20's operator flow: a train with a composition but no timetable, so
-     * a first publish creates version 1 rather than superseding a fixture.
-     * `operationsRetry` is the same shape for the idempotency replay case, so
-     * neither test depends on the other having run first.
+     * No timetable, so first publication creates version 1.
+     * operationsRetry is separate to keep replay tests independent.
      */
     operations: fixtureUuid(7, 5),
     operationsRetry: fixtureUuid(7, 6),
@@ -105,15 +93,12 @@ export const SEARCH_FIXTURE_IDS = {
 
 const IDS = SEARCH_FIXTURE_IDS;
 
-/** Train numbers, which travellers type and the optional filter matches. */
 export const SEARCH_FIXTURE_TRAIN_NUMBERS = {
   mainLine: 903,
   overnight: 980,
   singleClass: 404,
   loop: 606,
-  /** TA-20's operator flow. */
   operations: 916,
-  /** TA-20's idempotent-replay flow. */
   operationsRetry: 917,
 } as const;
 
@@ -225,14 +210,12 @@ function seatRows(count: number, perSide: number) {
   }));
 }
 
-/** 10 rows of 2+2 = 40 seats. */
 const FIRST_LAYOUT: FixtureCoachLayout = {
   id: IDS.coachLayouts.first,
   layoutName: 'first-2-2-10',
   rows: seatRows(10, 2),
 };
 
-/** 12 rows of 3+3 = 72 seats. */
 const SECOND_LAYOUT: FixtureCoachLayout = {
   id: IDS.coachLayouts.second,
   layoutName: 'second-3-3-12',
@@ -293,13 +276,7 @@ export function seatCapacityOf(
     );
 }
 
-/**
- * The seven-stop southbound route, on a given date.
- *
- * Alexandria -> Tanta -> Banha -> Ramsis -> Giza -> Assiut -> Aswan, so a
- * search for any two of them in that order matches (BR-15) and the reverse
- * matches nothing. Alexandria to Ramsis has exactly two stops between.
- */
+/** Only forward pairs match; Alexandria -> Ramsis has two intermediate stops. */
 function mainLineStops(
   tripId: string,
   date: string,
@@ -351,9 +328,7 @@ function mainLineTimetableStops(): FixtureTimetableStop[] {
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
 export const SEARCH_FIXTURE = {
-  // `governorate.sort_order` is UNIQUE, so these start at 101 to leave room for
-  // the domain seed's own governorates. Both networks can then share one
-  // database, which is what the seeder loads.
+  // Start unique sort orders at 101 to coexist with the domain seed.
   governorates: [
     { id: IDS.governorates.alexandria, nameAr: 'الإسكندرية', nameEn: 'Alexandria', sortOrder: 101 },
     { id: IDS.governorates.gharbia, nameAr: 'الغربية', nameEn: 'Gharbia', sortOrder: 102 },
@@ -402,7 +377,7 @@ export const SEARCH_FIXTURE = {
     { id: IDS.trains.overnight, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.overnight, trainTypeId: IDS.trainTypes.sleeper },
     { id: IDS.trains.singleClass, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.singleClass, trainTypeId: IDS.trainTypes.express },
     { id: IDS.trains.loop, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.loop, trainTypeId: IDS.trainTypes.express },
-    // No timetables: TA-20's first publish creates one for each.
+    // First publication creates these trains' timetables.
     { id: IDS.trains.operations, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.operations, trainTypeId: IDS.trainTypes.express },
     { id: IDS.trains.operationsRetry, trainNumber: SEARCH_FIXTURE_TRAIN_NUMBERS.operationsRetry, trainTypeId: IDS.trainTypes.express },
   ] satisfies FixtureTrain[],
@@ -425,8 +400,7 @@ export const SEARCH_FIXTURE = {
     { id: IDS.timetables.loop, trainId: IDS.trains.loop, runningDays: EVERY_DAY, effectiveFrom: '2026-01-01', effectiveUntil: null, version: 1, status: 'published' },
   ] satisfies FixtureTimetable[],
 
-  // The empty-reason probes ask the timetables, not the dated trips, so these
-  // rows decide whether "no train runs between these stations" is the answer.
+  // Empty-result probes use timetables, not dated trips, to decide whether a route is served.
   timetableStops: [
     ...mainLineTimetableStops(),
     { id: fixtureUuid(10, 21), timetableId: IDS.timetables.overnight, stationId: IDS.stations.ramsis, position: 1, dayOffset: 0, arrivalTime: null, departureTime: '23:00' },
@@ -443,13 +417,11 @@ export const SEARCH_FIXTURE = {
 
   datedTrips: [
     { id: IDS.trips.mainLine, trainId: IDS.trains.mainLine, timetableId: IDS.timetables.mainLine, serviceDate: '2026-06-20', timetableVersion: 1, compositionSnapshot: BOTH_CLASSES, status: 'published', publishedAt: cairoAt('2026-06-01', '09:00', SUMMER) },
-    // Leaves its first station at 23:00 on the 19th and departs Assiut at
-    // 04:10 on the 20th, so Assiut onwards belongs to the 20th (BR-16).
+    // Search Assiut departures under June 20, not the trip's June 19 service date.
     { id: IDS.trips.overnight, trainId: IDS.trains.overnight, timetableId: IDS.timetables.overnight, serviceDate: '2026-06-19', timetableVersion: 1, compositionSnapshot: [coachSnapshot(1, 1, FIRST_CLASS, FIRST_LAYOUT)], status: 'published', publishedAt: cairoAt('2026-06-01', '09:00', SUMMER) },
     { id: IDS.trips.singleClass, trainId: IDS.trains.singleClass, timetableId: IDS.timetables.singleClass, serviceDate: '2026-06-20', timetableVersion: 1, compositionSnapshot: [coachSnapshot(1, 1, SECOND_CLASS, SECOND_LAYOUT)], status: 'published', publishedAt: cairoAt('2026-06-01', '09:00', SUMMER) },
     { id: IDS.trips.loop, trainId: IDS.trains.loop, timetableId: IDS.timetables.loop, serviceDate: '2026-06-20', timetableVersion: 1, compositionSnapshot: [coachSnapshot(1, 1, FIRST_CLASS, FIRST_LAYOUT)], status: 'published', publishedAt: cairoAt('2026-06-01', '09:00', SUMMER) },
-    // Cairo's clocks jump from 00:00 to 01:00 on this date, so every time on
-    // it is already +03:00 and the day is 23 hours long.
+    // Cairo jumps 00:00 to 01:00: departures use +03:00 and the day lasts 23 hours.
     { id: IDS.trips.springForward, trainId: IDS.trains.mainLine, timetableId: IDS.timetables.mainLine, serviceDate: '2026-04-24', timetableVersion: 1, compositionSnapshot: BOTH_CLASSES, status: 'published', publishedAt: cairoAt('2026-04-01', '09:00', '+02:00') },
     { id: IDS.trips.draft, trainId: IDS.trains.mainLine, timetableId: IDS.timetables.mainLine, serviceDate: '2026-06-21', timetableVersion: 1, compositionSnapshot: BOTH_CLASSES, status: 'draft', publishedAt: null },
     { id: IDS.trips.withdrawn, trainId: IDS.trains.mainLine, timetableId: IDS.timetables.mainLine, serviceDate: '2026-06-22', timetableVersion: 1, compositionSnapshot: BOTH_CLASSES, status: 'withdrawn', publishedAt: cairoAt('2026-06-01', '09:00', SUMMER) },
@@ -462,8 +434,7 @@ export const SEARCH_FIXTURE = {
     { id: fixtureUuid(12, 203), tripId: IDS.trips.overnight, stationId: IDS.stations.aswan, position: 3, arrivalAt: cairoAt('2026-06-20', '09:20', SUMMER), departureAt: null },
     { id: fixtureUuid(12, 301), tripId: IDS.trips.singleClass, stationId: IDS.stations.tanta, position: 1, arrivalAt: null, departureAt: cairoAt('2026-06-20', '10:00', SUMMER) },
     { id: fixtureUuid(12, 302), tripId: IDS.trips.singleClass, stationId: IDS.stations.banha, position: 2, arrivalAt: cairoAt('2026-06-20', '10:40', SUMMER), departureAt: null },
-    // Calls at Banha twice, so Ramsis -> Banha has two valid pairings and the
-    // query must still return one row.
+    // Two Banha visits create two Ramsis -> Banha pairs; return one row per trip.
     { id: fixtureUuid(12, 401), tripId: IDS.trips.loop, stationId: IDS.stations.ramsis, position: 1, arrivalAt: null, departureAt: cairoAt('2026-06-20', '07:00', SUMMER) },
     { id: fixtureUuid(12, 402), tripId: IDS.trips.loop, stationId: IDS.stations.banha, position: 2, arrivalAt: cairoAt('2026-06-20', '07:50', SUMMER), departureAt: cairoAt('2026-06-20', '08:00', SUMMER) },
     { id: fixtureUuid(12, 403), tripId: IDS.trips.loop, stationId: IDS.stations.tanta, position: 3, arrivalAt: cairoAt('2026-06-20', '08:40', SUMMER), departureAt: cairoAt('2026-06-20', '08:50', SUMMER) },
@@ -475,8 +446,7 @@ export const SEARCH_FIXTURE = {
   ] satisfies FixtureTripStop[],
 
   fares: [
-    // Three versions of one price: an old one, the one in force, and one that
-    // has not started yet. The query must pick the middle.
+    // Select the current fare, not the older or future version.
     { id: fixtureUuid(13, 1), trainId: IDS.trains.mainLine, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.alexandria, destinationStationId: IDS.stations.ramsis, amountPiastres: 14000, effectiveFrom: new Date('2026-01-01T00:00:00Z') },
     { id: fixtureUuid(13, 2), trainId: IDS.trains.mainLine, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.alexandria, destinationStationId: IDS.stations.ramsis, amountPiastres: 15500, effectiveFrom: new Date('2026-06-01T00:00:00Z') },
     { id: fixtureUuid(13, 3), trainId: IDS.trains.mainLine, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.alexandria, destinationStationId: IDS.stations.ramsis, amountPiastres: 20000, effectiveFrom: new Date('2026-12-01T00:00:00Z') },
@@ -486,7 +456,6 @@ export const SEARCH_FIXTURE = {
     { id: fixtureUuid(13, 7), trainId: IDS.trains.overnight, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.ramsis, destinationStationId: IDS.stations.assiut, amountPiastres: 18000, effectiveFrom: new Date('2026-01-01T00:00:00Z') },
     { id: fixtureUuid(13, 8), trainId: IDS.trains.overnight, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.assiut, destinationStationId: IDS.stations.aswan, amountPiastres: 12000, effectiveFrom: new Date('2026-01-01T00:00:00Z') },
     { id: fixtureUuid(13, 9), trainId: IDS.trains.loop, travelClassId: IDS.travelClasses.first, originStationId: IDS.stations.ramsis, destinationStationId: IDS.stations.banha, amountPiastres: 3000, effectiveFrom: new Date('2026-01-01T00:00:00Z') },
-    // Train 404 has no fare at all: an unpriceable trip cannot be booked, so
-    // search must exclude it rather than show a blank price.
+    // Exclude train 404: an unpriced trip cannot be booked.
   ] satisfies FixtureFare[],
 } as const;

@@ -17,14 +17,8 @@ export interface OutboundEmail {
 }
 
 /**
- * The SMTP adapter. The transport is built in `onModuleInit`, not in the
- * constructor: `test/skeleton/apps.spec.ts` compiles every root module without
- * Docker, and a constructor that opens a socket would fail that test.
- *
- * All three timeouts share the handler budget. A hung DNS lookup, greeting or
- * socket must fail inside the same 3s the consumer's per-attempt cap allows;
- * otherwise the consumer would abandon a send that is still running, retry it,
- * and produce the duplicate this design already keeps rare.
+ * Open SMTP on startup, not in the constructor.
+ * Keep SMTP timeouts within the handler limit to avoid overlapping retries.
  */
 @Injectable()
 export class NodemailerEmailSender implements OnModuleInit, OnModuleDestroy {

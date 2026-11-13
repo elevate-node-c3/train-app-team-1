@@ -1,18 +1,10 @@
 import type { SearchSort } from '@app/contracts';
 
 /**
- * Ordering one day's results (BR-18, CAT-4).
- *
- * The default is departure from the passenger's origin, ascending. That is
- * also what an absent sort decodes to, so a client that has never heard of the
- * other orders keeps the response it has always had. Unknown values fall back
- * to it as well: an older server must not reject a newer client's order.
- *
- * Pure and in memory: these run over the list the query already produced, so
- * changing the order never changes the cache key or adds a statement.
+ * Default to ascending origin departure for absent or unknown sorts, including
+ * orders from newer clients. Sort in memory without extra queries or cache keys.
  */
 
-/** The fields this module needs from a cacheable trip. */
 export interface SortableTrip {
   tripId: string;
   trainNumber: number;
@@ -55,7 +47,6 @@ function comparatorFor<T extends SortableTrip>(
         left.destinationArrivalMillis - right.destinationArrivalMillis ||
         byDeparture(left, right);
 
-    // UNSPECIFIED, DEPARTURE_ASC, and anything a newer client invented.
     default:
       return byDeparture;
   }
@@ -65,10 +56,7 @@ function fareOrInfinity(trip: SortableTrip): number {
   return trip.farePiastres ?? Number.POSITIVE_INFINITY;
 }
 
-/**
- * A deterministic last resort. Two trips can share a departure time, and a
- * response that reorders between calls is hard to test and worse to diff.
- */
+/** Break time ties by train number and trip ID for deterministic results. */
 function compareIdentifiers(left: SortableTrip, right: SortableTrip): number {
   return (
     left.trainNumber - right.trainNumber ||

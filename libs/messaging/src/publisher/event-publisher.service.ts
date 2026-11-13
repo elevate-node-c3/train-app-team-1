@@ -10,26 +10,14 @@ import {
 } from '../amqp-topology.js';
 
 /**
- * Publishes an envelope on the producer's confirm channel and resolves only
- * after the broker has acknowledged it.
- *
- * `mandatory` is deliberately not set. Publishing before any consumer queue
- * exists must succeed and be dropped; otherwise "add a consumer later" would
- * require the producer to tolerate unroutable returns.
+ * Resolve only after the broker confirms publication.
+ * No mandatory flag: events without a consumer queue may be dropped.
  */
 @Injectable()
 export class EventPublisherService {
   private readonly logger = new Logger(EventPublisherService.name);
 
-  /**
-   * The channel the exchange was last asserted on, rather than a boolean.
-   *
-   * A latch outlives the connection it was set for: against a rebuilt broker
-   * the exchange no longer exists, `train.events` is never re-asserted, and
-   * every publish fails with a 404 in a permanent loop. Comparing the channel
-   * re-asserts exactly when the channel is new — which is precisely when the
-   * exchange may be missing — and needs no reconnect subscription to reset.
-   */
+  /** Remember the channel, not a flag, so rebuilt brokers get the exchange declaration again. */
   private topologyChannel: ConfirmChannel | null = null;
 
   constructor(private readonly amqp: AmqpClientService) {}

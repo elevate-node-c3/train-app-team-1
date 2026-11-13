@@ -51,9 +51,8 @@ export interface SessionRevokedPayloadV1 {
   reason: 'sign_out' | 'password_reset' | 'refresh_reuse' | 'admin';
   revokedAt: string;
   /**
-   * Additive (v1-compatible): a password reset revokes every session of the
-   * account in one event, and the gateway must reject any access token minted
-   * before it. Older consumers ignore the field and still revoke `sessionId`.
+   * Optional v1 field revokes all account sessions after a password reset.
+   * Reject earlier tokens; old consumers still revoke only sessionId.
    */
   allSessions?: boolean;
 }

@@ -1,14 +1,7 @@
 import type { RecentSearchKindColumn } from './entities/recent-search.entity.js';
 
-/**
- * The shapes the recent-searches path passes between its pieces.
- *
- * They live here rather than beside the repository because the service, the
- * fingerprint and the repository all speak them, and because a
- * `*.repository.ts` is required to export nothing but its concrete class.
- */
+/** Keep shared types outside repositories, which export only their concrete class. */
 
-/** One search to record, as the search path hands it over. */
 export interface RecentSearchInput {
   /** The signed-in traveller, from the verified token. */
   accountId: string;
@@ -25,11 +18,8 @@ export interface RecentSearchInput {
 }
 
 /**
- * One stored search, joined to the names a client needs to show it.
- *
- * Both languages travel; the edge picks (BR-56). The dates are the stored
- * civil dates -- deciding whether they are too old to repeat is the service's
- * job, because it needs `now`.
+ * Send both languages; the edge chooses. Stored dates are civil dates, and
+ * the service uses now to decide whether they are too old to repeat.
  */
 export interface RecentSearchRow {
   originStationId: string;

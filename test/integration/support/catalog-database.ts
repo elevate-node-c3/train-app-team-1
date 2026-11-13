@@ -19,12 +19,8 @@ import { TravelClassEntity } from '../../../apps/catalog/src/modules/trains/enti
 import { TripStopEntity } from '../../../apps/catalog/src/modules/trips/entities/trip-stop.entity.js';
 
 /**
- * The catalog database, as an integration spec on the host sees it.
- *
- * Reached through the port `docker-compose.override.yml` publishes, and as the
- * `catalog` login role rather than the superuser -- so a spec that would fail
- * on a missing grant fails here too, rather than passing locally and breaking
- * in the container.
+ * Use the override's host port and catalog role, not the superuser,
+ * so missing grants fail here as they would in the service.
  */
 export const CATALOG_DATABASE_URL =
   process.env.CATALOG_TEST_DATABASE_URL ??
@@ -53,16 +49,9 @@ export const CATALOG_TABLES = [
 let dataSource: DataSource | null = null;
 
 /**
- * Fails fast, and says what to do about it.
- *
- * Without this, a stopped container produces around thirty seconds of driver
- * retry warnings and then reports every test as *skipped* -- because
- * `beforeAll` threw -- which reads like "nothing to run" rather than "start
- * the database". The exit code is still non-zero, so a gate catches it; the
- * person reading the output is the one being misled. The e2e tier ends with
- * `compose down -v`, so this is the normal way to arrive here.
- *
- * Exported because Redis needs the same treatment for the same reason.
+ * Fail fast with startup instructions for Postgres and Redis. Driver retries
+ * otherwise delay failure and make tests look skipped when beforeAll throws.
+ * The e2e tier removes containers and volumes with compose down -v.
  */
 export async function assertReachable(
   label: string,
@@ -102,16 +91,13 @@ export async function assertReachable(
 
 async function assertDatabaseReachable(): Promise<void> {
   const url = new URL(CATALOG_DATABASE_URL);
-  // An absent port parses as '', and Number('') is 0 -- which would report
-  // Postgres unreachable when it is merely on the default port.
+  // An absent port is ''; avoid converting it to 0 instead of the default port.
   await assertReachable('Postgres', url.hostname, Number(url.port || 5432));
 }
 
 /**
- * Opens the connection once per spec file and applies migrations.
- *
- * Migrations are idempotent through TypeORM's own ledger, so a second call is
- * cheap; the service normally runs them at bootstrap, and nothing boots here.
+ * Reuse one connection per spec file and run migrations without booting a service.
+ * TypeORM's ledger prevents applying migrations twice.
  */
 export async function catalogDataSource(): Promise<DataSource> {
   if (dataSource?.isInitialized) return dataSource;
@@ -144,11 +130,8 @@ export async function catalogDataSource(): Promise<DataSource> {
     extra: { connectionTimeoutMillis: 5000 },
   });
 
-  // A listening socket is not a ready server: Postgres accepts connections
-  // during start-up and then drops them with "Connection terminated
-  // unexpectedly". The socket probe above is for "the container is gone"; this
-  // short retry is for "it is still waking up", which is what `docker compose
-  // up -d` immediately followed by a test run looks like.
+  // Postgres can accept sockets before it is ready and then drop connections.
+  // The probe catches missing containers; retries cover startup.
   await withRetries(() => dataSource!.initialize(), 'connect to Postgres');
   await withRetries(() => dataSource!.runMigrations(), 'apply migrations');
 
@@ -185,13 +168,8 @@ export async function closeCatalogDataSource(): Promise<void> {
 }
 
 /**
- * Counts the statements a block of work sends to Postgres.
- *
- * TA-28 asks that the query count stay bounded as the result count grows, and
- * that is only an assertion if something counts. TypeORM's logger sees every
- * statement a `DataSource` issues, so swapping one in for the duration of a
- * call measures it directly rather than inferring it from timings or from
- * `pg_stat_database` deltas.
+ * Count statements with TypeORM's logger to check bounded query counts directly,
+ * rather than inferring them from timings or database-wide statistics.
  */
 export async function countStatements<T>(
   source: DataSource,
@@ -216,11 +194,7 @@ export async function countStatements<T>(
 }
 
 /**
- * Empties every catalog table.
- *
- * One statement so it is one transaction, and RESTART IDENTITY is deliberately
- * absent -- every primary key in this schema is a caller-supplied uuid, so
- * there is no sequence to reset.
+ * Truncate in one transaction. Caller-supplied UUIDs need no RESTART IDENTITY.
  */
 export async function truncateCatalog(source: DataSource): Promise<void> {
   await source.query(`TRUNCATE TABLE ${CATALOG_TABLES.join(', ')} CASCADE`);

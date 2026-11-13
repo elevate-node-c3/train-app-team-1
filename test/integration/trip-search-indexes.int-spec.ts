@@ -10,14 +10,9 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * The search indexes exist, and the planner can actually use them.
- *
- * Existence alone is weak: an index on the wrong column order is present and
- * useless. The fixture is far too small for Postgres to prefer any index over
- * a sequential scan, so these specs turn seqscan off for the duration of a
- * plan. That does not prove the planner WILL choose the index on production
- * data -- it proves the index covers the predicate's shape, which is the part
- * a migration can get wrong.
+ * The small fixture favors sequential scans, so disable them to check index
+ * coverage. This proves the indexes can serve the predicates, not that Postgres
+ * will choose them on production data.
  */
 describe('the trip search indexes', () => {
   let source: DataSource;
@@ -32,13 +27,8 @@ describe('the trip search indexes', () => {
   });
 
   /**
-   * The plan Postgres would use with sequential scans disabled.
-   *
-   * Both statements have to run on one connection inside one transaction:
-   * `SET LOCAL` is scoped to a transaction, and `DataSource.query` takes an
-   * arbitrary connection from the pool each time, so setting it separately
-   * would be discarded before the EXPLAIN ran. The transaction is rolled back,
-   * which also keeps the setting from leaking into another spec.
+   * SET LOCAL and EXPLAIN must share one connection and transaction;
+   * pooled DataSource.query calls may not. Rollback keeps the setting local.
    */
   async function planFor(sql: string, parameters: unknown[]): Promise<string> {
     const runner = source.createQueryRunner();
@@ -68,8 +58,7 @@ describe('the trip search indexes', () => {
           'idx_trip_stop_station_departure',
           'idx_trip_stop_trip_station',
           'idx_timetable_stop_timetable_station',
-          // Pre-existing, and deliberately not dropped: it belongs to another
-          // story's migration even though it is now a redundant prefix.
+          // Keep the pre-existing prefix index owned by an earlier migration.
           'idx_trip_stop_station',
           'idx_dated_trip_service_date',
         ],
@@ -85,15 +74,7 @@ describe('the trip search indexes', () => {
     ]);
   });
 
-  /**
-   * The entities and the migrations describe the same indexes.
-   *
-   * A migration is what creates an index, but an entity is what a reader
-   * consults, so an index present in only one of the two is a trap: either the
-   * entity promises something the database does not have, or the database
-   * carries one nobody reading the code would know about. This compares both
-   * directions, so neither can drift.
-   */
+  /** Compare both directions so missing and undocumented indexes cannot pass. */
   it('declares on the entities exactly the indexes the database has', async () => {
     const declared = source.entityMetadatas
       .flatMap((meta) => meta.indices)
@@ -132,8 +113,7 @@ describe('the trip search indexes', () => {
           ).toContain(column.databaseName);
         }
 
-        // A partial index that lost its predicate would silently cover rows it
-        // was never meant to, so the WHERE travels with it.
+        // A partial index must retain a WHERE clause.
         if (index.where) {
           expect(definition?.toUpperCase()).toContain('WHERE');
         }
@@ -152,7 +132,7 @@ describe('the trip search indexes', () => {
     expect(invalid).toEqual([]);
   });
 
-  // The driving predicate: stops at one station departing inside a Cairo day.
+  // Origin departures are filtered to a Cairo day.
   it('can serve the origin side with the station-and-departure index', async () => {
     const { startUtc, endUtc } = cairoDayBounds('2026-06-20');
 
@@ -166,7 +146,6 @@ describe('the trip search indexes', () => {
     expect(plan).toContain('idx_trip_stop_station_departure');
   });
 
-  // The destination side: given a trip, its stop at the other station.
   it('can serve the destination side with the trip-and-station index', async () => {
     const plan = await planFor(
       `SELECT position, arrival_at FROM trip_stop
@@ -187,8 +166,7 @@ describe('the trip search indexes', () => {
     expect(plan).toContain('idx_timetable_stop_timetable_station');
   });
 
-  // No index was added for the fare: the existing unique constraint is already
-  // the exact btree, read backwards.
+  // The fare's unique index supports a backward scan; no extra index is needed.
   it('can serve the fare lookup from the existing unique index', async () => {
     const plan = await planFor(
       `SELECT amount_piastres FROM fare

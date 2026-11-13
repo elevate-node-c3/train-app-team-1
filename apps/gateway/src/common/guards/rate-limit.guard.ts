@@ -12,11 +12,7 @@ import { ErrorCode } from '@app/contracts';
 import { RATE_LIMIT_KEY, type RateLimitOptions } from '@app/common';
 import { RateLimitStore } from '../security/stores/rate-limit.store.js';
 
-/**
- * One bucket per route and caller. The e-mail address (when the body carries
- * one) makes the sign-in budget per account as well as per address, and the
- * hash keeps PII out of Redis keys and out of any key dump.
- */
+/** Hash route, IP, and email so Redis keys contain no personal data. */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   constructor(
@@ -45,8 +41,7 @@ export class RateLimitGuard implements CanActivate {
     const key = `${options.bucket}:${digest(`${address}|${email}`)}`;
 
     const hit = await this.store.increment(key, options.windowSeconds);
-    // A per-process counter is weaker than a shared one, so it is allowed to
-    // spend only half the configured budget while Redis is unavailable.
+    // Halve the budget because local counters cannot coordinate across instances.
     const limit = hit.degraded
       ? Math.max(1, Math.ceil(options.limit / 2))
       : options.limit;

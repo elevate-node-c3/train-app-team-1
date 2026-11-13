@@ -1,8 +1,6 @@
 /**
- * The delivery budget, as executable constants. The worst case from issuance to
- * an accepted email is `pollIntervalMs + attempts × handlerTimeoutMs +
- * sum(retryDelays)`. Publish, confirm and transit are estimates, not bounds, so
- * they sit outside the inequality and are absorbed by the headroom.
+ * Budgeted time = poll + attempts * handler timeout + total retry delays.
+ * Publish, broker confirmation, and transit use the remaining headroom.
  */
 export const BUDGET_MS = 30_000;
 
@@ -34,9 +32,8 @@ export function worstCaseDeliveryMs(config: DeliveryBudgetConfig): number {
 }
 
 /**
- * The most the relay may wait between polls, less 1ms for the strict `<`. It is
- * the only part of the budget identity can check locally. Derived, not written
- * down, so retuning the consumer moves this bound with it.
+ * Derive identity's poll limit from the consumer budget.
+ * Subtract 1ms so the total stays strictly below the limit.
  */
 export const MAX_RELAY_POLL_INTERVAL_MS =
   BUDGET_MS -
@@ -47,7 +44,7 @@ export const MAX_RELAY_POLL_INTERVAL_MS =
   }) -
   1;
 
-/** Strict `<`: equality leaves no headroom for publish, confirm and transit. */
+/** Use < so publishing, confirmation, and transit still have headroom. */
 export function assertDeliveryBudget(config: DeliveryBudgetConfig): void {
   const worst = worstCaseDeliveryMs(config);
   if (worst >= BUDGET_MS) {

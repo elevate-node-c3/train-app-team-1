@@ -59,9 +59,8 @@ export class GrpcCorrelationInterceptor implements NestInterceptor {
   }
 
   /**
-   * Identity reads the caller from these headers only after the gateway has
-   * minted them from a verified token. A client that sends them directly never
-   * reaches this interceptor: the gateway strips the whole prefix first.
+   * Trust gateway metadata from verified tokens. The gateway strips client
+   * HTTP caller headers before forwarding the request.
    */
   private setCaller(metadata: Metadata): void {
     if (!metadata || typeof metadata.get !== 'function') return;
@@ -94,9 +93,6 @@ export class GrpcCorrelationInterceptor implements NestInterceptor {
   }
 }
 
-/**
- * Creates outgoing gRPC metadata carrying the current correlation ID from ClsService.
- */
 export function createGrpcMetadataWithCorrelation(
   cls: ClsService,
   existingMetadata?: Metadata,
@@ -108,9 +104,8 @@ export function createGrpcMetadataWithCorrelation(
 }
 
 /**
- * Correlation plus the verified caller. Only the gateway calls this: identity
- * and the other services read these values from the transport, never from an
- * inbound HTTP header.
+ * Gateway only: forward verified caller data through gRPC metadata, never
+ * copy it from inbound HTTP headers.
  */
 export function createGrpcMetadataWithCaller(
   cls: ClsService,

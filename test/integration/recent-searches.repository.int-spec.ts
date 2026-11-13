@@ -16,23 +16,14 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * Recent searches, against real Postgres.
- *
- * Every rule this table carries is a database rule, so none of them can be
- * checked anywhere else: the unique constraint that makes a repeat move a row
- * instead of adding one, the window-function trim that caps a traveller at
- * five, and the active-station joins that drop an entry whose station closed.
- *
- * The concurrency case is the reason the constraint exists. "Two searches at
- * the same instant from two clients of the same traveller leave at most 5
- * entries and no duplicate -- the guarantee lives in the data store, not in a
- * read-then-write" is the story's sentence, and a single-threaded spec would
- * pass with the read-then-write it forbids.
+ * Real Postgres verifies repeat deduplication, the five-entry cap and
+ * active-station joins. Concurrent writes must preserve the cap and uniqueness;
+ * a read-then-write implementation can pass single-threaded tests but race here.
  */
 
 const NOW = new Date('2026-06-15T09:00:00Z');
 
-/** Two travellers, so "never shared" has something to not be shared with. */
+/** Two accounts to check that searches are never shared. */
 const TRAVELLER = '77777777-7777-4777-8777-777777777771';
 const OTHER_TRAVELLER = '77777777-7777-4777-8777-777777777772';
 
@@ -50,7 +41,7 @@ const search = (
   ...overrides,
 });
 
-/** Five searches that differ in a way the fingerprint cares about. */
+/** Five searches with distinct fingerprints. */
 function fiveDistinct(): RecentSearchInput[] {
   return [
     search(),
@@ -72,7 +63,7 @@ describe('the recent-searches table', () => {
   });
 
   beforeEach(async () => {
-    // Only this table: the fixture's network is what the foreign keys point at.
+    // Keep the fixture network referenced by foreign keys.
     await source.query('DELETE FROM recent_search');
   });
 
@@ -114,7 +105,7 @@ describe('the recent-searches table', () => {
 
       const [entry] = await repository.list(TRAVELLER);
 
-      // Catalog speaks no language: both travel and the edge picks (BR-56).
+      // Catalog returns both languages; the gateway chooses one (BR-56).
       expect(entry.originNameEn.length).toBeGreaterThan(0);
       expect(entry.originNameAr.length).toBeGreaterThan(0);
       expect(entry.travelClassNameEn.length).toBeGreaterThan(0);
@@ -126,8 +117,7 @@ describe('the recent-searches table', () => {
 
       const [entry] = await repository.list(TRAVELLER);
 
-      // A date a traveller picked has no time zone; reading it as one could
-      // shift the day.
+      // Civil dates have no time zone; treating them as instants can shift the day.
       expect(entry.departureDate).toBe('2026-06-20');
     });
   });
@@ -137,7 +127,6 @@ describe('the recent-searches table', () => {
       await repository.record(search(), NOW);
       await repository.record(search({ destinationStationId: IDS.stations.tanta }), NOW);
 
-      // The original, searched again a minute later with a new date.
       await repository.record(
         search({ departureDate: '2026-07-01' }),
         new Date(NOW.getTime() + 60_000),
@@ -147,7 +136,6 @@ describe('the recent-searches table', () => {
 
       expect(entries).toHaveLength(2);
       expect(entries[0].destinationStationId).toBe(IDS.stations.alexandria);
-      // Carrying its new dates, which is what makes the entry repeatable.
       expect(entries[0].departureDate).toBe('2026-07-01');
     });
 
@@ -169,7 +157,6 @@ describe('the recent-searches table', () => {
         await repository.record(one, new Date(NOW.getTime() + index * 1000));
       }
 
-      // A sixth, distinct search.
       await repository.record(
         search({ originStationId: IDS.stations.tanta }),
         new Date(NOW.getTime() + 10_000),
@@ -179,9 +166,7 @@ describe('the recent-searches table', () => {
 
       expect(entries).toHaveLength(RECENT_SEARCH_LIMIT);
       expect(entries[0].originStationId).toBe(IDS.stations.tanta);
-      // The first one recorded is the one that went. Every field the
-      // fingerprint reads has to be checked -- another of the five differs
-      // from it only by travel class.
+      // Check every fingerprint field; another entry differs only by travel class.
       expect(
         entries.filter(
           (entry) =>
@@ -207,11 +192,8 @@ describe('the recent-searches table', () => {
     });
 
     /**
-     * The guarantee the unique index exists for.
-     *
-     * Ten searches at once, five of them repeats of the other five. A
-     * read-then-write would race here and leave six or seven rows, or two rows
-     * with one fingerprint.
+     * Submit each of five fingerprints twice at once to expose
+     * read-then-write races that create extra or duplicate rows.
      */
     it('holds at five with no duplicate under concurrent writes', async () => {
       const searches = fiveDistinct();
@@ -280,8 +262,7 @@ describe('the recent-searches table', () => {
     });
   });
 
-  // A search whose station has closed can never answer, so it is dropped
-  // rather than offered as something to repeat.
+  // Do not offer searches whose stations are closed.
   describe('a deactivated station', () => {
     it('drops the entry that references it', async () => {
       await repository.record(search(), NOW);
@@ -302,8 +283,7 @@ describe('the recent-searches table', () => {
         expect(entries[0].destinationStationId).toBe(
           IDS.stations.alexandria,
         );
-        // Dropped from the read, not deleted: reactivating the station brings
-        // the traveller's search back.
+        // Hide, do not delete: reactivating the station restores the search.
         expect(await countFor(TRAVELLER)).toBe(2);
       } finally {
         await source.query(

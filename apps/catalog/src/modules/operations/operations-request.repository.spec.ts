@@ -10,8 +10,7 @@ import {
   fingerprintOf,
 } from './operations-request.repository.js';
 
-// Fake transaction commits staged writes only when the work resolves; the
-// real Postgres boundary is tested separately.
+// The fake commits only successful work; PostgreSQL boundaries are tested separately.
 function makeHarness() {
   const committed = new Map<string, OperationsRequestEntity>();
 
@@ -38,7 +37,6 @@ function makeHarness() {
         }),
       } as unknown as EntityManager;
 
-      // Only reached if `work` resolved, so a rollback drops the stage.
       const result = await work(manager);
       for (const [key, value] of staged) committed.set(key, value);
       return result;

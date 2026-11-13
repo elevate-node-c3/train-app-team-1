@@ -1,9 +1,5 @@
 import { ErrorCode } from './error-codes.enum.js';
 
-/**
- * The HTTP answer each business code gets. It sits beside `GRPC_HTTP_MAP` so
- * the two tables can be tested together.
- */
 export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.VALIDATION_ERROR]: 400,
   [ErrorCode.BAD_REQUEST]: 400,
@@ -30,7 +26,7 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.PASSWORD_REUSE]: 400,
   [ErrorCode.PASSWORD_RESET_INVALID]: 400,
   [ErrorCode.RATE_LIMITED]: 429,
-  // 503, like SERVICE_UNAVAILABLE: a dead dependency and a dead service are the same wait.
+  // Dependency and service outages both return 503.
   [ErrorCode.DEPENDENCY_UNAVAILABLE]: 503,
   [ErrorCode.PROFILE_INCOMPLETE]: 403,
 

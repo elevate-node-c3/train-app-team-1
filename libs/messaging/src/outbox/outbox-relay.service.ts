@@ -20,19 +20,8 @@ import { TypeOrmOutboxRepository } from './typeorm-outbox.repository.js';
 import { EventPublisherService } from '../publisher/event-publisher.service.js';
 
 /**
- * Polls the outbox and publishes committed rows.
- *
- * The whole point is the ordering inside one transaction:
- *
- *   claim (FOR UPDATE SKIP LOCKED)
- *     -> publish and wait for the broker confirm
- *       -> mark published
- *         -> commit (releasing the row lock)
- *
- * A publish rejection is caught *inside* the transaction callback. Letting it
- * escape would roll back the failure bookkeeping as well, so the same row would
- * be claimed at full speed forever. Committing the failure — with a backoff —
- * is what makes a broker outage a queue rather than a hot loop.
+ * In one transaction: claim with SKIP LOCKED, confirm publish, mark published, commit.
+ * Catch publish failures inside it so retry counts and backoff still commit.
  */
 @Injectable()
 export class OutboxRelayService
@@ -60,11 +49,7 @@ export class OutboxRelayService
     this.running = this.loop();
   }
 
-  /**
-   * Drains in `beforeApplicationShutdown`, while `AmqpClientService` still
-   * holds the channel. `onApplicationShutdown` runs after dispose, too late to
-   * publish anything.
-   */
+  /** Drain before Nest closes the AMQP channel in its final shutdown hook. */
   async beforeApplicationShutdown(): Promise<void> {
     this.stopping = true;
     this.wakeLoop();
@@ -78,7 +63,7 @@ export class OutboxRelayService
     }
   }
 
-  /** One batch. Public so tests can drive it without timers. */
+  /** Testable batch without timers. */
   async runOnce(): Promise<number> {
     let published = 0;
 
@@ -99,8 +84,7 @@ export class OutboxRelayService
           await this.outbox.recordFailure(
             ctx,
             row.id,
-            // `message` only. The payload can contain a live code and must
-            // never reach a column operators read.
+            // Store the error message only, never the secret-bearing payload.
             message,
             nextAttemptAt,
           );
@@ -115,11 +99,7 @@ export class OutboxRelayService
     return published;
   }
 
-  /**
-   * The relay has no HTTP request, so CLS is empty on its own. Restoring the
-   * envelope's correlation id is what puts the publish on the same trace as
-   * the sign-up that wrote the row.
-   */
+  /** Restore the event's correlation ID so publishes stay on the original trace. */
   private async publishRow(row: OutboxRow): Promise<void> {
     const envelope: EventEnvelope = envelopeOf(row);
     await this.cls.run(async () => {
@@ -129,15 +109,14 @@ export class OutboxRelayService
   }
 
   private async loop(): Promise<void> {
-    // Don't CLAIM before migrations have created the table. Always settles, so
-    // this cannot wedge shutdown.
+    // Wait for migrations to settle before claiming; failures also settle the gate.
     await this.schema.whenReady;
 
     while (!this.stopping) {
       try {
         await this.runOnce();
       } catch (error: unknown) {
-        // A Postgres blip must not kill the loop: the next tick retries.
+        // Keep polling after temporary database failures.
         this.logger.error(
           `Outbox relay tick failed: ${
             error instanceof Error ? error.message : String(error)
@@ -151,10 +130,8 @@ export class OutboxRelayService
   }
 
   /**
-   * A self-rescheduling timeout, never `setInterval`: overlapping ticks would
-   * make one process contend with itself for the same rows. The timer is
-   * unref'd so it does not keep the process alive; `wakeLoop` makes shutdown
-   * immediate rather than waiting out a poll interval.
+   * Schedule one timeout at a time to avoid overlapping row claims.
+   * Timers do not keep Node alive; wakeLoop interrupts the wait during shutdown.
    */
   private wait(ms: number): Promise<void> {
     return new Promise<void>((resolve) => {

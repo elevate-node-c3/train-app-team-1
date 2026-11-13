@@ -11,8 +11,7 @@ export const gatewayEnvSchema = commonEnvSchema.keys({
   PAYMENT_GRPC_URL: Joi.string().default('payment:50051'),
   NOTIFICATION_GRPC_URL: Joi.string().default('notification:50051'),
 
-  // Public-key only: the gateway can verify an access token but cannot mint
-  // one. The previous key is optional and makes a rotation zero-downtime.
+  // Public keys allow verification, not signing; the previous key supports rotation.
   JWT_KEY_ID: Joi.string().default('dev-1'),
   JWT_PUBLIC_KEY: Joi.string().optional(),
   JWT_PUBLIC_KEY_FILE: Joi.string().optional(),

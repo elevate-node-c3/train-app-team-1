@@ -69,8 +69,7 @@ describe('the search gRPC controller', () => {
     expect(search.mock.calls[0][0]).toBe(request);
   });
 
-  // The service cannot call new Date() itself and still be testable against a
-  // frozen clock, so the transport supplies the instant -- once.
+  // Capture time once at the transport boundary for a shared, testable request clock.
   it('captures the instant and hands it to the service', async () => {
     const search = vi.fn().mockResolvedValue(EMPTY_RESPONSE);
     const before = Date.now();
@@ -84,10 +83,8 @@ describe('the search gRPC controller', () => {
   });
 
   /**
-   * The traveller travels in caller metadata, which the gateway mints from a
-   * verified token. The request has no account field, so there is nothing a
-   * client could put there -- and search still answers without one, because
-   * the results are identical for everyone.
+   * Only gateway-verified metadata identifies the traveller; no request account field.
+   * Unidentified callers still get the same results, without recording.
    */
   describe('the traveller it records for', () => {
     it('passes the caller from metadata to the service', async () => {
@@ -152,8 +149,7 @@ describe('the search gRPC controller', () => {
     });
   });
 
-  // An unexpected failure must not be dressed up as a client mistake: the
-  // gateway maps an unknown status to 500 and says nothing about it.
+  // Unexpected failures map to 500, not client refusals, without leaking details.
   it('leaves an unexpected error alone', async () => {
     const boom = new Error('connection reset');
     const search = vi.fn().mockRejectedValue(boom);

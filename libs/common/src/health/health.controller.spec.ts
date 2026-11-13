@@ -32,7 +32,6 @@ function controllerWith(aggregate?: AggregateReadiness) {
 
 describe('HealthController', () => {
   it('reports only itself when nothing is bound', async () => {
-    // Six of seven services. No env var is consulted to discover that.
     const { controller, checkReadiness } = controllerWith();
 
     await expect(controller.ready()).resolves.toBe(LOCAL);
@@ -41,8 +40,7 @@ describe('HealthController', () => {
   });
 
   it('answers with the aggregate once one is bound', async () => {
-    // The gateway. `/health` and `/health/ready` both return the aggregate,
-    // which is the shape walkthrough.md and postman/ document.
+    // The gateway aggregates both /health and /health/ready.
     const aggregate = { aggregate: vi.fn(async () => AGGREGATE) };
     const { controller, checkReadiness } = controllerWith(aggregate);
 

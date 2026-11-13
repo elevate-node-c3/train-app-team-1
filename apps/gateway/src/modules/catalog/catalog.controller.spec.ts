@@ -40,35 +40,23 @@ function controllerFor(service: Partial<CatalogService>) {
   return new CatalogController(service as CatalogService);
 }
 
-/** A handler's descriptor, where Nest and the access decorators write. */
+/** Read route metadata from the handler descriptor. */
 const handler = (name: keyof CatalogController): object =>
   Object.getOwnPropertyDescriptor(CatalogController.prototype, name)
     ?.value as object;
 
-/**
- * The handler function, read through its descriptor, which is where Nest and
- * the access decorators write their metadata. Taken this way rather than as
- * `CatalogController.prototype.searchOneWay` so it is clear nothing here
- * intends to call an unbound method -- the same approach
- * `test/unit/route-access-levels.spec.ts` takes when it walks every route.
- */
+/** Read metadata without calling an unbound handler. */
 const searchOneWayHandler = Object.getOwnPropertyDescriptor(
   CatalogController.prototype,
   'searchOneWay',
 )?.value as object;
 
 describe('the search route', () => {
-  /**
-   * Deny-by-default means a route with no access level is a 401 for everyone,
-   * and `route-access-levels.spec.ts` fails the build for one. Asserting the
-   * metadata here says which level was chosen and why, where a reader of this
-   * module will see it.
-   */
+  /** Pin the access level; missing metadata denies every caller. */
   it('requires a verified traveller', () => {
     const level = Reflect.getMetadata(ACCESS_LEVEL_KEY, searchOneWayHandler);
 
-    // Not 'bookable': that is the profile-complete tier needed to book, and
-    // searching comes before it. Not public: this design has no guest mode.
+    // No guest access; verified travellers need not be bookable.
     expect(level).toBe('traveller');
   });
 
@@ -100,8 +88,7 @@ describe('the search route', () => {
       expect(searchOneWay.mock.calls[0][1]).toBe('en');
     });
 
-    // BR-56: Arabic is the platform fallback, so a client that sends no header
-    // gets Arabic rather than English-by-accident.
+    // Missing language headers fall back to Arabic.
     it('falls back to Arabic when the header is absent', async () => {
       const searchOneWay = vi.fn().mockResolvedValue(RESULT);
 
@@ -141,8 +128,7 @@ describe('the return-search route', () => {
     ).toBe('traveller');
   });
 
-  // Its own bucket: a different query with a different cost, and sharing one
-  // would let either leg starve the other.
+  // Separate buckets keep either search leg from starving the other.
   it('has a rate-limit bucket of its own', () => {
     expect(Reflect.getMetadata(RATE_LIMIT_KEY, handler('searchReturn'))).toEqual(
       { bucket: 'trip-search-return', limit: 60, windowSeconds: 60 },
@@ -172,8 +158,7 @@ describe('the stops route', () => {
     );
   });
 
-  // A traveller opens and closes this repeatedly while comparing trips, and
-  // it is a cheaper, longer-cached read than a search.
+  // Stop reads are cheaper and more heavily cached than searches.
   it('allows more calls than a search does', () => {
     expect(Reflect.getMetadata(RATE_LIMIT_KEY, handler('tripStops'))).toEqual({
       bucket: 'trip-stops',
@@ -205,11 +190,7 @@ describe('the recent-searches route', () => {
     ).toEqual({ bucket: 'recent-searches', limit: 60, windowSeconds: 60 });
   });
 
-  /**
-   * No Accept-Language is read, and no account is passed. Catalog returns both
-   * languages for a recent search and the traveller comes from the verified
-   * token, so there is nothing for this route to resolve or forward.
-   */
+  /** Both languages are returned; account identity comes from the verified token. */
   it('passes only the query through', async () => {
     const recentSearches = vi.fn().mockResolvedValue({ recentSearches: [] });
     const recentQuery = {} as RecentSearchesQueryDto;
@@ -220,12 +201,7 @@ describe('the recent-searches route', () => {
   });
 });
 
-/**
- * Nest matches routes in declaration order, so a parameterised route declared
- * before a literal one swallows it: `GET /trips/search/return` would arrive at
- * `:tripId/stops` with a tripId of "search". Asserted on the metadata rather
- * than through HTTP, because that is where the order is decided.
- */
+/** Check metadata order so literal routes stay before trip-ID routes. */
 describe('route ordering', () => {
   it('declares every literal path before the parameterised one', () => {
     const paths = (

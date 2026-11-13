@@ -16,10 +16,10 @@ import {
   type PublishTimetableGrpcResponse,
 } from './operations.types.js';
 
-/** How long the gateway waits for an operator write or an audit read. */
+/** Maximum wait for operations RPCs. */
 export const OPERATIONS_CALL_TIMEOUT_MS = 5000;
 
-/** Lower-cased by grpc-js regardless of how this is written. */
+/** grpc-js lowercases this metadata key. */
 const IDEMPOTENCY_KEY_METADATA_KEY = 'idempotency-key';
 
 @Injectable()
@@ -50,7 +50,7 @@ export class OperationsGrpcClientService {
     );
   }
 
-  /** A read, so no idempotency key; BR-52 attribution applies to changes only. */
+  /** Reads need no idempotency key; only changes need audit attribution. */
   async listAuditEntries(
     request: ListAuditEntriesGrpcRequest,
   ): Promise<ListAuditEntriesGrpcResponse> {
@@ -59,10 +59,7 @@ export class OperationsGrpcClientService {
     );
   }
 
-  /**
-   * Sends caller metadata and a deadline, then maps gRPC errors to HTTP, the
-   * same shape `CatalogGrpcClientService.call` uses.
-   */
+  /** Share caller metadata, deadlines, and gRPC-to-HTTP error mapping. */
   private async call<T>(
     idempotencyKey: string | undefined,
     invoke: (
@@ -88,7 +85,7 @@ export class OperationsGrpcClientService {
     }
   }
 
-  /** Business refusal first, then transport status, matching the catalog client. */
+  /** Prefer business errors, then fall back to transport status. */
   private toHttpError(error: unknown): unknown {
     const business = parseCatalogBusinessError(error);
     if (business) return business;
@@ -99,7 +96,7 @@ export class OperationsGrpcClientService {
       return grpcStatusException(code);
     }
 
-    // rxjs TimeoutError has no gRPC status; report DEADLINE_EXCEEDED, not 500.
+    // Map local RxJS timeouts to DEADLINE_EXCEEDED, not 500.
     if (error instanceof Error && error.name === 'TimeoutError') {
       this.logger.warn('Catalog operations call exceeded its deadline locally');
       return grpcStatusException(4); // DEADLINE_EXCEEDED

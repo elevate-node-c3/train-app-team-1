@@ -1,9 +1,4 @@
-/**
- * The relay's own backoff: short first, capped fast, because a broker outage
- * should drain within seconds of recovery rather than minutes.
- *
- * `attemptCount` is the count *after* the failed attempt has been recorded.
- */
+/** Short, capped retries drain quickly after recovery; attemptCount already includes the failure. */
 export const RELAY_BACKOFF_BASE_MS = 250;
 export const RELAY_BACKOFF_MAX_MS = 5000;
 

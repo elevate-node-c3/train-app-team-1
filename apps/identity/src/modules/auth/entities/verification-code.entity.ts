@@ -3,10 +3,7 @@ import type { VerificationCodePurpose } from '@app/contracts';
 
 export const VERIFICATION_CODE_MAX_ATTEMPTS = 5;
 
-/**
- * Only the hash and salt are persisted; the plaintext leaves the process once,
- * inside the event payload.
- */
+/** Store only the hash and salt; send plaintext only in the event payload. */
 @Entity('verification_code')
 export class VerificationCodeEntity {
   @PrimaryColumn('uuid')

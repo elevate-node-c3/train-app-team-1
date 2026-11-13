@@ -12,9 +12,7 @@ const REASONS = new Set([
 ]);
 
 /**
- * The gateway owns this parser because it owns the consequence: a malformed
- * revocation must be dead-lettered, not silently ignored. Error messages name
- * the offending field and never echo the payload.
+ * Dead-letter malformed revocations; name fields without exposing their values.
  */
 export function parseSessionRevokedPayload(
   envelope: EventEnvelope,

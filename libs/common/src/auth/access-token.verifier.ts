@@ -26,7 +26,7 @@ export interface JwtVerificationKey {
 
 export interface JwtVerifierConfig {
   active: JwtVerificationKey;
-  /** Kept so a token minted just before a rotation still verifies. */
+  /** Accepts tokens signed before key rotation. */
   previous?: JwtVerificationKey;
   issuer?: string;
   audience?: string;
@@ -34,9 +34,8 @@ export interface JwtVerifierConfig {
 }
 
 /**
- * Verifies with the active public key and keeps the previous one by `kid`.
- * Algorithm confusion is closed twice: `jose` is told RS256 only, and the
- * header is checked before a key is selected.
+ * Selects the active or previous key by `kid`. Both the header check and
+ * signature verification require RS256 to prevent algorithm confusion.
  */
 export class JwtAccessTokenVerifier {
   private readonly keys = new Map<string, PublicKey>();

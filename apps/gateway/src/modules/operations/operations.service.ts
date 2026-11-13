@@ -6,13 +6,10 @@ import type { ListAuditQueryDto } from './dto/list-audit.dto.js';
 import type { PublishTimetableDto } from './dto/publish-timetable.dto.js';
 import { OperationsGrpcClientService } from './operations.grpc.client.js';
 
-/** Matches catalog's default when a caller sends no `limit`. */
+/** Match catalog's default audit page size. */
 const DEFAULT_AUDIT_LIST_LIMIT = 50;
 
-/**
- * `created`/`changed`/`withdrawn` stay absent when unset, so a genuine `0`
- * (a republish that only re-points) is never confused with "never set".
- */
+/** Missing counts stay absent; a zero count remains a valid result. */
 export interface PublishTimetableResult {
   timetableId: string;
   version: number;
@@ -23,7 +20,7 @@ export interface PublishTimetableResult {
 
 export interface ChangeFareResult {
   fareId: string;
-  /** Absent exactly on the pair's first-ever fare. */
+  /** Missing when the pair has no previous fare. */
   previousAmountPiastres?: number;
   newAmountPiastres: number;
   effectiveFrom: string;
@@ -34,7 +31,7 @@ export interface AuditEntryResult {
   action: string;
   actorAccountId: string;
   trainId: string;
-  /** Parsed from catalog's `beforeJson`; a snapshot, not a typed shape. */
+  /** Parsed JSON snapshot, not a typed request shape. */
   before: unknown;
   after: unknown;
   ticketsAffected?: number;
@@ -47,7 +44,7 @@ export interface ListAuditResult {
   nextCursor?: string;
 }
 
-/** Translates DTOs to wire requests and back; catalog owns every validity rule. */
+/** Map DTOs to RPC data; catalog owns business validation. */
 @Injectable()
 export class OperationsService {
   constructor(private readonly operations: OperationsGrpcClientService) {}
@@ -115,10 +112,7 @@ export class OperationsService {
     };
   }
 
-  /**
-   * BR-52's trail. `before`/`after` arrive as JSON strings and are parsed so
-   * the REST response carries JSON, not a string a client must parse again.
-   */
+  /** Return parsed audit snapshots rather than JSON-encoded strings. */
   async listAudit(query: ListAuditQueryDto): Promise<ListAuditResult> {
     const response = await this.operations.listAuditEntries({
       ...(query.trainId === undefined ? {} : { trainId: query.trainId }),
@@ -129,7 +123,7 @@ export class OperationsService {
     });
 
     return {
-      // proto3 omits an empty repeated field, so an empty page has no `entries` key.
+      // Proto3 may omit entries; REST still needs an array.
       entries: (response.entries ?? []).map((entry) => ({
         id: entry.id,
         action: entry.action,

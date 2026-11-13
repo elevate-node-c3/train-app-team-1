@@ -19,16 +19,9 @@ import {
 } from './support/stack.js';
 
 /**
- * The three review demos from the README's "Unhappy Demo Paths", run
- * non-interactively against the real Compose stack.
- *
- * Each demo proves one failure mode of the backbone rather than the happy
- * path, which the latency spec covers.
- *
- * Demo 1b stops the broker. That used to make the order load-bearing, because
- * the consumer never re-subscribed afterwards and every later demo would have
- * found a deaf notification; the client now redials and the consumer
- * re-attaches, which `broker-restart.e2e-spec.ts` covers directly.
+ * Exercise messaging failure paths against the real Compose stack.
+ * outbox-latency.e2e-spec.ts covers delivery; broker-restart.e2e-spec.ts
+ * covers reconnecting and re-subscribing after a broker restart.
  */
 
 const RUN = `${Date.now()}`;
@@ -58,8 +51,7 @@ describe('Outbox event backbone demos', () => {
       `demo 1: sign-up answered ${result.status} in ${result.elapsedMs}ms with notification stopped`,
     );
 
-    // The relay is still running: the broker accepted the publish while the
-    // consumer was down, so the outage is not a data-loss window.
+    // Broker acceptance while the consumer is down must not lose the event.
     await waitFor(
       'the outbox row to be published while notification is stopped',
       () =>
@@ -80,8 +72,7 @@ describe('Outbox event backbone demos', () => {
 
     const inbox = await waitForInboxSize(1);
     expect(inbox.messages[0].To[0].Address).toBe(email);
-    // English proves the account's language travelled in the event: there is no
-    // HTTP request on the consumer side to read Accept-Language from.
+    // The consumer has no HTTP headers; English must come from the event.
     expect(inbox.messages[0].Subject).toBe('Your Train verification code');
   }, 180_000);
 
@@ -93,10 +84,8 @@ describe('Outbox event backbone demos', () => {
     expect(result.status).toBe(201);
     await waitForInboxSize(1);
 
-    // Sign-up writes both `verification-code.issued` and `account.registered`
-    // in the same transaction with the same `occurred_at`. Select the code
-    // event explicitly: the account event belongs to a different queue and
-    // deliberately sends no mail.
+    // Code and account events share occurred_at; select verification-code.issued.
+    // account.registered goes to another queue and sends no mail.
     const eventId = psql(
       'identity',
       `select id from outbox_event
@@ -105,10 +94,8 @@ describe('Outbox event backbone demos', () => {
     );
     expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
 
-    // A real duplicate: re-arming the row makes the relay republish the
-    // byte-identical envelope with the same id, exactly as a crashed relay
-    // would. Delivery is measured through the broker's own counter because a
-    // handled row is refused a claim and never increments attempt_count.
+    // Re-arm the outbox row to republish the identical envelope and event ID.
+    // Use broker delivery counts: handled claims do not increment attempt_count.
     const before = deliveredCount(await queueStats(EMAIL_QUEUE));
 
     psql(
@@ -165,8 +152,7 @@ describe('Outbox event backbone demos', () => {
       `demo 1b: sign-up answered ${result.status} in ${result.elapsedMs}ms with the broker stopped`,
     );
 
-    // `last_error` holds the error message only; the payload's live code is
-    // never copied into a column operators read.
+    // last_error must contain only the message, never the payload's live code.
     await waitFor(
       'the relay to record a broker failure',
       () => {

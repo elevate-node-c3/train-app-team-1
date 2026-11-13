@@ -19,7 +19,7 @@ export interface TripPublishedCoachV1 {
   coachLayout: {
     id: string;
     layoutName: string;
-    /** Adjacency is per side: same side of a row is side by side (D2, BR-25). */
+    /** Seats on the same side of a row are adjacent. */
     rows: {
       rowNumber: number;
       leftSeats: string[];

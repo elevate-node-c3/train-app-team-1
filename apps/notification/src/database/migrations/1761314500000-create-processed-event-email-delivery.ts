@@ -1,12 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Notification's own schema. Hand-written for the same reason as identity's:
- * the idempotency guard is a primary key, and the delivery log is append-only
- * because a duplicate send must be visible as a second row (ADR-0003).
- *
- * There is deliberately no column that could hold a verification code or any
- * other secret. The code lives only in the event body and in the email.
+ * Track handled events by ID and append each delivery attempt.
+ * Never store verification codes or other secrets.
  */
 export class CreateProcessedEventEmailDelivery1761314500000
   implements MigrationInterface
@@ -30,8 +26,7 @@ export class CreateProcessedEventEmailDelivery1761314500000
       )
     `);
 
-    // Partial: the stuck-claim query in the runbook only ever looks at
-    // `processing`, so handled history does not belong in this index.
+    // Only active claims need this lookup index.
     await queryRunner.query(`
       CREATE INDEX idx_processed_event_processing
         ON processed_event (claimed_at)
@@ -62,15 +57,13 @@ export class CreateProcessedEventEmailDelivery1761314500000
       )
     `);
 
-    // Deliberately non-unique: a crash between SMTP accepting and the handled
-    // marker produces a second row, and the latency report must count what
-    // actually happened over the wire rather than deduplicate it away.
+    // Non-unique so duplicate sends after a crash remain visible.
     await queryRunner.query(`
       CREATE INDEX idx_email_delivery_event_id
         ON email_delivery (event_id)
     `);
 
-    // The BR-03 percentile query filters on this outcome.
+    // Delivery percentiles use accepted messages only.
     await queryRunner.query(`
       CREATE INDEX idx_email_delivery_accepted
         ON email_delivery (latency_ms)

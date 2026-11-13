@@ -10,12 +10,11 @@ import type {
   OperationsAuditPage,
 } from './operations-audit.types.js';
 
-/** BR-52's trail: `append` joins the caller's transaction, `list` never does. */
+/** append joins the caller's transaction; list reads independently. */
 @Injectable()
 export class OperationsAuditRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Writes in `ctx`'s transaction; there is no self-opening overload. */
   async append(
     ctx: TransactionContext,
     entity: OperationsAuditEntity,
@@ -27,9 +26,8 @@ export class OperationsAuditRepository {
   }
 
   /**
-   * Newest first, paged by `(occurred_at, id)` so an insert mid-list cannot
-   * shift a later page. An unknown cursor matches nothing and returns an empty
-   * page.
+   * Page newest first by (occurred_at, id) so inserts cannot shift later pages.
+   * Unknown cursors return an empty page.
    */
   async list(filter: OperationsAuditFilter): Promise<OperationsAuditPage> {
     const conditions: string[] = [];

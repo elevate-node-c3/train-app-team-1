@@ -51,8 +51,7 @@ describe('the search cache key', () => {
   });
 
   it('carries a format version, so a shape change is a new key', () => {
-    // Otherwise a deploy that changes the stored shape reads yesterday's
-    // payload back into today's code.
+    // Change format versions so new code cannot read incompatible old payloads.
     expect(key()).toContain(':v2:');
   });
 
@@ -60,8 +59,7 @@ describe('the search cache key', () => {
     expect(key().startsWith('catalog:search:')).toBe(true);
   });
 
-  // Direction is part of the identity: Banha to Tanta is not the same search
-  // as Tanta to Banha, and must not share an answer.
+  // Reverse station pairs must not share cache entries.
   it('changes when the stations swap', () => {
     expect(key()).not.toBe(
       key({ originStationId: ALEX, destinationStationId: CAIRO }),
@@ -74,8 +72,7 @@ describe('the search cache key', () => {
     expect(key()).not.toBe(key({ trainNumber: 903 }));
   });
 
-  // '*' for absent, which cannot be confused with a train number, because 0 is
-  // not a valid one and would otherwise render identically to "any train".
+  // Use '*' for any train; zero is not a valid train number.
   it('renders an absent train number as a wildcard', () => {
     expect(key({ trainNumber: null }).endsWith(':*')).toBe(true);
     expect(key({ trainNumber: null })).not.toBe(key({ trainNumber: 0 }));
@@ -84,11 +81,8 @@ describe('the search cache key', () => {
 
 describe('the cached payload', () => {
   /**
-   * The structural guarantee behind "Sprint 3 changes where availability comes
-   * from, not the cache keys": nothing time-dependent is stored at all. If
-   * availability or sales state were cached, a later read could serve a stale
-   * answer, and the 13:50/14:00 rule would become a thing to remember instead
-   * of a property of the design.
+   * Never cache availability or sales state; compute them on every read.
+   * Inventory implementation changes must not alter search cache keys.
    */
   it('stores nothing that depends on the clock or on inventory', () => {
     const stored = Object.keys(cachedTrip());
@@ -107,9 +101,7 @@ describe('the cached payload', () => {
     }
   });
 
-  // Instants are stored as epoch millis, not Date objects: JSON has no date
-  // type, so a Date would come back as a string and the eligibility filter
-  // compares numbers.
+  // Store epoch milliseconds; JSON turns Date objects into strings.
   it('stores instants as numbers that survive a JSON round trip', () => {
     const revived = JSON.parse(
       JSON.stringify(cachedTrip()),
@@ -132,8 +124,7 @@ describe('the cached payload', () => {
       );
     });
 
-    // A payload written by an older deploy parses as JSON but is missing a
-    // field. Treating it as a hit would put undefined into a response.
+    // Old payloads can parse but miss fields; treat them as misses, not partial hits.
     it('rejects a payload missing a field', () => {
       const { durationMinutes, ...incomplete } = cachedTrip();
       void durationMinutes;
@@ -173,10 +164,8 @@ describe('the cache lifetime', () => {
     );
   });
 
-  // Today's list is the one that changes under the traveller: trips keep
-  // falling off it as their sales close. The eligibility re-filter already
-  // prevents serving a closed trip, so this only bounds how long a
-  // disappearing trip lingers.
+  // Today uses a shorter TTL because trips disappear as sales close.
+  // Eligibility filtering still prevents closed trips from being served.
   it('uses the Cairo date, not the UTC date, to decide what today is', () => {
     const lateUtc = new Date('2026-06-30T22:30:00Z'); // already 1 July in Cairo
 

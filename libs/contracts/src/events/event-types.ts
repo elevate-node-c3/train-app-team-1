@@ -1,7 +1,6 @@
 /**
- * Event type strings double as topic routing keys:
- * `<producer>.<aggregate>.<what-happened>`. Keys carry no version; a breaking
- * change takes a new key so old and new consumers can run side by side.
+ * Routing keys are producer.aggregate.action, without versions.
+ * Breaking changes need new keys so old and new consumers can coexist.
  */
 export const EVENT_TYPES = {
   verificationCodeIssued: 'identity.verification-code.issued',

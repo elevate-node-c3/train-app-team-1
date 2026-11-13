@@ -12,10 +12,7 @@ export function generateVerificationCodeSalt(): string {
   return randomBytes(SALT_BYTES).toString('hex');
 }
 
-/**
- * scrypt with a per-row salt. The salt is not a secret; it is what makes two
- * users who happen to receive the same six digits store different hashes.
- */
+/** A public per-row salt gives identical codes different scrypt hashes. */
 export function hashVerificationCode(code: string, salt: string): string {
   return scryptSync(code, salt, KEY_BYTES).toString('hex');
 }
