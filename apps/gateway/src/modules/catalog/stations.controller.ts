@@ -5,16 +5,20 @@ import {
   Get,
   Headers,
   HttpCode,
-  HttpException,
   HttpStatus,
   Param,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { Public, RateLimit, RequireRole, resolveLanguage } from '@app/common';
 import {
-  ErrorCode,
+  Public,
+  RateLimit,
+  RequireRole,
+  requireIdempotencyKey,
+  resolveLanguage,
+} from '@app/common';
+import {
   type ListStationsResponse,
   type StationResponse,
 } from '@app/contracts';
@@ -24,26 +28,6 @@ import {
   StationIdParamDto,
   UpdateStationDto,
 } from './dto/station-requests.dto.js';
-
-function requireIdempotencyKey(value: string | undefined): string {
-  const key = typeof value === 'string' ? value.trim() : '';
-  if (key) return key;
-
-  throw new HttpException(
-    {
-      code: ErrorCode.VALIDATION_ERROR,
-      message: [
-        {
-          field: 'Idempotency-Key',
-          rejectedValue: value,
-          issueKey: 'ISSUE_IDEMPOTENCY_KEY_REQUIRED',
-          actionKey: 'ACTION_SEND_IDEMPOTENCY_KEY',
-        },
-      ],
-    },
-    HttpStatus.BAD_REQUEST,
-  );
-}
 
 @Controller('stations')
 export class StationsController {
