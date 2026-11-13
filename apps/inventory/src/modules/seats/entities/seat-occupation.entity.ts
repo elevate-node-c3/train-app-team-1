@@ -1,4 +1,4 @@
-import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Check, Column, Entity, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 import type { Relation } from 'typeorm';
 
 import { TripSeatEntity } from './trip-seat.entity.js';
@@ -11,6 +11,7 @@ import { TripSeatEntity } from './trip-seat.entity.js';
  * redundant through that chain, so it is not declared here.
  */
 @Entity('seat_occupation')
+@Index('idx_seat_occupation_trip', ['tripId'], { where: '"released_at" IS NULL' })
 @Check('chk_seat_occupation_state', `"state" IN ('held', 'sold')`)
 @Check('chk_seat_occupation_segment', `NOT isempty("segment") AND lower("segment") >= 0`)
 @Check(

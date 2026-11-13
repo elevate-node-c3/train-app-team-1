@@ -12,6 +12,8 @@ import { TripCoachEntity } from './trip-coach.entity.js';
 @Entity('trip_seat')
 @Index('uq_trip_seat_number', ['tripCoachId', 'seatNumber'], { unique: true })
 @Index('idx_trip_seat_trip_class', ['tripId', 'travelClassId'])
+// Gives seat_occupation's composite FK a target, same discipline as trip_coach's own mirror.
+@Index('uq_trip_seat_trip_id', ['tripId', 'id'], { unique: true })
 @Check('chk_trip_seat_side', `"side" IN ('left', 'right')`)
 export class TripSeatEntity {
   @PrimaryColumn('uuid')

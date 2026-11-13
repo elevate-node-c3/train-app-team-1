@@ -89,36 +89,44 @@ export async function seedSixStopTrip(source: DataSource): Promise<void> {
   }
 }
 
-export interface OccupySeatOptions {
-  readonly holdExpiresAt?: Date | null;
-}
-
 /**
  * Raw SQL only — these back the seat-occupation constraint tests, which must
  * bypass the application to prove Postgres, not a repository, refuses overlap.
- * A 'held' occupation defaults to an hour-out expiry unless the caller
- * overrides it, satisfying chk_seat_occupation_hold_expiry.
+ *
+ * Overloaded so a 'held' occupation cannot be written without an explicit
+ * holdExpiresAt: chk_seat_occupation_hold_expiry only demands non-null, so a
+ * silent default would satisfy the database while hiding a caller mistake —
+ * Task 7's tests depend on choosing a future or past expiry on purpose.
  */
+export function occupy(
+  source: DataSource,
+  tripSeatId: string,
+  tripId: string,
+  segment: Segment,
+  state: 'sold',
+): Promise<string>;
+export function occupy(
+  source: DataSource,
+  tripSeatId: string,
+  tripId: string,
+  segment: Segment,
+  state: 'held',
+  holdExpiresAt: Date,
+): Promise<string>;
 export async function occupy(
   source: DataSource,
   tripSeatId: string,
   tripId: string,
   segment: Segment,
   state: 'held' | 'sold',
-  options: OccupySeatOptions = {},
+  holdExpiresAt?: Date,
 ): Promise<string> {
   const id = randomUUID();
-  const holdExpiresAt =
-    options.holdExpiresAt !== undefined
-      ? options.holdExpiresAt
-      : state === 'held'
-        ? new Date(Date.now() + 60 * 60_000)
-        : null;
 
   await source.query(
     `INSERT INTO seat_occupation (id, trip_seat_id, trip_id, segment, state, hold_expires_at)
      VALUES ($1, $2, $3, $4::int4range, $5, $6)`,
-    [id, tripSeatId, tripId, toInt4Range(segment), state, holdExpiresAt],
+    [id, tripSeatId, tripId, toInt4Range(segment), state, state === 'held' ? holdExpiresAt : null],
   );
 
   return id;
