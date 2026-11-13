@@ -18,6 +18,7 @@ import {
   SeatSegmentOrderError,
   SeatUnknownStationError,
 } from '../../apps/inventory/src/modules/seats/availability.service.js';
+import { SeatUsageRepository } from '../../apps/inventory/src/modules/seats/seat-usage.repository.js';
 
 import {
   closeInventoryDataSource,
@@ -30,6 +31,7 @@ import { occupy as occupySeat, release as releaseSeat, seedSixStopTrip, SIX_STOP
 // Ramsis 0, Banha 1, Tanta 2, Damnhour 3, Sidi Gaber 4, ElRaml 5.
 const tripId = SIX_STOP_TRIP.tripId;
 const seat44 = SIX_STOP_TRIP.seatIds[0];
+const seat45 = SIX_STOP_TRIP.seatIds[1];
 const [firstClass] = SIX_STOP_TRIP.travelClassIds;
 const [ramsis, banha, tanta, , sidiGaber, elRaml] = SIX_STOP_TRIP.stationIds;
 const cairo = ramsis;
@@ -44,6 +46,7 @@ let planRepository: SeatPlanRepository;
 let unitOfWork: TypeOrmUnitOfWork;
 let repository: AvailabilityRepository;
 let service: AvailabilityService;
+let usageRepository: SeatUsageRepository;
 
 beforeEach(async () => {
   source = await inventoryDataSource();
@@ -54,6 +57,7 @@ beforeEach(async () => {
   unitOfWork = new TypeOrmUnitOfWork(new DataSourceInitializer(source));
   repository = new AvailabilityRepository(source);
   service = new AvailabilityService(repository);
+  usageRepository = new SeatUsageRepository(source);
 });
 
 afterAll(async () => {
@@ -253,6 +257,84 @@ describe('segment availability', () => {
     );
 
     expect(one.queries).toHaveLength(2);
+    expect(twenty.queries).toHaveLength(one.queries.length);
+  });
+});
+
+describe('seat usage for catalog', () => {
+  async function usageFor(tripIds: string[]) {
+    return usageRepository.usageFor(tripIds);
+  }
+
+  it('counts held and sold separately', async () => {
+    await occupy(seat44, segmentOf(0, 2), 'held', inAnHour);
+    await occupy(seat45, segmentOf(1, 3), 'sold');
+
+    expect(await usageFor([tripId])).toEqual([
+      expect.objectContaining({ tripId, heldCount: 1, soldCount: 1 }),
+    ]);
+  });
+
+  it('reports both ends of a segment as in use', async () => {
+    // Ramsis 0 -> Tanta 2 puts Ramsis, Banha and Tanta in use.
+    await occupy(seat44, segmentOf(0, 2), 'sold');
+
+    const [usage] = await usageFor([tripId]);
+
+    expect(usage.stationIdsInUse.slice().sort()).toEqual(
+      [ramsis, banha, tanta].slice().sort(),
+    );
+  });
+
+  it('ignores released and expired-held occupations', async () => {
+    const soldId = await occupy(seat44, segmentOf(0, 2), 'sold');
+    await releaseSeat(source, soldId);
+    await occupy(seat45, segmentOf(0, 2), 'held', inThePast);
+
+    expect(await usageFor([tripId])).toEqual([
+      { tripId, soldCount: 0, heldCount: 0, stationIdsInUse: [] },
+    ]);
+  });
+
+  it('returns a zero row for a trip with no usage', async () => {
+    expect(await usageFor([tripId])).toEqual([
+      { tripId, soldCount: 0, heldCount: 0, stationIdsInUse: [] },
+    ]);
+  });
+
+  it('returns a zero row for a trip inventory has never seen', async () => {
+    // Catalog must get an answer, not silence.
+    const unseenTripId = randomUUID();
+
+    const result = await usageFor([unseenTripId]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      tripId: unseenTripId,
+      soldCount: 0,
+      heldCount: 0,
+      stationIdsInUse: [],
+    });
+  });
+
+  it('does not issue more queries for twenty trips than for one', async () => {
+    async function tripIdsFor(count: number): Promise<string[]> {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const plan = seatPlanFrom({ ...sixStopPayload(), tripId: randomUUID() });
+        await apply(plan);
+        ids.push(plan.tripId);
+      }
+      return ids;
+    }
+
+    const oneId = await tripIdsFor(1);
+    const one = await countStatements(source, () => usageFor(oneId));
+
+    const twentyMore = await tripIdsFor(19);
+    const twenty = await countStatements(source, () => usageFor([...oneId, ...twentyMore]));
+
+    expect(one.queries).toHaveLength(1);
     expect(twenty.queries).toHaveLength(one.queries.length);
   });
 });
