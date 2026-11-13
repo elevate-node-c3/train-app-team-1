@@ -13,6 +13,9 @@ import * as grpc from '@grpc/grpc-js';
 import {
   ErrorCode,
   HTTP_STATUS_BY_ERROR_CODE,
+  isValidationIssueRef,
+  type ValidationIssueRef,
+  type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
   type RefreshTokenRequestDto,
@@ -34,6 +37,9 @@ import {
   type IdentityGrpcServiceClient,
   type UnaryMethod,
   type VerifyEmailWireResponse,
+  type WireCompleteProfileResponse,
+  type WireGetProfileOptionsResponse,
+  type WireGetProfileResponse,
   type WireRefreshResponse,
   type WireSignInResponse,
 } from './identity.types.js';
@@ -145,6 +151,26 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  completeProfile(
+    input: CompleteProfileRequestDto,
+  ): Promise<WireCompleteProfileResponse> {
+    return this.unary<WireCompleteProfileResponse>('completeProfile', {
+      fullName: input.fullName,
+      phoneNumber: input.phoneNumber,
+      nationalId: input.nationalId,
+      profileType: input.profileType,
+      nationality: input.nationality,
+    });
+  }
+
+  getProfile(): Promise<WireGetProfileResponse> {
+    return this.unary<WireGetProfileResponse>('getProfile', {});
+  }
+
+  getProfileOptions(): Promise<WireGetProfileOptionsResponse> {
+    return this.unary<WireGetProfileOptionsResponse>('getProfileOptions', {});
+  }
+
   private unary<TResponse>(
     method: UnaryMethod,
     request: object,
@@ -196,6 +222,9 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       return new HttpException(
         {
           code: explicit.code,
+          ...(explicit.details && explicit.details.length > 0
+            ? { details: explicit.details, message: explicit.details }
+            : {}),
           ...(explicit.retryAfterSeconds
             ? { retryAfterSeconds: explicit.retryAfterSeconds }
             : {}),
@@ -218,7 +247,11 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
 
   private parseBusinessError(
     details: unknown,
-  ): { code: ErrorCode; retryAfterSeconds?: number } | null {
+  ): {
+    code: ErrorCode;
+    retryAfterSeconds?: number;
+    details?: ValidationIssueRef[];
+  } | null {
     if (typeof details !== 'string' || details.length === 0) return null;
     try {
       const parsed: unknown = JSON.parse(details);
@@ -231,10 +264,16 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
         return null;
       }
       const retry = record.retryAfterSeconds;
+      const validationDetails = Array.isArray(record.details)
+        ? record.details.filter(isValidationIssueRef)
+        : undefined;
       return {
         code: record.code as ErrorCode,
         ...(typeof retry === 'number' && Number.isFinite(retry) && retry > 0
           ? { retryAfterSeconds: Math.ceil(retry) }
+          : {}),
+        ...(validationDetails && validationDetails.length > 0
+          ? { details: validationDetails }
           : {}),
       };
     } catch {

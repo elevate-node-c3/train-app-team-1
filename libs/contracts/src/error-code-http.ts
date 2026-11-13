@@ -33,4 +33,17 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   // 503, like SERVICE_UNAVAILABLE: a dead dependency and a dead service are the same wait.
   [ErrorCode.DEPENDENCY_UNAVAILABLE]: 503,
   [ErrorCode.PROFILE_INCOMPLETE]: 403,
+
+  // Profile completion
+  [ErrorCode.PROFILE_ALREADY_COMPLETE]: 409,
+  [ErrorCode.INVALID_FULL_NAME]: 400,
+  [ErrorCode.INVALID_NATIONAL_ID_LENGTH]: 400,
+  [ErrorCode.INVALID_NATIONAL_ID_CENTURY]: 400,
+  [ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE]: 400,
+  [ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE]: 400,
+  [ErrorCode.NATIONAL_ID_ALREADY_REGISTERED]: 409,
+  [ErrorCode.INVALID_PHONE_FORMAT]: 400,
+  [ErrorCode.PHONE_ALREADY_REGISTERED]: 409,
+  [ErrorCode.INVALID_PROFILE_TYPE]: 400,
+  [ErrorCode.INVALID_NATIONALITY]: 400,
 };

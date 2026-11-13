@@ -11,6 +11,9 @@ service IdentityService {
   rpc SignOut (SignOutRequest) returns (SignOutResponse);
   rpc ForgotPassword (ForgotPasswordRequest) returns (ForgotPasswordResponse);
   rpc ResetPassword (ResetPasswordRequest) returns (ResetPasswordResponse);
+  rpc CompleteProfile (CompleteProfileRequest) returns (CompleteProfileResponse);
+  rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
+  rpc GetProfileOptions (GetProfileOptionsRequest) returns (GetProfileOptionsResponse);
 }
 
 message TokenPair {
@@ -110,4 +113,52 @@ message ResetPasswordRequest {
 
 message ResetPasswordResponse {
   bool reset = 1;
+}
+
+message CompleteProfileRequest {
+  string fullName = 1;
+  string phoneNumber = 2;
+  string nationalId = 3;
+  string profileType = 4;
+  string nationality = 5;
+}
+
+message ProfileData {
+  string accountId = 1;
+  string fullName = 2;
+  string phoneNumber = 3;
+  string nationalId = 4;
+  string profileType = 5;
+  string nationality = 6;
+  bool bookable = 7;
+}
+
+message CompleteProfileResponse {
+  TokenPair tokens = 1;
+  ProfileData profile = 2;
+}
+
+message GetProfileRequest {}
+
+message GetProfileResponse {
+  ProfileData profile = 1;
+}
+
+message GetProfileOptionsRequest {}
+
+message ProfileTypeItem {
+  string code = 1;
+  string nameAr = 2;
+  string nameEn = 3;
+}
+
+message NationalityItem {
+  string code = 1;
+  string nameAr = 2;
+  string nameEn = 3;
+}
+
+message GetProfileOptionsResponse {
+  repeated ProfileTypeItem profileTypes = 1;
+  repeated NationalityItem nationalities = 2;
 }
