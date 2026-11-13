@@ -106,11 +106,6 @@ async function apply(plan: SeatPlan): Promise<void> {
   await unitOfWork.withTransaction((ctx) => planRepository.apply(ctx, plan));
 }
 
-/** A fresh six-stop trip built through seatPlanFrom, used by the two-stop and overnight tests. */
-function tripPayload(overrides: Partial<ReturnType<typeof sixStopPayload>>) {
-  return { ...sixStopPayload(), tripId: randomUUID(), ...overrides };
-}
-
 describe('segment availability', () => {
   it('counts every seat of the class when nothing is occupied', async () => {
     expect(await availability(cairo, alexandria, firstClass)).toBe(10);
@@ -183,34 +178,54 @@ describe('segment availability', () => {
     await expect(availability(cairo, cairo, firstClass)).rejects.toThrow(SeatSegmentOrderError);
   });
 
-  it('counts an overnight DST-crossing trip exactly as a same-day one', async () => {
-    // Review Focus 5: overlap is stop order, never the clock. The payload below
-    // crosses midnight and a DST boundary; results must match the same-day fixture.
-    const overnightPayload = tripPayload({
-      stops: sixStopPayload().stops.map((stop, index) => ({
-        ...stop,
-        arrivalAt: index === 0 ? null : `2026-03-${28 + Math.floor(index / 4)}T0${index % 4}:30:00+02:00`,
-        departureAt:
-          index === 5
-            ? null
-            : `2026-03-${28 + Math.floor(index / 4)}T0${index % 4}:35:00+02:00`,
+  it('counts a trip with no stop timestamps exactly as the ordinary same-day fixture', async () => {
+    // Review Focus 5: overlap is stop order, never the clock. trip_stop has no
+    // timestamp column at all, and plannedStopsFrom orders stops by the
+    // payload's own `position` field — never by arrival/departure, and never
+    // by the order stops happen to arrive in the array. This payload removes
+    // both potential clock stand-ins at once: every arrivalAt/departureAt is
+    // null, and the stops array itself is shuffled while each stop keeps its
+    // true `position`. If order were ever derived from the array index or
+    // from a tied/absent timestamp instead of `position`, Ramsis would not
+    // sort before Alexandria and the assertions below could not both hold.
+    const base = sixStopPayload();
+    const shuffledIndexes = [3, 0, 5, 1, 4, 2];
+    const overnightPayload = {
+      ...base,
+      tripId: randomUUID(),
+      stops: shuffledIndexes.map((index) => ({
+        ...base.stops[index],
+        arrivalAt: null,
+        departureAt: null,
       })),
-    });
+    };
     const overnightPlan = seatPlanFrom(overnightPayload);
     await apply(overnightPlan);
-    const [s0, , s2, , , s5] = overnightPlan.stops.map((stop) => stop.stationId);
+
+    // Ground truth, independent of whatever order the plan actually produced:
+    // base.stops[i] is Ramsis, Banha, Tanta, ... by construction (sixStopPayload's
+    // comment). Reading s0/s2/s5 back from overnightPlan.stops instead would make
+    // this test pass no matter how badly the plan mis-ordered its stops, because
+    // the occupied segment and the query would drift together.
+    const s0 = base.stops[0].stationId;
+    const s2 = base.stops[2].stationId;
+    const s5 = base.stops[5].stationId;
+    const travelClassId = overnightPlan.coaches[0].travelClassId;
     const overnightSeat = overnightPlan.seats.find(
-      (seat) => seat.travelClassId === overnightPlan.coaches[0].travelClassId,
+      (seat) => seat.travelClassId === travelClassId,
     )!.id;
 
     await occupySeat(source, overnightSeat, overnightPlan.tripId, segmentOf(0, 2), 'sold');
+    // The identical scenario on the ordinary same-day fixture, for direct comparison.
+    await occupy(seat44, segmentOf(0, 2), 'sold');
 
-    expect(
-      await availabilityOn(overnightPlan.tripId, s0, s2, overnightPlan.coaches[0].travelClassId),
-    ).toBe(9);
-    expect(
-      await availabilityOn(overnightPlan.tripId, s2, s5, overnightPlan.coaches[0].travelClassId),
-    ).toBe(10);
+    const occupiedOnOvernight = await availabilityOn(overnightPlan.tripId, s0, s2, travelClassId);
+    const freeOnOvernight = await availabilityOn(overnightPlan.tripId, s2, s5, travelClassId);
+
+    expect(occupiedOnOvernight).toBe(await availability(ramsis, tanta, firstClass));
+    expect(freeOnOvernight).toBe(await availability(tanta, alexandria, firstClass));
+    expect(occupiedOnOvernight).toBe(9);
+    expect(freeOnOvernight).toBe(10);
   });
 
   it('does not issue more queries for twenty trips than for one', async () => {
