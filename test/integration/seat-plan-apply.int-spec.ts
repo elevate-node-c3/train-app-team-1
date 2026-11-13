@@ -87,6 +87,18 @@ async function activeOccupationCount(tripSeatId: string): Promise<number> {
   return count;
 }
 
+async function stopTimes(
+  tripId: string,
+  position: number,
+): Promise<{ arrivalAt: Date | null; departureAt: Date | null }> {
+  const [row] = await source.query(
+    `SELECT arrival_at AS "arrivalAt", departure_at AS "departureAt"
+     FROM trip_stop WHERE trip_id = $1 AND position = $2`,
+    [tripId, position],
+  );
+  return row;
+}
+
 describe('SeatPlanRepository.apply', () => {
   it('creates every seat of every coach, and counts them by class', async () => {
     const payload = sixStopPayload();
@@ -109,6 +121,19 @@ describe('SeatPlanRepository.apply', () => {
       trainId: plan.trainId,
       trainNumber: plan.trainNumber,
       serviceDate: plan.serviceDate,
+    });
+
+    // Round trip of arrival/departure times, stored but never read back by
+    // anything in TA-68. The origin has no arrival; a middle stop has both.
+    const origin = plan.stops[0];
+    const middle = plan.stops[2];
+    expect(await stopTimes(plan.tripId, origin.position)).toEqual({
+      arrivalAt: null,
+      departureAt: origin.departureAt,
+    });
+    expect(await stopTimes(plan.tripId, middle.position)).toEqual({
+      arrivalAt: middle.arrivalAt,
+      departureAt: middle.departureAt,
     });
   });
 
