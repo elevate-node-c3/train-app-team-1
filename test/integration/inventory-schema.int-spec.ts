@@ -119,6 +119,27 @@ describe('the trip tables', () => {
     ).resolves.not.toThrow();
   });
 
+  it('refuses a seat whose trip_id disagrees with its coach\'s real trip', async () => {
+    // A second, real trip so trip_id itself is valid — isolates the failure
+    // to the composite FK, not a missing inventory_trip row.
+    const otherTripId = '10000000-0000-0000-0000-000000000002';
+    await source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'on_sale')`, [
+      otherTripId,
+    ]);
+
+    // Coach belongs to SIX_STOP_TRIP.tripId; claiming otherTripId must be refused.
+    // seat_number 11 is unused on this coach, so uq_trip_seat_number can't fire first.
+    await expect(
+      insertSeat(
+        '40000000-0000-0000-0000-000000000099',
+        otherTripId,
+        SIX_STOP_TRIP.coachIds[0],
+        11,
+        SIX_STOP_TRIP.travelClassIds[0],
+      ),
+    ).rejects.toThrow(/fk_trip_seat_coach/);
+  });
+
   it('refuses a status outside on_sale and closed', async () => {
     await expect(
       source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'pending')`, [

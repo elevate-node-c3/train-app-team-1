@@ -6,6 +6,8 @@ import { InventoryTripEntity } from './inventory-trip.entity.js';
 /** There is no TravelClassEntity in inventory; travel_class_id is a plain copy of catalog's id. */
 @Entity('trip_coach')
 @Index('uq_trip_coach_number', ['tripId', 'coachNumber'], { unique: true })
+// Gives trip_seat's composite FK a target so a seat can't claim a coach from another trip.
+@Index('uq_trip_coach_trip_id', ['tripId', 'id'], { unique: true })
 export class TripCoachEntity {
   @PrimaryColumn('uuid')
   id!: string;

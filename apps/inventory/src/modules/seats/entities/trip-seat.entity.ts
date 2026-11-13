@@ -4,8 +4,10 @@ import type { Relation } from 'typeorm';
 import { TripCoachEntity } from './trip-coach.entity.js';
 
 /**
- * trip_id is a denormalized copy of the coach's trip, kept only for the
- * (trip_id, travel_class_id) index; cascade deletion flows through the coach.
+ * trip_id is a denormalized copy of the coach's trip, kept for the
+ * (trip_id, travel_class_id) index. The composite FK below (trip_id,
+ * trip_coach_id) -> trip_coach (trip_id, id) rejects a seat whose copy
+ * disagrees with its coach's real trip, so the denormalization can't drift.
  */
 @Entity('trip_seat')
 @Index('uq_trip_seat_number', ['tripCoachId', 'seatNumber'], { unique: true })
@@ -22,7 +24,10 @@ export class TripSeatEntity {
     nullable: false,
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'trip_coach_id' })
+  @JoinColumn([
+    { name: 'trip_id', referencedColumnName: 'tripId' },
+    { name: 'trip_coach_id', referencedColumnName: 'id' },
+  ])
   coach!: Relation<TripCoachEntity>;
 
   @Column({ name: 'trip_coach_id', type: 'uuid' })
