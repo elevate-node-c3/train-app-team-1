@@ -7,8 +7,7 @@ export function databaseUrlFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   return (
-    env.DATABASE_URL ??
-    'postgres://catalog:catalog_dev@localhost:5432/catalog'
+    env.DATABASE_URL ?? 'postgres://catalog:catalog_dev@localhost:5432/catalog'
   );
 }
 

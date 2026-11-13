@@ -28,6 +28,7 @@
     "demo:cache": "tsx scripts/demo-cache-story.ts",
     "keys:generate": "node scripts/generate-dev-keys.mjs",
     "seed:all": "node scripts/seed-all.mjs",
+    "seed:stations": "node dist/apps/catalog/src/database/seeds/stations.seed.js",
     "seed:staff": "node dist/apps/identity/src/database/seeds/staff-accounts.seed.js",
     "catalog:seed": "node dist/apps/catalog/src/database/seeds/catalog.seed.js",
     "catalog:seed:search": "node dist/apps/catalog/src/database/seeds/search-fixture.seed.js",

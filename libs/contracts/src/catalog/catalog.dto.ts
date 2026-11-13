@@ -233,3 +233,68 @@ export interface ListRecentSearchesRequest {
 export interface ListRecentSearchesResponse {
   recentSearches: RecentSearch[];
 }
+
+export interface ListStationsRequest {
+  /** Resolved from the gateway's Accept-Language header. */
+  language: string;
+  query?: string;
+}
+
+export interface StationItem {
+  id: string;
+  name: string;
+  cityName: string;
+}
+
+export interface GovernorateGroup {
+  id: string;
+  name: string;
+  stations: StationItem[];
+}
+
+export interface ListStationsResponse {
+  governorates: GovernorateGroup[];
+}
+
+export interface StationDetails {
+  id: string;
+  cityId: string;
+  governorateId: string;
+  name: LocalizedName;
+  cityName: LocalizedName;
+  governorateName: LocalizedName;
+  altSpellings: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StationResponse {
+  station: StationDetails;
+}
+
+export interface StationIdRequest {
+  stationId: string;
+}
+
+export interface CreateStationRequest {
+  cityId: string;
+  nameAr: string;
+  nameEn: string;
+  altSpellings?: string[];
+  isActive?: boolean;
+}
+
+export interface StationAliases {
+  values: string[];
+}
+
+export interface UpdateStationRequest {
+  stationId: string;
+  cityId?: string;
+  nameAr?: string;
+  nameEn?: string;
+  /** An absent wrapper leaves aliases unchanged; empty values clear them. */
+  aliases?: StationAliases;
+  isActive?: boolean;
+}

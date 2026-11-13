@@ -13,6 +13,8 @@ package train.catalog.v1;
 // have at the module level, and would cost the gateway a second connection
 // to the same process.
 service CatalogService {
+  rpc ListStations (ListStationsRequest) returns (ListStationsResponse);
+
   rpc SearchOneWayTrips (SearchOneWayTripsRequest)
       returns (SearchOneWayTripsResponse);
 
@@ -45,6 +47,13 @@ service CatalogService {
   // newest first.
   rpc ListAuditEntries (ListAuditEntriesRequest)
       returns (ListAuditEntriesResponse);
+
+  // Operator station snapshots include inactive stations and both languages.
+  rpc GetStation (StationIdRequest) returns (StationResponse);
+  rpc CreateStation (CreateStationRequest) returns (StationResponse);
+  rpc UpdateStation (UpdateStationRequest) returns (StationResponse);
+  // HTTP DELETE aliases this command; stations are never physically deleted.
+  rpc DeactivateStation (StationIdRequest) returns (StationResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -505,4 +514,71 @@ message RecentSearch {
   optional string returnDate = 7;
 
   CivilDateTime searchedAt = 8;
+}
+
+message ListStationsRequest {
+  // Resolved from Accept-Language by the gateway; ar or en.
+  string language = 1;
+  // Optional. An empty query returns the whole list.
+  string query = 2;
+}
+
+message StationItem {
+  string id = 1;
+  string name = 2;
+  string cityName = 3;
+}
+
+message GovernorateGroup {
+  string id = 1;
+  string name = 2;
+  repeated StationItem stations = 3;
+}
+
+message ListStationsResponse {
+  repeated GovernorateGroup governorates = 1;
+}
+
+message StationDetails {
+  string id = 1;
+  string cityId = 2;
+  string governorateId = 3;
+  LocalizedName name = 4;
+  LocalizedName cityName = 5;
+  LocalizedName governorateName = 6;
+  repeated string altSpellings = 7;
+  // Always supplied by the server, including false with loader defaults off.
+  optional bool isActive = 8;
+  string createdAt = 9;
+  string updatedAt = 10;
+}
+
+message StationResponse {
+  StationDetails station = 1;
+}
+
+message StationIdRequest {
+  string stationId = 1;
+}
+
+message CreateStationRequest {
+  string cityId = 1;
+  string nameAr = 2;
+  string nameEn = 3;
+  repeated string altSpellings = 4;
+  optional bool isActive = 5;
+}
+
+message StationAliases {
+  repeated string values = 1;
+}
+
+message UpdateStationRequest {
+  string stationId = 1;
+  optional string cityId = 2;
+  optional string nameAr = 3;
+  optional string nameEn = 4;
+  // Absent means unchanged; a present empty wrapper clears the aliases.
+  StationAliases aliases = 5;
+  optional bool isActive = 6;
 }
