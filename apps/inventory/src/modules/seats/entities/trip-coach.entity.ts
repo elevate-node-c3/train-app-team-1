@@ -25,6 +25,15 @@ export class TripCoachEntity {
   @Column({ name: 'coach_number', type: 'integer' })
   coachNumber!: number;
 
+  @Column({ type: 'integer' })
+  position!: number;
+
   @Column({ name: 'travel_class_id', type: 'uuid' })
   travelClassId!: string;
+
+  @Column({ name: 'travel_class_name_en', type: 'text' })
+  travelClassNameEn!: string;
+
+  @Column({ name: 'travel_class_name_ar', type: 'text' })
+  travelClassNameAr!: string;
 }

@@ -145,6 +145,7 @@ describe('TripLifecycleConsumer', () => {
     // The two are not atomic (spec §6.5); the event must survive a crash more than the retry does.
     repository.apply.mockResolvedValue({
       kind: 'refused',
+      reason: 'occupied-seats-dropped',
       occupiedSeatNumbers: ['44'],
       occupiedStationIds: [tanta],
     } satisfies ApplyOutcome);
@@ -155,7 +156,12 @@ describe('TripLifecycleConsumer', () => {
     // If this failed, the refusal event would have been lost with the delivery.
     expect(outbox.append).toHaveBeenCalledWith(
       ctx,
-      expect.objectContaining({ type: 'inventory.trip.publication-refused' }),
+      expect.objectContaining({
+        type: 'inventory.trip.publication-refused',
+        payload: expect.objectContaining({
+          reason: 'occupied seats would be dropped by the new layout',
+        }),
+      }),
     );
     // Exactly one append: nothing was appended in the rolled-back first transaction.
     expect(outbox.append).toHaveBeenCalledTimes(1);
@@ -193,5 +199,13 @@ describe('TripLifecycleConsumer', () => {
     });
     // Task 6's close(ctx, tripId) takes the transaction context first.
     expect(repository.close).toHaveBeenCalledWith(ctx, tripId);
+  });
+
+  it('lets an unknown-trip withdrawal fail transiently so it retries', async () => {
+    // A withdrawal can arrive before a publication that is retrying; swallowing
+    // the miss would leave the later trip on sale forever.
+    repository.close.mockRejectedValue(new Error(`Cannot close unknown trip ${tripId}`));
+
+    await expect(consumer.handle(withdrawnEnvelope, 1)).rejects.toThrow(/unknown trip/i);
   });
 });

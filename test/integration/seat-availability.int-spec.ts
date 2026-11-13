@@ -115,6 +115,21 @@ describe('segment availability', () => {
     expect(await availability(cairo, alexandria, firstClass)).toBe(10);
   });
 
+  it('does not double a count when the same query is requested twice', async () => {
+    // A duplicated wanted row multiplies the JOIN, so countFor must collapse it.
+    const query: AvailabilityQuery = {
+      tripId,
+      originStationId: cairo,
+      destinationStationId: alexandria,
+      travelClassId: firstClass,
+    };
+
+    const result = await service.availabilityFor([query, query]);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((count) => count.availableSeats)).toEqual([10, 10]);
+  });
+
   it('frees a seat for the stretch beyond the one it is held for', async () => {
     // Seat 44 held Ramsis -> Tanta.
     await occupy(seat44, segmentOf(0, 2), 'held', inAnHour);
@@ -183,15 +198,15 @@ describe('segment availability', () => {
   });
 
   it('counts a trip with no stop timestamps exactly as the ordinary same-day fixture', async () => {
-    // Review Focus 5: overlap is stop order, never the clock. trip_stop has no
-    // timestamp column at all, and plannedStopsFrom orders stops by the
-    // payload's own `position` field — never by arrival/departure, and never
-    // by the order stops happen to arrive in the array. This payload removes
-    // both potential clock stand-ins at once: every arrivalAt/departureAt is
-    // null, and the stops array itself is shuffled while each stop keeps its
-    // true `position`. If order were ever derived from the array index or
-    // from a tied/absent timestamp instead of `position`, Ramsis would not
-    // sort before Alexandria and the assertions below could not both hold.
+    // Review Focus 5: overlap is stop order, never the clock. plannedStopsFrom
+    // orders stops by the payload's own `position` field — never by
+    // arrival/departure, and never by the order stops happen to arrive in the
+    // array. This payload removes both potential clock stand-ins at once: every
+    // arrivalAt/departureAt is null, and the stops array itself is shuffled
+    // while each stop keeps its true `position`. If order were ever derived
+    // from the array index or from a tied/absent timestamp instead of
+    // `position`, Ramsis would not sort before Alexandria and the assertions
+    // below could not both hold.
     const base = sixStopPayload();
     const shuffledIndexes = [3, 0, 5, 1, 4, 2];
     const overnightPayload = {

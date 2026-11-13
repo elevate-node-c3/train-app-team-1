@@ -79,6 +79,22 @@ beforeEach(async () => {
 });
 
 describe('the seat-occupation exclusion constraint', () => {
+  it('pins the exclusion predicate itself in the catalogue', async () => {
+    // §14.1: prove the released_at predicate exists, not just the constraint name.
+    const [row]: { definition: string }[] = await source.query(
+      `SELECT pg_get_constraintdef(oid) AS definition
+       FROM pg_constraint
+       WHERE conname = 'excl_seat_occupation_overlap'`,
+    );
+
+    expect(row.definition).toContain(
+      'EXCLUDE USING gist (trip_seat_id WITH =, segment WITH &&)',
+    );
+    // pg_get_constraintdef wraps the predicate in its own parentheses, e.g.
+    // "WHERE ((released_at IS NULL))"; accept either spelling.
+    expect(row.definition).toMatch(/WHERE \(*released_at IS NULL\)*/);
+  });
+
   it('refuses two overlapping occupations of one seat', async () => {
     await occupy(seat44, segmentOf(0, 5), 'sold');
     await expect(

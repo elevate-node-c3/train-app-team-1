@@ -101,9 +101,19 @@ export class AvailabilityRepository {
   async countFor(resolved: ResolvedAvailabilityQuery[]): Promise<AvailabilityCount[]> {
     if (resolved.length === 0) return [];
 
-    const tripIds = resolved.map((query) => query.tripId);
-    const travelClassIds = resolved.map((query) => query.travelClassId);
-    const segments = resolved.map((query) => toInt4Range(query.segment));
+    // A duplicated wanted row multiplies the JOIN and doubles count(s.id), so
+    // collapse identical queries before unnesting them.
+    const wantedByKey = new Map(
+      resolved.map((query) => [
+        rowKey(query.tripId, query.travelClassId, query.segment),
+        query,
+      ]),
+    );
+    const wanted = [...wantedByKey.values()];
+
+    const tripIds = wanted.map((query) => query.tripId);
+    const travelClassIds = wanted.map((query) => query.travelClassId);
+    const segments = wanted.map((query) => toInt4Range(query.segment));
 
     const rows: CountRow[] = await this.dataSource.query(
       `WITH wanted(trip_id, travel_class_id, segment) AS (
@@ -127,9 +137,7 @@ export class AvailabilityRepository {
       [tripIds, travelClassIds, segments],
     );
 
-    const originalByKey = new Map(
-      resolved.map((query) => [rowKey(query.tripId, query.travelClassId, query.segment), query]),
-    );
+    const originalByKey = wantedByKey;
 
     return rows.map((row) => {
       const original = originalByKey.get(

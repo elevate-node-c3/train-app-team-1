@@ -101,6 +101,11 @@ export class TripLifecycleConsumer implements EventHandlerPort {
     // out of existence, so commit it separately before dead-lettering. The
     // two commits are not atomic (spec §6.5): a crash between them loses the
     // dead-lettering but keeps the refusal event, which is the safer loss.
+    const reason =
+      outcome.reason === 'stops-changed'
+        ? 'stops changed while seats are occupied'
+        : 'occupied seats would be dropped by the new layout';
+
     await this.unitOfWork.withTransaction((ctx) =>
       this.outbox.append(
         ctx,
@@ -111,7 +116,7 @@ export class TripLifecycleConsumer implements EventHandlerPort {
           payload: {
             tripId: plan.tripId,
             timetableVersion: plan.timetableVersion,
-            reason: 'occupied seats would be dropped by the new layout',
+            reason,
             occupiedSeatNumbers: outcome.occupiedSeatNumbers,
             occupiedStationIds: outcome.occupiedStationIds,
           },
@@ -119,10 +124,7 @@ export class TripLifecycleConsumer implements EventHandlerPort {
       ),
     );
 
-    throw new PermanentEventError(
-      'Trip publication refused: occupied seats would be dropped',
-      'invalid-payload',
-    );
+    throw new PermanentEventError(`Trip publication refused: ${reason}`, 'invalid-payload');
   }
 
   private async applyAndPublish(

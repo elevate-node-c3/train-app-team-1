@@ -16,11 +16,25 @@ async function insertCoach(
   coachId: string,
   coachNumber: number,
   travelClassId: string,
+  position = 0,
+  travelClassNameEn = 'Economy',
+  travelClassNameAr = 'اقتصادية',
 ): Promise<void> {
   const source = await inventoryDataSource();
   await source.query(
-    `INSERT INTO trip_coach (id, trip_id, coach_number, travel_class_id) VALUES ($1, $2, $3, $4)`,
-    [coachId, tripId, coachNumber, travelClassId],
+    `INSERT INTO trip_coach
+       (id, trip_id, coach_number, position, travel_class_id,
+        travel_class_name_en, travel_class_name_ar)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      coachId,
+      tripId,
+      coachNumber,
+      position,
+      travelClassId,
+      travelClassNameEn,
+      travelClassNameAr,
+    ],
   );
 }
 
@@ -31,12 +45,25 @@ async function insertSeat(
   seatNumber: number,
   travelClassId: string,
   side = 'left',
+  rowNumber = 1,
+  seatIndexInSide = 0,
 ): Promise<void> {
   const source = await inventoryDataSource();
   await source.query(
-    `INSERT INTO trip_seat (id, trip_id, trip_coach_id, seat_number, travel_class_id, side)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [seatId, tripId, coachId, seatNumber, travelClassId, side],
+    `INSERT INTO trip_seat
+       (id, trip_id, trip_coach_id, seat_number, travel_class_id,
+        row_number, side, seat_index_in_side)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      seatId,
+      tripId,
+      coachId,
+      String(seatNumber),
+      travelClassId,
+      rowNumber,
+      side,
+      seatIndexInSide,
+    ],
   );
 }
 
@@ -71,10 +98,20 @@ describe('the trip tables', () => {
   });
 
   it('refuses a second stop at the same station on one trip', async () => {
-    // seedSixStopTrip already placed station 0; inserting it at position 6 must fail
+    // seedSixStopTrip already placed station 0; inserting it at position 6 must
+    // fail on the station uniqueness constraint, not the (trip_id, position) PK.
     await expect(insertStop(SIX_STOP_TRIP.tripId, SIX_STOP_TRIP.stationIds[0], 6)).rejects.toThrow(
-      /trip_stop/,
+      /uq_trip_stop_station/,
     );
+  });
+
+  it('stores seat_number as text so alphanumeric labels can exist', async () => {
+    const [column]: { data_type: string }[] = await source.query(
+      `SELECT data_type FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'trip_seat'
+         AND column_name = 'seat_number'`,
+    );
+    expect(column.data_type).toBe('text');
   });
 
   it('refuses two coaches with the same number on one trip', async () => {
@@ -86,7 +123,7 @@ describe('the trip tables', () => {
         1,
         SIX_STOP_TRIP.travelClassIds[0],
       ),
-    ).rejects.toThrow(/trip_coach/);
+    ).rejects.toThrow(/uq_trip_coach_number/);
   });
 
   it('refuses two seats with the same number in one coach', async () => {
@@ -99,7 +136,7 @@ describe('the trip tables', () => {
         1,
         SIX_STOP_TRIP.travelClassIds[0],
       ),
-    ).rejects.toThrow(/trip_seat/);
+    ).rejects.toThrow(/uq_trip_seat_number/);
   });
 
   it('accepts seat 1 in two different coaches', async () => {
