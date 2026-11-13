@@ -35,4 +35,12 @@ export class TripStopEntity {
 
   @Column({ name: 'station_id', type: 'uuid' })
   stationId!: string;
+
+  // Stored only; nothing in TA-68 reads these back. Overlap is stop order,
+  // never the clock. A terminus has no departure and an origin no arrival.
+  @Column({ name: 'arrival_at', type: 'timestamptz', nullable: true })
+  arrivalAt!: Date | null;
+
+  @Column({ name: 'departure_at', type: 'timestamptz', nullable: true })
+  departureAt!: Date | null;
 }

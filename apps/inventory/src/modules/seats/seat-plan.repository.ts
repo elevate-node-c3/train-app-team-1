@@ -181,13 +181,16 @@ export class SeatPlanRepository {
     const values: string[] = [];
     const params: unknown[] = [];
     plan.stops.forEach((stop, index) => {
-      const offset = index * 3;
-      values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-      params.push(plan.tripId, stop.position, stop.stationId);
+      const offset = index * 5;
+      values.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`,
+      );
+      params.push(plan.tripId, stop.position, stop.stationId, stop.arrivalAt, stop.departureAt);
     });
 
     await manager.query(
-      `INSERT INTO trip_stop (trip_id, position, station_id) VALUES ${values.join(', ')}`,
+      `INSERT INTO trip_stop (trip_id, position, station_id, arrival_at, departure_at)
+       VALUES ${values.join(', ')}`,
       params,
     );
   }
