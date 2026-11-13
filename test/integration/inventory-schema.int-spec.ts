@@ -123,9 +123,11 @@ describe('the trip tables', () => {
     // A second, real trip so trip_id itself is valid — isolates the failure
     // to the composite FK, not a missing inventory_trip row.
     const otherTripId = '10000000-0000-0000-0000-000000000002';
-    await source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'on_sale')`, [
-      otherTripId,
-    ]);
+    await source.query(
+      `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
+       VALUES ($1, 'on_sale', 1, '60000000-0000-0000-0000-000000000001', 999, '2026-01-01')`,
+      [otherTripId],
+    );
 
     // Coach belongs to SIX_STOP_TRIP.tripId; claiming otherTripId must be refused.
     // seat_number 11 is unused on this coach, so uq_trip_seat_number can't fire first.
@@ -141,10 +143,14 @@ describe('the trip tables', () => {
   });
 
   it('refuses a status outside on_sale and closed', async () => {
+    // Every NOT NULL column gets a value so the status CHECK is the only
+    // constraint left that can fire.
     await expect(
-      source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'pending')`, [
-        '10000000-0000-0000-0000-000000000099',
-      ]),
+      source.query(
+        `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
+         VALUES ($1, 'pending', 1, '60000000-0000-0000-0000-000000000001', 999, '2026-01-01')`,
+        ['10000000-0000-0000-0000-000000000099'],
+      ),
     ).rejects.toThrow(/chk_inventory_trip_status/);
   });
 });

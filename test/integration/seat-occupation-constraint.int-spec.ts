@@ -140,9 +140,11 @@ describe('the seat-occupation exclusion constraint', () => {
     // A second, real trip so trip_id itself is valid — isolates the failure
     // to the composite FK, not a missing inventory_trip row.
     const otherTripId = '10000000-0000-0000-0000-000000000002';
-    await source.query(`INSERT INTO inventory_trip (id, status) VALUES ($1, 'on_sale')`, [
-      otherTripId,
-    ]);
+    await source.query(
+      `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
+       VALUES ($1, 'on_sale', 1, '60000000-0000-0000-0000-000000000001', 999, '2026-01-01')`,
+      [otherTripId],
+    );
 
     await expect(
       source.query(

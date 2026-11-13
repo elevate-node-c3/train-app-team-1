@@ -17,6 +17,23 @@ export class InventoryTripEntity {
   @Column({ name: 'timetable_version', type: 'integer' })
   timetableVersion!: number;
 
+  // Inventory's own copy of catalog's trip facts, read back by Task 9's
+  // TripSeatsCreated event instead of the inbound message (design doc §7).
+  @Column({ name: 'train_id', type: 'uuid' })
+  trainId!: string;
+
+  @Column({ name: 'train_number', type: 'integer' })
+  trainNumber!: number;
+
+  @Column({ name: 'service_date', type: 'date' })
+  serviceDate!: string;
+
+  @Column({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
+
   // Children import this file for their owning @ManyToOne; naming the target
   // here instead of importing it keeps the runtime graph acyclic.
   @OneToMany('TripStopEntity', 'trip')
