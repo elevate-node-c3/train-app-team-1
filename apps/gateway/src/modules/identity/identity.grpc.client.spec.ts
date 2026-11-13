@@ -44,6 +44,10 @@ const METHODS = [
   'completeProfile',
   'getProfile',
   'getProfileOptions',
+  'listPassengers',
+  'addPassenger',
+  'updatePassenger',
+  'deletePassenger',
 ] as const;
 type Method = (typeof METHODS)[number];
 
@@ -399,6 +403,80 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     const optionsResult = await adapter.getProfileOptions();
     expect(optionsResult.profileTypes).toHaveLength(1);
     expect(optionsResult.nationalities).toHaveLength(1);
+  });
+
+  it('forwards listPassengers, addPassenger, updatePassenger, and deletePassenger', async () => {
+    const wirePassenger = {
+      id: 'pass-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      typeName: 'Adult',
+      isSelf: false,
+      createdAt: '2026-11-06T20:00:00.000Z',
+    };
+
+    const { adapter, fake } = adapterWith((method) => {
+      if (method === 'listPassengers') {
+        return { response: { passengers: [wirePassenger] } };
+      }
+      if (method === 'addPassenger' || method === 'updatePassenger') {
+        return { response: { passenger: wirePassenger } };
+      }
+      if (method === 'deletePassenger') {
+        return { response: { success: true } };
+      }
+      return {};
+    });
+
+    const listResult = await adapter.listPassengers('acc-1', 'en');
+    expect(listResult).toEqual({ passengers: [wirePassenger] });
+    expect(fake.calls[0].method).toBe('listPassengers');
+    expect(fake.calls[0].request).toEqual({ accountId: 'acc-1', language: 'en' });
+
+    const addResult = await adapter.addPassenger({
+      accountId: 'acc-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+    expect(addResult).toEqual({ passenger: wirePassenger });
+    expect(fake.calls[1].method).toBe('addPassenger');
+    expect(fake.calls[1].request).toEqual({
+      accountId: 'acc-1',
+      fullName: 'Omar Ali',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+
+    const updateResult = await adapter.updatePassenger({
+      passengerId: 'pass-1',
+      accountId: 'acc-1',
+      fullName: 'Omar Ali Updated',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+    expect(updateResult).toEqual({ passenger: wirePassenger });
+    expect(fake.calls[2].method).toBe('updatePassenger');
+    expect(fake.calls[2].request).toEqual({
+      passengerId: 'pass-1',
+      accountId: 'acc-1',
+      fullName: 'Omar Ali Updated',
+      nationalId: '29001011234567',
+      profileType: 'adult',
+      language: 'en',
+    });
+
+    const deleteResult = await adapter.deletePassenger('pass-1', 'acc-1');
+    expect(deleteResult).toEqual({ success: true });
+    expect(fake.calls[3].method).toBe('deletePassenger');
+    expect(fake.calls[3].request).toEqual({
+      passengerId: 'pass-1',
+      accountId: 'acc-1',
+    });
   });
 
   it('propagates the verified caller to identity metadata', async () => {

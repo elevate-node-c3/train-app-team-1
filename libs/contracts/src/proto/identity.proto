@@ -14,6 +14,10 @@ service IdentityService {
   rpc CompleteProfile (CompleteProfileRequest) returns (CompleteProfileResponse);
   rpc GetProfile (GetProfileRequest) returns (GetProfileResponse);
   rpc GetProfileOptions (GetProfileOptionsRequest) returns (GetProfileOptionsResponse);
+  rpc ListPassengers (ListPassengersRequest) returns (ListPassengersResponse);
+  rpc AddPassenger (AddPassengerRequest) returns (PassengerResponse);
+  rpc UpdatePassenger (UpdatePassengerRequest) returns (PassengerResponse);
+  rpc DeletePassenger (DeletePassengerRequest) returns (DeletePassengerResponse);
 }
 
 message TokenPair {
@@ -161,4 +165,53 @@ message NationalityItem {
 message GetProfileOptionsResponse {
   repeated ProfileTypeItem profileTypes = 1;
   repeated NationalityItem nationalities = 2;
+}
+
+message PassengerItem {
+  string id = 1;
+  string fullName = 2;
+  string nationalId = 3;
+  string profileType = 4;
+  string typeName = 5;
+  bool isSelf = 6;
+  string createdAt = 7;
+}
+
+message ListPassengersRequest {
+  string accountId = 1;
+  string language = 2;
+}
+
+message ListPassengersResponse {
+  repeated PassengerItem passengers = 1;
+}
+
+message AddPassengerRequest {
+  string accountId = 1;
+  string fullName = 2;
+  string nationalId = 3;
+  string profileType = 4;
+  string language = 5;
+}
+
+message UpdatePassengerRequest {
+  string passengerId = 1;
+  string accountId = 2;
+  string fullName = 3;
+  string nationalId = 4;
+  string profileType = 5;
+  string language = 6;
+}
+
+message DeletePassengerRequest {
+  string passengerId = 1;
+  string accountId = 2;
+}
+
+message DeletePassengerResponse {
+  bool success = 1;
+}
+
+message PassengerResponse {
+  PassengerItem passenger = 1;
 }
