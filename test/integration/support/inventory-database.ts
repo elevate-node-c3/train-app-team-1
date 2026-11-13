@@ -16,7 +16,14 @@ export const INVENTORY_DATABASE_URL =
   }/inventory`;
 
 /** Every inventory table, children before parents, for truncation. */
-export const INVENTORY_TABLES = ['processed_event', 'outbox_event'] as const;
+export const INVENTORY_TABLES = [
+  'trip_seat',
+  'trip_coach',
+  'trip_stop',
+  'inventory_trip',
+  'processed_event',
+  'outbox_event',
+] as const;
 
 let dataSource: DataSource | null = null;
 
