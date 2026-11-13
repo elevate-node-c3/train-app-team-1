@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyReasonFor } from './trip-search-empty-reason.js';
 
 /**
- * Each reason tells the traveller a different thing to change -- the stations,
- * the date, the train number, or the filters (BR-57). Collapsing any two of
- * them into one message is the research finding this rule exists to prevent:
- * "I don't know what to change: station, date, or round-trip option".
+ * Empty reasons must identify the field to change, not collapse distinct problems
+ * into one vague message.
  */
 describe('choosing the empty-result reason', () => {
   it('blames the route when the pair is not served in this direction', () => {
@@ -21,8 +19,7 @@ describe('choosing the empty-result reason', () => {
   });
 
   it('blames the route even when a train number was supplied', () => {
-    // The stations are the bigger problem; naming the train number would send
-    // the traveller to fix the wrong field.
+    // An unserved route outranks the train-number issue.
     expect(
       emptyReasonFor({
         routeServed: false,
@@ -78,8 +75,7 @@ describe('choosing the empty-result reason', () => {
   });
 
   it('still blames the route when filters also removed everything', () => {
-    // Fixing the filters would leave an unserved route, so the stations are
-    // the field to change first.
+    // Fix stations before filters when the route is not served.
     expect(
       emptyReasonFor({
         routeServed: false,
@@ -103,8 +99,7 @@ describe('choosing the empty-result reason', () => {
       ).toBe('SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL');
     });
 
-    // Changing a filter cannot bring back a train that left before the
-    // traveller landed, so the arrival is the thing to say.
+    // Filters cannot restore returns that left before outbound arrival.
     it('outranks the filters', () => {
       expect(
         emptyReasonFor({

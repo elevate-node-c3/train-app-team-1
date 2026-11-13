@@ -7,13 +7,8 @@ import {
 } from './search-fixture.js';
 
 /**
- * The fixture is the stand-in for TA-16's trip generator, so these assertions
- * are also the contract between the two: whatever the generator eventually
- * writes has to satisfy them, because the search query assumes them.
- *
- * Checking referential integrity here rather than relying on the database
- * means a broken fixture fails in milliseconds with a readable message instead
- * of as a foreign-key violation inside a seed run.
+ * Fixtures and generated trips share the search query's data contract.
+ * Check references here for clearer failures than seed-time foreign-key errors.
  */
 describe('the search fixture', () => {
   const stopsByTrip = new Map<string, typeof SEARCH_FIXTURE.tripStops>();
@@ -28,9 +23,8 @@ describe('the search fixture', () => {
     expect(stopsByTrip.size).toBe(SEARCH_FIXTURE.datedTrips.length);
   });
 
-  // The intermediate-stop count is `destination.position - origin.position - 1`,
-  // which is only correct while positions are dense and 1-based. If TA-16's
-  // generator ever skips a number, the count silently lies.
+  // Intermediate stops = destination.position - origin.position - 1;
+  // positions must stay dense and one-based.
   it('numbers every trip stop densely from 1', () => {
     for (const [tripId, stops] of stopsByTrip) {
       const positions = stops.map((stop) => stop.position).sort((a, b) => a - b);
@@ -59,8 +53,7 @@ describe('the search fixture', () => {
     }
   });
 
-  // A boardable stop needs a departure and an alightable stop needs an
-  // arrival; the search query joins on exactly that.
+  // Boarding needs a departure; alighting needs an arrival.
   it('gives the first stop a departure, the last an arrival, and interiors both', () => {
     for (const [tripId, stops] of stopsByTrip) {
       const ordered = [...stops].sort((a, b) => a.position - b.position);
@@ -153,9 +146,7 @@ describe('the search fixture', () => {
       expect(stops.length).toBeGreaterThanOrEqual(5);
     });
 
-    // The overnight case: a trip dated D whose mid-route origin departs on
-    // D+1. It must appear under D+1, which is what BR-16 means by "the date it
-    // departs the passenger's origin".
+    // Search by the passenger's origin departure date, even when service started the day before.
     it('has an overnight trip that departs a mid-route origin the next day', () => {
       const trip = SEARCH_FIXTURE.datedTrips.find(
         (row) => row.id === SEARCH_FIXTURE_IDS.trips.overnight,
@@ -173,8 +164,7 @@ describe('the search fixture', () => {
       ).toBe(true);
     });
 
-    // Review Focus 3: a route calling at one station twice gives the double
-    // join two valid pairings for one trip.
+    // Repeated station visits create multiple join pairs for one trip.
     it('has a route that calls at the same station twice', () => {
       const stops = stopsByTrip.get(SEARCH_FIXTURE_IDS.trips.loop) ?? [];
       const visits = stops.filter(

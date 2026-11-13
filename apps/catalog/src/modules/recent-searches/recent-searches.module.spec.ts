@@ -14,12 +14,8 @@ import { TripStopEntity } from '../trips/entities/trip-stop.entity.js';
 import { CatalogModule } from '../../catalog.module.js';
 
 /**
- * The wiring, and one structural promise no unit spec can make.
- *
- * The whole CatalogModule is compiled rather than this module alone, for the
- * reason `trips.module.spec.ts` gives: `DataSource` comes from TypeORM's root
- * module, so an isolated feature module cannot resolve it, and a spec that
- * provided one itself would be testing a graph the application never builds.
+ * Compile CatalogModule because DataSource comes from TypeORM's root module.
+ * Do not fake a feature-only graph that the application never builds.
  */
 describe('the recent-searches module wiring', () => {
   async function compile() {
@@ -65,21 +61,16 @@ describe('the recent-searches module wiring', () => {
     const controller = moduleRef.get(RecentSearchesGrpcController);
 
     expect(controller).toBeInstanceOf(RecentSearchesGrpcController);
-    // Its own dependency, not a container-wide lookup: the controller has to
-    // be able to inject the service, not merely coexist with one.
+    // Check that the controller receives this service, not just that both exist.
     expect(
       (controller as unknown as { recentSearches?: unknown }).recentSearches,
     ).toBeInstanceOf(RecentSearchesService);
   });
 
   /**
-   * §2.3 rule 6: recent searches are never cached under a shared key and never
-   * mixed into the shared search cache.
-   *
-   * Asserted against the declarations rather than the container, because the
-   * container is a liar here -- `CacheAsideService` is global, so resolving it
-   * succeeds from anywhere. What matters is that nothing in this feature *asks*
-   * for it, and a later change has to delete this test to start.
+   * Recent searches must not use shared keys or enter the shared search cache.
+   * Check declarations: CacheAsideService is global, so container resolution alone
+   * cannot prove this feature does not depend on it.
    */
   it('declares no cache dependency anywhere in the feature', () => {
     const dependenciesOf = (target: unknown): unknown[] =>

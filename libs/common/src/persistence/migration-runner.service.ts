@@ -2,10 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DataSourceInitializer } from './data-source-initializer.js';
 import { SchemaReadinessGate } from './schema-readiness.gate.js';
 
-/**
- * Lock key derived from the database name, so the seven services never block
- * each other: each owns its own database and therefore its own key.
- */
+/** Database-scoped key keeps services from blocking each other's migrations. */
 const LOCK_KEY_SQL = `hashtext('migrations:' || current_database())`;
 
 @Injectable()
@@ -13,8 +10,7 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MigrationRunnerService.name);
   private completed = false;
 
-  // Closing the gate in the constructor, not at bootstrap: every provider is
-  // built before the first hook, so a relay whose hook runs earlier still waits.
+  // Close the gate during construction, before any lifecycle hook runs.
   constructor(
     private readonly initializer: DataSourceInitializer,
     private readonly schema: SchemaReadinessGate,
@@ -28,15 +24,9 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
   }
 
   /**
-   * Runs at bootstrap rather than on a `migrationsRun: true` flag, which does
-   * nothing here: that option only fires inside `initialize()`, and
-   * `manualInitialization: true` means Nest never calls it.
-   *
-   * A failure is logged, not thrown. Throwing here would abort the boot, and
-   * the platform's posture is that a Postgres outage yields a degraded
-   * service: `/health/ready` already reports the database as not ready, which
-   * is the honest signal. The alternative — a service that exits — gives a
-   * crash loop and no diagnostics.
+   * Run explicitly at bootstrap: Nest uses manual initialization, so
+   * migrationsRun does not run automatically. Log failures without aborting
+   * boot; readiness reports the database as not ready.
    */
   async onApplicationBootstrap(): Promise<void> {
     if (!this.initializer.isConfigured) {
@@ -64,21 +54,14 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
       return;
     }
 
-    // A dedicated connection, because a session-level advisory lock belongs to
-    // the connection that took it. Going through `dataSource.query()` would
-    // take the lock on one pooled connection and try to release it on
-    // whichever one the pool handed back next, leaving the first holding it
-    // for the life of the process.
+    // Session advisory locks must be acquired and released on the same
+    // connection, not on whichever pooled connection dataSource.query() uses.
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.connect();
 
     try {
-      // Blocking, not `pg_try_advisory_lock`: a second instance booting at the
-      // same time should wait and then find nothing to do, rather than skip
-      // migrating and start serving against a schema that is not there yet.
-      // TypeORM's own `migrations` table carries no lock of its own, so two
-      // concurrent `runMigrations()` would both attempt the same CREATE TABLE
-      // and one would fail the boot.
+      // Block concurrent instances until migrations finish; never skip them.
+      // TypeORM's migrations table does not serialize concurrent runs.
       await queryRunner.query(`SELECT pg_advisory_lock(${LOCK_KEY_SQL})`);
 
       const applied = await dataSource.runMigrations({ transaction: 'each' });
@@ -92,8 +75,7 @@ export class MigrationRunnerService implements OnApplicationBootstrap {
         );
       }
     } finally {
-      // Releasing the lock must not mask a migration failure, so this block
-      // swallows its own errors only.
+      // Unlock errors must not hide a migration failure.
       try {
         await queryRunner.query(`SELECT pg_advisory_unlock(${LOCK_KEY_SQL})`);
       } catch (error: unknown) {

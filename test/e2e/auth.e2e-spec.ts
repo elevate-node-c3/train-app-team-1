@@ -33,12 +33,8 @@ import {
 } from './support/stack.js';
 
 /**
- * The AUTH-1/AUTH-2/AUTH-3 story, end to end against the real Compose stack.
- *
- * Every request goes through the gateway, so this is the only test that proves
- * the edge, the gRPC adapter, identity's use cases, the outbox relay, the
- * gateway revocation consumer and Mailpit all agree with each other. Unit
- * specs pin each piece; this pins the wiring.
+ * Gateway requests exercise the real Compose wiring through gRPC, identity,
+ * the outbox relay, the gateway revocation consumer and Mailpit.
  */
 
 const NEW_PASSWORD = 'N3w!Passw0rd';
@@ -150,8 +146,7 @@ describe('Authentication edge to identity', () => {
     const code = await waitForEmailCode(email, SIGN_UP_SUBJECT);
     expect(code).toMatch(/^\d{6}$/);
 
-    // Correct password on an unverified account is a 200 with no tokens: the
-    // response tells the client to verify without revealing anything extra.
+    // Unverified accounts return 200 without tokens to prompt verification.
     const pending = await post<SignInResponseDto>('sign-in', {
       email,
       password: DEFAULT_PASSWORD,
@@ -160,8 +155,7 @@ describe('Authentication edge to identity', () => {
     expect(pendingBody.verificationRequired).toBe(true);
     expect(pendingBody.tokens).toBeNull();
 
-    // A wrong code is the documented business error, and the attempt counter
-    // survives the rejected request.
+    // Invalid codes return a business error without losing the attempt count.
     const wrongCode = code === '000000' ? '111111' : '000000';
     expectError(
       await post('verify-email', { email, code: wrongCode }),
@@ -188,7 +182,7 @@ describe('Authentication edge to identity', () => {
     expect(claims.bkbl).toBe(false);
     expect(claims.iss).toBe('train-app-identity');
     expect(claims.aud).toBe('train-app-gateway');
-    // F6a: identity facts, never the address, in the token.
+    // Tokens contain identity facts, never the email address.
     expect(JSON.stringify(claims)).not.toContain(email);
     expect(JSON.stringify(claims)).not.toContain('@');
 
@@ -209,8 +203,7 @@ describe('Authentication edge to identity', () => {
     expect(rotated.refreshToken).not.toBe(session.refreshToken);
     expect(rotated.accessToken).not.toBe(session.accessToken);
 
-    // Two requests racing on the same refresh token get the same successor
-    // while the 10-second grace window is open, not a theft alarm.
+    // Refresh races share a successor during the 10-second grace window.
     const replayResult = await post<TokenPairDto>('refresh', {
       refreshToken: session.refreshToken,
     });
@@ -356,8 +349,7 @@ describe('Authentication edge to identity', () => {
       decodeAccessToken(secondSession.accessToken).iat * 1000,
     ).toBeLessThanOrEqual(revokedAt);
 
-    // Both sessions existed before the reset. The account marker rejects both
-    // access tokens, not just the session that requested the reset.
+    // The account marker rejects both pre-reset sessions, not just the resetting one.
     for (const pair of [firstSession, secondSession]) {
       expectError(
         await post(

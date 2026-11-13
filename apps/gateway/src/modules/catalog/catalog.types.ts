@@ -17,13 +17,7 @@ import type {
 } from '@app/contracts';
 import type { Observable } from 'rxjs';
 
-/**
- * The catalog service as this gateway calls it.
- *
- * `metadata` and `options` are declared on every method so a deadline can be
- * threaded through the `ClientGrpc` proxy -- without them in the signature the
- * third argument has nowhere to go, and the call would wait forever.
- */
+/** Proxy methods include metadata and options so every call can carry a deadline. */
 export interface CatalogGrpcClient {
   listStations(
     data: ListStationsRequest,
@@ -80,5 +74,4 @@ export interface CatalogGrpcClient {
   ): Observable<ListRecentSearchesResponse>;
 }
 
-/** The resolved service proxy. */
 export const CATALOG_GRPC_CLIENT = Symbol('CATALOG_GRPC_CLIENT');

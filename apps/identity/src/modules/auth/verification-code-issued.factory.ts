@@ -5,7 +5,7 @@ import {
   type VerificationCodeIssuedEvent,
   type VerificationCodePurpose,
 } from '@app/contracts';
-/** Enforced in the producer as well as in Joi: the invariant is not config-only. */
+/** Enforce the TTL cap in the producer too, not only in Joi. */
 export const MAX_VERIFICATION_CODE_TTL_SECONDS = 600;
 
 export interface VerificationCodeIssuedFactoryProps {
@@ -24,9 +24,8 @@ export interface VerificationCodeIssuedFactoryProps {
 }
 
 /**
- * The producer-owned builder behind the contract test. Deterministic given a
- * fixed clock and id: `occurredAt` and `payload.issuedAt` are the same instant,
- * because BR-03 starts when the code was issued, not when it was published.
+ * occurredAt and payload.issuedAt match: delivery latency starts at issuance,
+ * not publication.
  */
 export function buildVerificationCodeIssued(
   props: VerificationCodeIssuedFactoryProps,

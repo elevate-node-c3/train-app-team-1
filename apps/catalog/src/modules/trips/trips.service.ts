@@ -55,7 +55,7 @@ import {
   buildTripWithdrawn,
 } from './trip-events.factory.js';
 
-/** One day past what search offers. The window itself is imported, never restated. */
+/** Use the shared booking window plus one day. */
 const GENERATION_MARGIN_DAYS = 1;
 
 /** A unique violation on `uq_dated_trip_train_date`. */
@@ -171,10 +171,8 @@ export class TripsService
   }
 
   /**
-   * Every published row, which since TA-20 is not the same as every *live*
-   * version: a republish adds version N+1 and leaves its predecessor in place,
-   * bounded. Callers must resolve which of a train's rows owns a given service
-   * date -- `generateTripsForDateRange` does, via `isEffectiveVersionOn`.
+   * Read all published history, not just live versions. Resolve each date's owner
+   * with isEffectiveVersionOn; superseded predecessors remain as bounded rows.
    */
   async getPublishedTimetables(
     timetableId?: string,
@@ -214,10 +212,8 @@ export class TripsService
   }
 
   /**
-   * The effective range is not read here: `isWithinEffectiveRange` owns that
-   * one reading, so this and version resolution cannot drift apart over what
-   * `effective_until` means. What is left is this method's own question --
-   * whether the timetable runs on that weekday.
+   * isWithinEffectiveRange owns inclusive date bounds so version checks agree.
+   * This method additionally checks the running weekday.
    */
   isTimetableRunningOnDate(
     timetable: TimetableEntity,
@@ -337,11 +333,9 @@ export class TripsService
   }
 
   /**
-   * Every in-order pair, for every class, must have one positive fare, and a
-   * longer segment must never cost less than one it contains. Both are
-   * publishing errors, not search-time surprises. The rules themselves live
-   * in the publish validator, so generation and publish can never disagree
-   * on what counts as a valid fare table.
+   * Every forward pair in every class needs a positive fare; contained segments
+   * cannot cost more than containing segments. Share the publish validator so
+   * generation and publication agree before search sees invalid prices.
    */
   validateTripFares(
     coaches: TrainCoachEntity[],
@@ -356,10 +350,8 @@ export class TripsService
   }
 
   /**
-   * Sums the same keys the search's capacity SQL does, so the two agree. A
-   * repeated seat number would inflate it, so it is refused in the same pass.
-   * No catalog of coach layouts is available here, so every layout this train
-   * actually carries counts as known.
+   * Use the same snapshot seat keys as search; reject repeated labels to prevent
+   * inflated capacity. Without a layout catalog, carried layouts count as known.
    */
   calculateCapacity(coaches: TrainCoachEntity[]): number {
     const knownCoachLayoutIds = new Set(
@@ -375,9 +367,8 @@ export class TripsService
   }
 
   /**
-   * No station catalog is available here either, so every station named by
-   * the timetable itself counts as known -- this call only checks the
-   * route's shape, not whether the stations are real.
+   * Without a station catalog, timetable station IDs count as known here.
+   * Validate route shape only; existence is not checked.
    */
   validateTimetableStops(stops: TimetableStopEntity[]): void {
     const draftStops: TimetableStopDraftInput[] = stops.map((stop) => ({
@@ -403,10 +394,7 @@ export class TripsService
     }
   }
 
-  /**
-   * Validates a timetable the way generation will, without writing anything, so
-   * a publish can be refused before it commits.
-   */
+  /** Validate like generation without writes, so publication can refuse before commit. */
   async validateTimetableForGeneration(
     timetable: TimetableEntity,
     serviceDate: string,
@@ -425,8 +413,8 @@ export class TripsService
   }
 
   /**
-   * Validates the first date the timetable actually runs on in the window. A
-   * fare gap is the same on every date, so one is enough to refuse a publish.
+   * Check the first running date in the window; one fare gap suffices to refuse.
+   * If none run, still validate route shape.
    */
   async validateTimetableForWindow(timetable: TimetableEntity): Promise<void> {
     const [startDate, endDate] = this.generationWindow();
@@ -442,7 +430,6 @@ export class TripsService
       }
     }
 
-    // Nothing runs in the window, but a broken route is still worth refusing.
     this.validateTimetableStops(await this.getTimetableStops(timetable.id));
   }
 
@@ -540,8 +527,7 @@ export class TripsService
         return savedTrip;
       });
     } catch (error: unknown) {
-      // Only the race this is written for: another instance inserted the same
-      // (train, service_date) first. Anything else is a real failure.
+      // Recover only if another instance inserted the train/date row; otherwise rethrow.
       if (!isUniqueViolation(error)) {
         throw error;
       }
@@ -577,9 +563,7 @@ export class TripsService
       throw new Error('Start date cannot be after end date');
     }
 
-    // Always every published row, never only the one asked for: a single
-    // timetable still has to be told apart from its own train's other
-    // versions, and that cannot be done from a row in isolation.
+    // Resolve all published versions together; one row cannot prove date ownership.
     const published = await this.getPublishedTimetables();
     const versionsByTrain = groupByTrain(published);
 
@@ -622,10 +606,8 @@ export class TripsService
         continue;
       }
 
-      // The date belongs to exactly one of the train's published versions.
-      // Without this, two versions whose ranges overlap would each produce the
-      // same dated trip, and the (train, service_date) unique constraint would
-      // report the second as "already exists" rather than as the error it is.
+      // Generate only from the date's owning version; an overlapping second write
+      // would otherwise be hidden by train/date unique-violation recovery.
       if (!isEffectiveVersionOn(timetable, trainVersions, serviceDate)) {
         continue;
       }
@@ -634,10 +616,7 @@ export class TripsService
     }
   }
 
-  /**
-   * Always from today, never "yesterday's end plus one": a job that was down
-   * for three days still fills the gap it left.
-   */
+  /** Start from today, not the previous window end, to fill downtime gaps. */
   private generationWindow(): [string, string] {
     const startDate = cairoToday(new Date());
 

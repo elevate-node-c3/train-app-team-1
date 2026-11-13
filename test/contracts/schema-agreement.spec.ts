@@ -41,8 +41,8 @@ const catalogProcessedEventDdl = readFileSync(
 );
 
 /**
- * Every consuming service owns `processed_event`; each copy must match the
- * shared claim SQL. Catalog once shipped without it and dead-lettered events.
+ * Each consumer's `processed_event` must match the shared claim SQL.
+ * A missing table dead-letters catalog deliveries.
  */
 const processedEventDdls: [string, string][] = [
   ['notification', notificationDdl],
@@ -53,10 +53,7 @@ const emailDeliveryEntitySource = readFileSync(
   'utf8',
 );
 
-/**
- * Extracts the text between `CREATE TABLE <name> (` and its matching `)`.
- * A plain regex cannot do this because the bodies contain nested CHECK (...).
- */
+/** Track nested CHECK parentheses to find the table body's closing parenthesis. */
 function tableBody(ddl: string, table: string): string {
   const marker = `CREATE TABLE ${table} (`;
   const start = ddl.indexOf(marker);
@@ -92,10 +89,9 @@ function columnsOf(ddl: string, table: string): string[] {
 }
 
 /**
- * The entity source is the contract here, not TypeORM metadata: a decorator
- * typo is exactly what this test must catch. Named columns use the explicit
- * `name`; unnamed columns map to the property name. The non-greedy body match
- * backtracks over `default: () => 'now()'` to reach the decorator's real `)`.
+ * Read source, not TypeORM metadata, to catch decorator typos.
+ * Use the explicit column name or the property name. The regex backtracks over
+ * `default: () => 'now()'` to find the decorator's closing parenthesis.
  */
 function entityColumnsOf(source: string): string[] {
   const columns: string[] = [];
@@ -111,10 +107,8 @@ function entityColumnsOf(source: string): string[] {
 }
 
 /**
- * The columns a statement mentions, not every identifier in it: SQL keywords,
- * `now()` and the status literals would otherwise drown the signal. This is
- * enough to catch the real failure — an adapter statement naming a column the
- * migration never created.
+ * Collect column references, not SQL keywords, functions or status values,
+ * to catch statements that name columns missing from the migration.
  */
 function referencedColumns(sql: string, table: string): Set<string> {
   const found = new Set<string>();
@@ -207,8 +201,7 @@ describe('Schema agreement', () => {
   });
 
   it('gives every service that consumes events its own inbox table', () => {
-    // Catalog binds four event types; without this table every delivery
-    // dead-letters.
+    // Catalog's four event types all need this table to avoid dead-lettering.
     const consumers = [
       'apps/catalog/src/database/migrations',
       'apps/notification/src/database/migrations',

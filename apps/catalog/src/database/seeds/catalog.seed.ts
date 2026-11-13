@@ -92,7 +92,6 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       ),
     );
 
-    // 4. Create train type and travel classes.
     await manager.getRepository(TrainTypeEntity).save({
       id: IDS.trainType,
       nameEn: 'Express',
@@ -112,8 +111,7 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       },
     ]);
 
-    // 5. Create coach layouts. Seats are per side of the aisle: that is what
-    // makes two adjacent (D2, BR-25), and what the capacity SQL sums.
+    // Group seats by aisle side for adjacency checks and capacity totals.
     const rows: CoachLayoutRow[] = [
       { rowNumber: 1, leftSeats: ['1', '2'], rightSeats: ['3', '4'] },
       { rowNumber: 2, leftSeats: ['5', '6'], rightSeats: ['7', '8'] },
@@ -132,14 +130,12 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       },
     ]);
 
-    // 6. Create a train.
     await manager.getRepository(TrainEntity).save({
       id: IDS.train,
       trainNumber: 9001,
       trainType: { id: IDS.trainType },
     });
 
-    // 7. Add one coach for each travel class.
     await manager.getRepository(TrainCoachEntity).save([
       {
         id: IDS.coaches.first,
@@ -159,8 +155,7 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       },
     ]);
 
-    // 8. Create the timetable only if it does not already exist.
-    // This preserves its published status when the seed runs again.
+    // Keep the timetable's published status on repeated seed runs.
     const timetableRepository = manager.getRepository(TimetableEntity);
 
     const existingTimetable = await timetableRepository.findOne({
@@ -179,7 +174,6 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       });
     }
 
-    // 9. Add the ordered timetable stops.
     await manager.getRepository(TimetableStopEntity).save([
       {
         id: IDS.timetableStops.cairo,
@@ -213,7 +207,7 @@ export async function seedCatalog(app: INestApplicationContext): Promise<void> {
       },
     ]);
 
-    // 10. Add fare coverage for every station pair and travel class.
+    // Every station pair and travel class needs fare coverage.
     const fareRepository = manager.getRepository(FareEntity);
     const effectiveFrom = new Date('2020-01-01T00:00:00.000Z');
 

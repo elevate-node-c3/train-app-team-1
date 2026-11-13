@@ -14,17 +14,9 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * The stops query, against real Postgres and the real fixture.
- *
- * Three correlated subqueries pin the segment's two ends, and nothing about
- * them can be checked with a mocked query builder: whether `s.trip = :tripId`
- * resolves to the join column, whether the endpoint lookups agree with the
- * pairing `findCandidates` chose, and whether a loop route picks the earliest
- * pairing rather than the widest one.
- *
- * The count rule is the one the story states outright -- "the number of stops
- * between always equals the search result's N Stops count" -- so it is asserted
- * against the search query itself rather than against a number written here.
+ * Real Postgres checks the trip join column and three correlated endpoint
+ * lookups, including the earliest loop pairing. Stop counts must agree with
+ * findCandidates rather than a hardcoded fixture count.
  */
 
 /** 12:00 Cairo on 15 June: inside the window, before every fixture trip. */
@@ -100,8 +92,7 @@ describe('the trip stops query', () => {
       const [boarding] = rows;
       expect(boarding.stationNameEn.length).toBeGreaterThan(0);
       expect(boarding.stationNameAr.length).toBeGreaterThan(0);
-      // 06:00 Cairo in summer, which is 03:00Z. Nothing arrives at a trip's
-      // first stop.
+      // 06:00 Cairo is 03:00Z in summer; the first stop has no arrival.
       expect(boarding.arrivalAt).toBeNull();
       expect(boarding.departureAt?.toISOString()).toBe(
         '2026-06-20T03:00:00.000Z',
@@ -115,8 +106,7 @@ describe('the trip stops query', () => {
         destinationStationId: IDS.stations.ramsis,
       });
 
-      // Ramsis is where this traveller gets off, and also a stop the train
-      // leaves at 08:50 Cairo. The row reports the timetable, not the journey.
+      // Ramsis still departs at 08:50 Cairo; report the timetable, not just the journey.
       const alighting = rows[rows.length - 1];
       expect(alighting.arrivalAt?.toISOString()).toBe(
         '2026-06-20T05:40:00.000Z',
@@ -127,11 +117,7 @@ describe('the trip stops query', () => {
     });
   });
 
-  /**
-   * The rule the design's "4 Stops" chip depends on. Asserted against
-   * `findCandidates` rather than a literal, so the two queries cannot drift
-   * apart without this failing.
-   */
+  /** Compare against findCandidates so search and stop queries cannot drift. */
   describe('the count agrees with the search result (BR-17)', () => {
     it.each([
       ['Alexandria -> Ramsis', IDS.stations.alexandria, IDS.stations.ramsis],
@@ -165,8 +151,7 @@ describe('the trip stops query', () => {
 
   describe('a route that calls at a station twice', () => {
     it('takes the earliest valid pairing, as search does', async () => {
-      // The loop calls at Banha at position 2 and again at position 4. A
-      // traveller boarding at Ramsis alights at the first one.
+      // Banha is at positions 2 and 4; choose the first arrival after Ramsis.
       const rows = await stops.findStops({
         tripId: IDS.trips.loop,
         originStationId: IDS.stations.ramsis,
@@ -204,8 +189,7 @@ describe('the trip stops query', () => {
       expect(rows).toEqual([]);
     });
 
-    // The itinerary of an unpublished trip is data nobody was meant to see,
-    // and a withdrawn trip describes a journey nobody can take.
+    // Do not expose draft itineraries or journeys that have been withdrawn.
     it.each([
       ['a draft trip', IDS.trips.draft],
       ['a withdrawn trip', IDS.trips.withdrawn],

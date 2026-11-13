@@ -3,9 +3,8 @@ import type { TransactionContext } from '@app/common/persistence/unit-of-work.po
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 
 /**
- * Device PIN credentials live in this schema but no endpoint creates one yet.
- * The only operation the auth flows need is revocation: a password reset or a
- * session reuse must not leave a PIN usable on a stolen phone.
+ * No endpoint creates device PINs yet. Reset or session reuse must revoke
+ * existing PINs so a stolen phone cannot use them.
  */
 @Injectable()
 export class DeviceCredentialRepository {

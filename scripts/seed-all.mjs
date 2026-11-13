@@ -1,11 +1,5 @@
-// Seeds every service's database, on demand.
-//
-// Plain .mjs so it needs no compilation, like scripts/generate-dev-keys.mjs.
-// Each seed runs as its own process, because a seed resolves its connection
-// from DATABASE_URL and one process can only hold one value.
-//
-// Idempotent throughout: every seed either keys its rows by a fixed uuid or
-// checks before inserting, so running this again inserts nothing new.
+// Seeds can run again without adding duplicate rows.
+// Separate processes let each seed use its own DATABASE_URL.
 
 import { spawn } from 'node:child_process';
 
@@ -14,17 +8,14 @@ const ADMIN_PASSWORD = process.env.POSTGRES_PASSWORD ?? 'postgres';
 const HOST = process.env.POSTGRES_HOST ?? 'postgres';
 const PORT = process.env.POSTGRES_PORT ?? '5432';
 
-/** Admin credentials, so one seeder reaches databases owned by seven roles. */
+/** Admin access lets the seeder reach every service database. */
 function adminUrl(database) {
   const user = encodeURIComponent(ADMIN_USER);
   const password = encodeURIComponent(ADMIN_PASSWORD);
   return `postgres://${user}:${password}@${HOST}:${PORT}/${database}`;
 }
 
-/**
- * Run order is dependency order: identity's operator must exist before anyone
- * signs in, and catalog's network before trips reference it.
- */
+// Seed staff and the network before dependent data.
 const SEEDS = [
   {
     name: 'identity: staff accounts',
@@ -44,11 +35,7 @@ const SEEDS = [
 ];
 
 /**
- * Waits until the database has applied migrations.
- *
- * The seeder holds admin credentials, so a table it created would be owned by
- * the superuser and the service's own role could not write to it. Seeding only
- * after the service has migrated keeps every object owned by its service.
+ * Wait for service migrations so tables belong to the service, not the admin.
  */
 async function waitForMigrations(database) {
   const deadline = Date.now() + 120_000;
@@ -96,7 +83,7 @@ function run({ name, database, script }) {
       env: {
         ...process.env,
         DATABASE_URL: adminUrl(database),
-        // The seeds' own background jobs stay off; the running services own them.
+        // Services run these jobs; seeds must not.
         OUTBOX_RELAY_ENABLED: 'false',
         TRIP_GENERATION_ENABLED: 'false',
       },

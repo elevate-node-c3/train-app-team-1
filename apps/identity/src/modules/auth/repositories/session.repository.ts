@@ -36,10 +36,7 @@ export class SessionRepository {
       .getOne();
   }
 
-  /**
-   * Returns the ids of the sessions this call revoked, so the caller can
-   * publish one revocation marker per session without a second read.
-   */
+  /** Return revoked session IDs for event markers without another read. */
   async revokeByAccount(
     ctx: TransactionContext,
     accountId: string,

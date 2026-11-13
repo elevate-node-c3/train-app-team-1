@@ -24,14 +24,9 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * Changing a fare, against real Postgres.
- *
- * The property this file exists for is the one no double can prove: the new
- * fare row, the audit entry, the `FareChanged` outbox event and the
- * idempotency key commit **together or not at all**. `entityManagerOf` only
- * accepts a context the real `TypeOrmUnitOfWork` minted, so an in-memory
- * stand-in could not exercise this path at all (same reasoning as
- * `timetable-publish.int-spec.ts`).
+ * Fare, audit, FareChanged outbox event and idempotency key commit together.
+ * entityManagerOf requires a real TypeOrmUnitOfWork context, so an in-memory
+ * stand-in cannot exercise this path.
  */
 
 const OPERATOR = '33333333-3333-4333-8333-333333333333';
@@ -46,7 +41,7 @@ const IDS = {
   train: '30000000-0000-4000-8000-000000000002',
   travelClass: '40000000-0000-4000-8000-000000000001',
   timetable: '50000000-0000-4000-8000-000000000001',
-  // F4: a second train whose only published version starts in the future.
+  // A second train whose only published version starts in the future.
   futureTrain: '30000000-0000-4000-8000-000000000003',
   futureTimetable: '50000000-0000-4000-8000-000000000002',
 } as const;
@@ -56,12 +51,9 @@ const FUTURE_TRAIN_NUMBER = '917';
 const FUTURE_ROUTE_EFFECTIVE_FROM = '2099-01-01';
 
 /**
- * Hides a stored key from the *first* `find`, which is the concurrent-change
- * race: the replay check runs before the winner commits, so the loser only
- * learns about the key when its own `record` hits the primary key -- inside
- * the transaction, after the fare row, the audit entry and the outbox event
- * have all already been written. Same device as
- * `timetable-publish.int-spec.ts`'s `RacingRequestRepository`.
+ * Hide the key on the first find to model a replay check before a concurrent
+ * commit. The final record then hits the real primary key after the other
+ * writes, exercising rollback.
  */
 class RacingRequestRepository extends OperationsRequestRepository {
   private hidden: string | null = null;
@@ -184,17 +176,10 @@ describe('changing a fare', () => {
     });
   });
 
-  /**
-   * The file's reason for existing. A fare change whose transaction rejects
-   * must leave no fare row, no audit entry, no outbox event and no
-   * idempotency key -- and the only way to show that is to make a write
-   * inside the real transaction fail after the others have already run.
-   */
+  /** Fail a late transaction write to check rollback of every earlier write. */
   describe('a fare change that rolls back', () => {
     it('leaves no fare row, no audit entry, no outbox event and no key', async () => {
-      // `actor_account_id` is a uuid column, so a malformed actor fails the
-      // audit insert -- after the fare row has already been written in the
-      // same transaction.
+      // A malformed UUID fails the audit insert after the fare write.
       await expect(
         service.changeFare(request(), 'bad-actor-key', 'not-a-uuid'),
       ).rejects.toThrow();
@@ -206,10 +191,8 @@ describe('changing a fare', () => {
     });
 
     it('leaves nothing behind when a concurrent change already committed the key', async () => {
-      // A key already committed by a concurrent change, hidden from this
-      // attempt's replay check. Its `record` is the last write in the
-      // transaction, so the fare row, the audit entry and the outbox event
-      // have all been written by the time it fails.
+      // Hide the winner's key from the replay check. The final record then fails
+      // after fare, audit and outbox writes, which must all roll back.
       await source.query(
         `INSERT INTO operations_request (idempotency_key, fingerprint, response_json)
            VALUES ($1, $2, $3::jsonb)`,
@@ -229,7 +212,7 @@ describe('changing a fare', () => {
       expect(await countOf('fare')).toBe(0);
       expect(await countOf('operations_audit')).toBe(0);
       expect(await outboxTypes()).toEqual([]);
-      // The pre-existing key is untouched -- nothing overwrote it.
+      // Preserve the concurrent winner's key.
       const [stored] = (await source.query(
         'SELECT fingerprint FROM operations_request',
       )) as { fingerprint: string }[];
@@ -240,10 +223,8 @@ describe('changing a fare', () => {
 
   describe('a replayed fare change', () => {
     it('answers from the stored response without writing a second fare', async () => {
-      // Same request object, not two calls to `request()`: `effectiveFrom`
-      // defaults to `Date.now() + 60s`, so two independent calls would
-      // fingerprint differently and the second would be a genuine conflict
-      // rather than a replay.
+      // Reuse one request: effectiveFrom defaults to now + 60s, so rebuilding it
+      // changes the fingerprint and produces a conflict instead of a replay.
       const req = request();
       const first = await service.changeFare(req, 'replay-key', OPERATOR);
       const second = await service.changeFare(req, 'replay-key', OPERATOR);
@@ -272,8 +253,7 @@ describe('changing a fare', () => {
     });
 
     it('refuses an amount that would price a segment below one it contains (CAT-2)', async () => {
-      // Cairo -> Giza is already 12,000; Cairo -> Alexandria for less than
-      // that undercuts a segment it contains.
+      // Cairo -> Alexandria must not undercut Cairo -> Giza's 12,000 fare.
       await service.changeFare(
         request({ originStationId: IDS.cairo, destinationStationId: IDS.giza, amountPiastres: 12_000 }),
         'inner-key',
@@ -295,13 +275,11 @@ describe('changing a fare', () => {
         code: ErrorCode.VALIDATION_ERROR,
         details: [expect.objectContaining({ field: 'amountPiastres' })],
       });
-      // Only the inner fare was written; the outer refusal wrote nothing.
       expect(await countOf('fare')).toBe(1);
     });
 
-    // F4: the route must be checked against the fare's own `effectiveFrom`
-    // civil date, not today's -- an operator who publishes next month's
-    // timetable must still be able to correct its fares before it goes live.
+    // Validate the route on the fare's effectiveFrom civil date, not today,
+    // so future timetables can be priced before they start.
     it('accepts a fare change for a train whose only published version starts in the future', async () => {
       const result = await service.changeFare(
         request({
@@ -317,9 +295,8 @@ describe('changing a fare', () => {
     });
   });
 
-  // F1/F2/F3: the lock must hold only the `fare` rows of the exact tuple --
-  // serialising a genuine collision on the same (class, pair), but never
-  // blocking anything else on the same train.
+  // Lock only fare rows for the exact (class, pair), serializing collisions
+  // without blocking other pairs on the same train.
   describe('the lock two concurrent changes take', () => {
     it('serialises two changes to the same class and pair', async () => {
       await service.changeFare(
@@ -341,16 +318,11 @@ describe('changing a fare', () => {
         ),
       ]);
 
-      // All three rows exist: the seed, and both concurrent changes.
       expect(await countOf('fare')).toBe(3);
       expect(await countOf('operations_audit')).toBe(3);
 
-      // Genuine serialisation, not a lucky interleave: whichever of A/B
-      // acquired the lock first saw only the seed (15,000) as "previous".
-      // The other blocked until the first committed, then saw the
-      // *first's* new amount as its own "previous" -- only possible if its
-      // `lockFareHistory` query ran, and was answered, strictly after the
-      // other's commit.
+      // The first lock holder sees the seed fare; the second must see the first
+      // change's committed amount as its previous fare.
       const winner = resultA.previousAmountPiastres === 15_000 ? resultA : resultB;
       const loser = winner === resultA ? resultB : resultA;
 
@@ -401,9 +373,7 @@ describe('changing a fare', () => {
   });
 });
 
-/** The smallest catalogue a fare change can be made against, with a
- * published route so the order and containment rules have something real to
- * check. */
+/** Minimal fixture with a published route for order and containment checks. */
 async function seedCatalogue(source: DataSource): Promise<void> {
   await source.query(
     `INSERT INTO governorate (id, name_ar, name_en, sort_order) VALUES ($1, 'القاهرة', 'Cairo', 1)`,
@@ -438,8 +408,7 @@ async function seedCatalogue(source: DataSource): Promise<void> {
     [IDS.travelClass],
   );
 
-  // A published route, effective well before today, so the order and
-  // containment checks have a real travel order to read.
+  // A route already in effect provides the travel order for containment checks.
   await source.query(
     `INSERT INTO timetable (id, train_id, running_days, effective_from, version, status)
        VALUES ($1, $2, ARRAY[0,1,2,3,4,5,6]::smallint[], '2026-01-01', 1, 'published')`,
@@ -460,8 +429,7 @@ async function seedCatalogue(source: DataSource): Promise<void> {
     );
   }
 
-  // F4: a second train whose *only* published version starts well in the
-  // future -- the case "probe with today" refused outright.
+  // Only a future published version exists, so checking against today would fail.
   await source.query(
     `INSERT INTO train (id, train_number, train_type_id) VALUES ($1, $2, $3)`,
     [IDS.futureTrain, Number(FUTURE_TRAIN_NUMBER), IDS.trainType],

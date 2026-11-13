@@ -6,13 +6,8 @@ import {
 } from '@nestjs/common';
 
 /**
- * Marks the process as draining at the *start* of Nest's shutdown sequence.
- *
- * `onModuleDestroy` is step 1. `onApplicationShutdown` is step 4 — after
- * `app.dispose()` has already closed the HTTP server — so flipping the flag
- * there would claim "stop taking new work" only once no new work can arrive.
- * Readiness checks consult this flag, so it must turn false before traffic is
- * drained, not after.
+ * Marks draining in onModuleDestroy, before Nest closes the HTTP server.
+ * Readiness must reject new traffic then; onApplicationShutdown is too late.
  */
 @Injectable()
 export class GracefulShutdownService implements OnModuleDestroy {

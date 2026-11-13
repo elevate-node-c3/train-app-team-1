@@ -8,10 +8,7 @@ function normalize(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/**
- * A row keyed by normalized email, with no foreign key to `account` on purpose:
- * failed attempts against an address that does not exist must still be counted.
- */
+/** Count failures by normalized email, including unknown accounts. */
 @Injectable()
 export class SignInLockoutRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -38,8 +35,7 @@ export class SignInLockoutRepository {
     ctx: TransactionContext,
     lockout: SignInLockoutEntity,
   ): Promise<void> {
-    // Upsert: the first failure for an address creates the row, and a
-    // concurrent sign-in cannot turn a counter update into a duplicate insert.
+    // Upsert prevents duplicate rows on concurrent first failures.
     await entityManagerOf(ctx)
       .getRepository(SignInLockoutEntity)
       .upsert(

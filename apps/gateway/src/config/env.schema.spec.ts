@@ -32,9 +32,7 @@ describe('Gateway environment schema', () => {
   });
 
   it('refuses to boot without a public key source', () => {
-    // Enforced here rather than in the DI provider that reads the key: the
-    // skeleton test compiles every root module with no environment, so a
-    // provider that throws while Nest is wiring takes the whole app down.
+    // Validate at boot so DI compilation still works without environment values.
     const { JWT_PUBLIC_KEY_FILE: _file, ...withoutKey } = validGatewayEnv;
 
     expect(() =>

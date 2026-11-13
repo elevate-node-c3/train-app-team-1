@@ -9,11 +9,7 @@ export function routeVersionKey(
 }
 
 /**
- * Manages generational versioning per route pair (§6.3, §2.3 rule 2, 5).
- *
- * Incrementing a route's version invalidates thousands of cached search
- * combinations in O(1) time without executing `KEYS` or blocking `SCAN`
- * on production Redis.
+ * A route version invalidates all its search keys in O(1), without KEYS or SCAN.
  */
 @Injectable()
 export class RouteVersionService {
@@ -65,8 +61,7 @@ export class RouteVersionService {
 
     try {
       let newVersion = await client.incr(key);
-      // Redis INCR initializes an absent key to 1. Since unversioned default is 1,
-      // bump once more so the first invalidation moves 1 -> 2.
+      // INCR starts missing keys at 1; the first invalidation must move 1 to 2.
       if (newVersion === 1) {
         newVersion = await client.incr(key);
       }

@@ -3,8 +3,7 @@
 /node_modules
 /build
 
-# Written and removed by test/skeleton/lib-imports.spec.ts; ignored so an
-# interrupted run can never commit it.
+# Temporary import probe; ignore it if tests stop early.
 apps/*/src/alias-import-probe.ts
 
 # TypeScript build cache
@@ -26,7 +25,7 @@ lerna-debug.log*
 /coverage
 /.nyc_output
 
-# IDEs and editors
+# Editors
 /.idea
 .project
 .classpath
@@ -35,8 +34,9 @@ lerna-debug.log*
 .settings/
 *.sublime-workspace
 .claude/
+.kilo/
 
-# Personal agent notes.
+# Local agent notes
 CLAUDE.md
 
 # IDE - VSCode
@@ -46,19 +46,19 @@ CLAUDE.md
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
+# Environment files
 .env
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
 
-# Local development JWT key pair. Generate with `npm run keys:generate`.
-# Never commit a private key: a clone with it can mint tokens the gateway trusts.
+# Local JWT keys; generate with `npm run keys:generate`.
+# Keep private keys out of Git to prevent forged tokens.
 *.pem
 /config/jwt/
 
-# temp directory
+# Temporary files
 .temp
 .tmp
 
@@ -68,5 +68,5 @@ pids
 *.seed
 *.pid.lock
 
-# Diagnostic reports (https://nodejs.org/api/report.html)
+# Node.js diagnostic reports
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json

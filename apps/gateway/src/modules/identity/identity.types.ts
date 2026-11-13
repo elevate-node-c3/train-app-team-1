@@ -238,9 +238,7 @@ export function identityGrpcServiceConstructor(): IdentityGrpcServiceConstructor
     oneofs: true,
   });
   const loaded = grpc.loadPackageDefinition(definition);
-  // `loadPackageDefinition` nests by package segment (`train.identity.v1`),
-  // while the constant is the wire name. Walk the segments so a rename has one
-  // source of truth rather than a matching hardcoded tree here.
+  // The loader nests package segments; use the wire name to find the service.
   const namespace = IDENTITY_PACKAGE_NAME.split('.').reduce<
     Record<string, unknown>
   >(

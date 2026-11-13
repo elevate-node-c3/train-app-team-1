@@ -153,9 +153,6 @@ describe('cache-aside', () => {
       await expect(cache.del('k')).resolves.toBeUndefined();
     });
 
-    // A value written by an older deploy, or a key someone else set, parses as
-    // JSON but is not what this caller expects. Garbage in the cache must not
-    // become garbage in a response.
     it('treats undecodable JSON as a miss', async () => {
       const { cache } = withRedis(fakeClient('not json at all'));
 

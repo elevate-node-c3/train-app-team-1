@@ -1,8 +1,8 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 /**
- * One `Idempotency-Key`, forever (TA-20). `fingerprint` separates a genuine
- * retry from a reused key on different content; `responseJson` is the replay.
+ * Retain Idempotency keys permanently. Fingerprints distinguish retries from
+ * changed bodies, and responseJson supplies the replay.
  */
 @Entity('operations_request')
 export class OperationsRequestEntity {

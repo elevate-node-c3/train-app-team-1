@@ -7,21 +7,14 @@ import dataSource from '../data-source.js';
 import { SEARCH_FIXTURE } from './search-fixture.js';
 
 /**
- * Loads the search fixture into the catalog database.
- *
- * It writes `dated_trip` and `trip_stop` directly, standing in for TA-16's
- * generator so the search path can be exercised end to end before that lands.
- * Idempotent: every row is keyed by a fixed uuid and conflicts are ignored, so
- * running it twice is a no-op rather than a duplicate-key failure.
+ * Write dated trips and stops directly. Fixed IDs and ignored conflicts make reruns safe.
  */
 
 const TABLE_WAIT_TIMEOUT_MS = 60_000;
 const TABLE_POLL_INTERVAL_MS = 250;
 
 /**
- * Catalog runs its migrations during `onApplicationBootstrap`, so a separate
- * seed process cannot assume `dated_trip` exists yet. Poll with a bound rather
- * than sleeping a fixed amount and hoping.
+ * Migrations run during service bootstrap; wait for dated_trip with a bounded poll.
  */
 async function waitForTripTable(source: DataSource): Promise<void> {
   const deadline = Date.now() + TABLE_WAIT_TIMEOUT_MS;
@@ -40,10 +33,7 @@ async function waitForTripTable(source: DataSource): Promise<void> {
 }
 
 /**
- * Inserts rows, ignoring any whose id is already present.
- *
- * One statement per table rather than per row: a fixture is a few dozen rows,
- * and a loop would turn the seed into a few dozen round trips.
+ * Batch inserts per table and ignore existing IDs to keep reruns safe and cheap.
  */
 async function insertAll(
   source: DataSource,
@@ -74,12 +64,8 @@ async function insertAll(
 }
 
 /**
- * Loads the fixture.
- *
- * Takes a `DataSource` so an integration spec can pass its own already-open
- * connection; called with none, it opens and closes the CLI data source, which
- * is what the npm script does. Only the connection it opened is destroyed --
- * closing a caller's connection would be a surprise.
+ * Use the caller's open connection or manage the CLI connection.
+ * Close only connections opened here.
  */
 async function seed(source?: DataSource): Promise<void> {
   const target = source ?? dataSource;

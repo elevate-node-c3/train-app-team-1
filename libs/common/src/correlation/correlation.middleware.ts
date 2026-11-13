@@ -16,7 +16,7 @@ export class CorrelationMiddleware implements NestMiddleware {
 
     let correlationId: string;
     if (isGateway) {
-      // Gateway ALWAYS generates an immutable correlation ID; client-sent values never replace it.
+      // The gateway always mints its own ID, ignoring client values.
       correlationId = uuidv4();
     } else {
       const incoming = req.headers[CORRELATION_ID_HEADER];

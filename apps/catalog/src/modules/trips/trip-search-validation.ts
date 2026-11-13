@@ -10,17 +10,9 @@ import {
 } from '@app/contracts';
 
 /**
- * Catalog's own refusals.
- *
- * The gateway validates the request shape too, but a gRPC peer is not a
- * trusted caller: anything that would produce a wrong answer is refused here
- * as well. Every refusal names the field to change and the change to make
- * (BR-57) -- the research finding behind that rule was travellers saying "I
- * don't know what to change: station, date, or round-trip option".
- *
- * `from` and `to` are the field names the traveller sees, not the wire's
- * `originStationId` / `destinationStationId`: the rule says the same-station
- * refusal names To, and the message has to match the form.
+ * Revalidate gRPC requests; gateway validation does not make peers trusted.
+ * Every refusal names a field and an action. Use form names from/to, not wire
+ * originStationId/destinationStationId; same-station refusals must name To.
  */
 
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,7 +22,6 @@ export function isUuid(value: unknown): value is string {
   return isRfcUuid(value);
 }
 
-/** What the catalogue knows about the ids a request referenced. */
 export interface SearchReferenceFacts {
   knownStationIds: Set<string>;
   activeStationIds: Set<string>;
@@ -39,11 +30,7 @@ export interface SearchReferenceFacts {
   trainExists: boolean;
 }
 
-/**
- * A date that matches the pattern but is not a day -- '2026-02-30' -- would be
- * rolled forward by `Date` into 2 March and would silently search a date the
- * traveller never asked for.
- */
+/** Reject impossible dates instead of letting Date roll them into another month. */
 function isRealCivilDate(value: string): boolean {
   if (!CIVIL_DATE_PATTERN.test(value)) return false;
 
@@ -57,7 +44,7 @@ function isRealCivilDate(value: string): boolean {
   );
 }
 
-/** Rules that need nothing but the request and the clock. */
+/** Validate syntax and date-window rules before catalog queries. */
 export function validateSearchShape(
   request: SearchOneWayTripsRequest,
   now: Date,
@@ -78,8 +65,7 @@ export function validateSearchShape(
     }
   }
 
-  // Only worth saying once the two are individually well-formed, and named
-  // against To because that is the one the traveller should change.
+  // Report equal stations against To, only after both IDs validate.
   if (
     details.length === 0 &&
     request.originStationId === request.destinationStationId
@@ -105,10 +91,8 @@ export function validateSearchShape(
 
   details.push(...validateDepartureDate(request.departureDate, now));
 
-  // Only when the traveller is planning a round trip. Checked against the date
-  // they typed, which is the only departure date this call knows; the second
-  // leg re-checks it against the chosen trip's own departure date, which is the
-  // server's.
+  // Validate against the requested departure here; return search rechecks against
+  // the server-read outbound departure date.
   if (request.returnDate !== undefined && request.returnDate !== '') {
     details.push(
       ...validateReturnDate(request.returnDate, request.departureDate, now),
@@ -172,18 +156,10 @@ function validateDepartureDate(
 }
 
 /**
- * A round trip's return date (BR-20).
- *
- * Exported because both legs ask it and must agree: the outbound search checks
- * it against the departure date the traveller typed, and the return search
- * checks it again against the chosen trip's own Cairo departure date, which the
- * server reads rather than trusts. One function means the two can never answer
- * differently -- a return date accepted on the first screen and refused on the
- * second would be the worst of both.
- *
- * `departureDate` is assumed already validated by the caller; when it is not a
- * date at all the comparison is skipped, because a refusal naming the return
- * date for a broken departure date would send the traveller to the wrong field.
+ * Share return-date rules across both legs. Outbound uses the requested departure;
+ * return search uses the server-read trip's Cairo departure date.
+ * Callers validate departure first; skip comparison if it is malformed to avoid
+ * blaming returnDate for a departure-date fault.
  */
 export function validateReturnDate(
   returnDate: string,
@@ -203,8 +179,7 @@ export function validateReturnDate(
     ];
   }
 
-  // On or after, not strictly after: out and back on one day is a round trip a
-  // traveller can and does make.
+  // Same-day returns are allowed; use on-or-after, not strictly after.
   if (isRealCivilDate(departureDate ?? '') && returnDate < departureDate) {
     return [
       {
@@ -235,11 +210,7 @@ export function validateReturnDate(
   ];
 }
 
-/**
- * Rules that need the catalogue. Kept separate and pure so the decisions stay
- * unit-testable, with `CatalogReferenceRepository` supplying the facts -- the
- * same seam `emptyReasonFor` uses for the probes.
- */
+/** Validate catalog facts separately from shape and clock rules. */
 export function validateSearchReferences(
   request: SearchOneWayTripsRequest,
   facts: SearchReferenceFacts,
@@ -260,9 +231,7 @@ export function validateSearchReferences(
       continue;
     }
 
-    // Refused rather than answered with an empty list: "no trains on this
-    // date" would send the traveller to change the date, forever, for a
-    // station that is never going to return a trip.
+    // Refuse inactive stations; changing the date cannot make them serve a trip.
     if (!facts.activeStationIds.has(stationId)) {
       details.push({
         field,

@@ -85,8 +85,6 @@ describe('Shared environment validation (§2.1)', () => {
   });
 
   it('carries no service-specific keys', () => {
-    // A library shared by seven services does not know one service's SMTP host
-    // or another's outbox knobs; those schemas live with their service.
     const described = commonEnvSchema.describe() as any;
     for (const key of [
       'SMTP_HOST',

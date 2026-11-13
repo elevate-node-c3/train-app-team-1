@@ -15,13 +15,9 @@ interface MemoryWindow {
 const RATE_PREFIX = 'auth:rate:';
 
 /**
- * Fixed-window counters, shared through Redis when it is healthy.
- *
- * A Redis outage falls back to a per-process window. That is weaker than one
- * shared counter (an attacker can multiply the budget by the instance count),
- * so the caller halves the limit in degraded mode and the readiness report
- * says the cache is down. The window is still enforced — a cache failure must
- * not turn sign-in into an unthrottled endpoint.
+ * Shared Redis counters fall back to local counters during outages.
+ * Local limits multiply across instances, so the guard halves them.
+ * Readiness reports the outage; sign-in remains throttled.
  */
 @Injectable()
 export class RateLimitStore {

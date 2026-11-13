@@ -8,20 +8,14 @@ import {
   injectCorrelationId,
 } from '../amqp-headers.js';
 
-/**
- * Copies a consumed message onto another exchange over the confirm channel.
- *
- * The consumer decides *where* a failed delivery goes; this knows *how* to put
- * it there.
- */
+/** Copy messages to the chosen exchange and wait for broker confirmation. */
 @Injectable()
 export class MessageRepublisher {
   constructor(private readonly amqp: AmqpClientService) {}
 
   /**
-   * A superset of the inbound headers, so a replay keeps its trace and attempt
-   * count. The payload is never copied into a header: `code` stays in the body,
-   * where pino's key redaction cannot be bypassed by interpolation.
+   * Keep incoming headers, trace IDs, and attempt counts for replay.
+   * Never copy payloads into headers, where redaction may miss secret codes.
    */
   headersFor(
     message: ConsumeMessage,
@@ -38,7 +32,7 @@ export class MessageRepublisher {
     return headers;
   }
 
-  /** The attempt a redelivered copy already carries, else its first. */
+  /** Keep the carried attempt count, or start at one. */
   attemptFrom(message: ConsumeMessage): number {
     const raw = message.properties.headers?.[ATTEMPT_HEADER];
     const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : raw;

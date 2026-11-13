@@ -4,12 +4,8 @@ import { DataSource } from 'typeorm';
 import type { SearchReferenceFacts } from './trip-search-validation.js';
 
 /**
- * Looks up the ids a search referenced, so the pure validators can decide
- * whether to refuse. Three statements at most, none of them growing with the
- * request -- the station lookup takes both ids in one `= ANY`.
- *
- * Deliberately returns facts rather than throwing: the refusal itself is
- * `validateSearchReferences`, which stays unit-testable with no database.
+ * Resolve facts in at most three queries; batch both station IDs with ANY.
+ * Pure validators decide refusals rather than the repository throwing them.
  */
 @Injectable()
 export class CatalogReferenceRepository {
@@ -35,8 +31,7 @@ export class CatalogReferenceRepository {
       [params.travelClassId],
     );
 
-    // Only asked when the caller narrowed the search, so the common path costs
-    // two statements rather than three.
+    // Query trains only when a train number is supplied.
     const trains: { id: string }[] =
       params.trainNumber === null
         ? []

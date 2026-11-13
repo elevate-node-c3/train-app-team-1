@@ -27,8 +27,7 @@ import {
 } from '../../../../../test/fixtures/timetable-publish-harness.js';
 import { SeatUsageUnavailableError } from './inventory-seat-usage.grpc.client.js';
 
-// Refusals: tell the operator what to change and write nothing, because each
-// promise may already be sold.
+// Refusals must explain the fix and write nothing; existing trips may already be sold.
 const D_PLUS_3 = '2026-06-25';
 /** The first Friday on or after the effective date. */
 const FIRST_FRIDAY = '2026-06-26';
@@ -46,7 +45,6 @@ describe('TimetablePublishService refusals', () => {
     vi.useRealTimers();
   });
 
-  /** Nothing committed, in any of the four places a publish writes. */
   async function expectNothingWritten(): Promise<void> {
     expect(await harness.timetableCount()).toBe(0);
     expect(await harness.outboxCount()).toBe(0);
@@ -306,8 +304,7 @@ describe('TimetablePublishService refusals', () => {
       details: [expect.objectContaining({ field: 'stops' })],
     });
 
-    // No remap: the sold ticket still names stations in the old route, so the
-    // publish gives way.
+    // Refuse route changes that would remap stations named on sold tickets.
     expect(await harness.stopStationIdsOn(D_PLUS_3)).toHaveLength(3);
     expect(await harness.auditCount()).toBe(0);
   });
@@ -508,7 +505,6 @@ describe('TimetablePublishService refusals', () => {
       await expectNothingWritten();
     });
 
-    // The symmetric case: the rule must not refuse a correct request.
     it('publishes when the submitted composition matches the train', async () => {
       harness = makeHarness();
 
@@ -522,7 +518,6 @@ describe('TimetablePublishService refusals', () => {
       expect(result.created).toBeGreaterThan(0);
       expect(await harness.timetableCount()).toBe(1);
       expect(await harness.auditCount()).toBe(1);
-      // Trips really generated; that is what the mismatch refusal protects.
       expect(harness.store.trips).toHaveLength(result.created);
     });
 
@@ -558,7 +553,6 @@ describe('TimetablePublishService refusals', () => {
     });
 
     await expectNothingWritten();
-    // Refused before the seam: nothing to ask about.
     expect(harness.seatUsageAsks()).toEqual([]);
   });
 
@@ -581,8 +575,7 @@ describe('TimetablePublishService refusals', () => {
     await expectNothingWritten();
   });
 
-  // `supersede` leaves a same-day or future predecessor to the exclusion
-  // constraint (23P01); unmapped, that legitimate conflict becomes a 500.
+  // Map same-day/future predecessor exclusion conflicts (23P01) to refusal, not 500.
   it('turns the exclusion constraint into a conflict naming the clashing version', async () => {
     harness = makeHarness({ withExistingVersion: true });
     harness.store.timetables[0].effectiveFrom = '2026-06-22';

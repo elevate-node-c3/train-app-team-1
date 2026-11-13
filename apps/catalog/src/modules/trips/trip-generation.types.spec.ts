@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveStopTimes } from './trip-generation.types.js';
 
 describe('resolveStopTimes', () => {
-  // Same route and dates trip-generation.spec.ts uses for its own DST case,
-  // so generation and the publish validator can never disagree about where
-  // the Cairo spring-forward boundary falls (commit 3ae8293).
+  // Use generation's DST fixture so publish validation resolves identical Cairo instants.
   it('turns a timetable crossing the spring-forward night into the same instants buildTripStops produces', () => {
     const departure = resolveStopTimes('2026-04-23', 0, null, '23:00');
     const arrival = resolveStopTimes('2026-04-23', 1, '04:10', null);

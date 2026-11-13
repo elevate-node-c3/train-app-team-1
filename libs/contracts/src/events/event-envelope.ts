@@ -1,7 +1,6 @@
 /**
- * The shape every domain event travels in (§10.C). `EventLanguage` duplicates
- * `@app/common`'s `SupportedLanguage` to avoid a dependency cycle; a spec
- * asserts the two stay mutually assignable.
+ * Share one event shape without importing common, to avoid cycles.
+ * Tests keep EventLanguage compatible with the HTTP language type.
  */
 export type EventLanguage = 'ar' | 'en';
 
@@ -9,21 +8,21 @@ export interface EventEnvelope<
   TType extends string = string,
   TPayload = unknown,
 > {
-  /** Every consumer's idempotency key, so never derive it from the payload. */
+  /** Use the event ID for deduplication, never a payload-derived key. */
   id: string;
   type: TType;
   /** Bumped only for a breaking payload change, never for an additive field. */
   version: number;
-  /** ISO-8601 UTC, stamped in the producer's transaction, not at publish time. */
+  /** UTC time from the producer's transaction, not publication. */
   occurredAt: string;
-  /** A field, not just a header: CLS does not survive an async hop. */
+  /** Carry tracing in the body too; async work can lose context. */
   correlationId: string;
   /** Producing service name, e.g. 'identity'. */
   producer: string;
   payload: TPayload;
 }
 
-/** Drives the contract test's deletion sweep. Shrinking it is a contract change. */
+/** Removing a required key changes the contract. */
 export const ENVELOPE_REQUIRED_KEYS = [
   'id',
   'type',
@@ -34,11 +33,7 @@ export const ENVELOPE_REQUIRED_KEYS = [
   'payload',
 ] as const satisfies readonly (keyof EventEnvelope)[];
 
-/**
- * The envelope only; the payload is each consumer's parser's job. Not
- * `class-validator`, because an unreadable envelope and an unknown version are
- * two different dead-letter reasons.
- */
+/** Validate envelope fields only; consumers own payload validation. */
 export function isEventEnvelope(value: unknown): value is EventEnvelope {
   if (typeof value !== 'object' || value === null) {
     return false;

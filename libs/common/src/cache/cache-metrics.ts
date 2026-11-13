@@ -19,8 +19,8 @@ export interface MetricsSnapshot {
 }
 
 /**
- * In-memory thread-safe hit and miss metrics registry per key family (§2.3 rule 8),
- * with distributed Redis persistence when available for cross-instance aggregation.
+ * Thread-safe local hit/miss counts per key family, with Redis aggregation
+ * across instances when available.
  */
 @Injectable()
 export class CacheMetrics {
@@ -142,7 +142,7 @@ export class CacheMetrics {
           }
         }
       } catch {
-        // Fall back to in-memory snapshot
+        // Redis failures fall back to local counts.
       }
     }
     return this.getSnapshot();

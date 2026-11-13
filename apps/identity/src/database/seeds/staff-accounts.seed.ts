@@ -11,10 +11,7 @@ type SeedAccount = (typeof STAFF_SEED_ACCOUNTS)[number];
 const TABLE_WAIT_TIMEOUT_MS = 60_000;
 const TABLE_POLL_INTERVAL_MS = 250;
 
-/**
- * Resolve one staff password. Production must supply it explicitly: a
- * development password in production is worse than no seed at all.
- */
+/** Require an explicit staff password in production. */
 export function seedPassword(
   account: SeedAccount,
   env: NodeJS.ProcessEnv = seedEnvironment(),
@@ -30,11 +27,7 @@ export function seedPassword(
   return account.developmentPassword;
 }
 
-/**
- * Identity runs its migrations during `onApplicationBootstrap`, so a separate
- * seed process cannot assume `account` exists yet. Poll with a bound rather
- * than sleeping a fixed amount and hoping.
- */
+/** Wait with a deadline for identity's bootstrap migrations to create account. */
 async function waitForAccountTable(): Promise<void> {
   const deadline = Date.now() + TABLE_WAIT_TIMEOUT_MS;
 

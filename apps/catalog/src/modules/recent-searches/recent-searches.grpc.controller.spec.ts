@@ -46,11 +46,7 @@ describe('the recent-searches gRPC controller', () => {
     ).resolves.toBe(response);
   });
 
-  /**
-   * Refused, not answered empty. An empty list is a claim about a traveller --
-   * "you have searched for nothing" -- and making it about a caller nobody
-   * identified would also hide a gateway that stopped forwarding the caller.
-   */
+  /** Refuse unidentified callers instead of claiming they have no recent searches. */
   describe('without a caller', () => {
     it('refuses as UNAUTHENTICATED', async () => {
       const list = vi.fn();

@@ -41,7 +41,7 @@ function stop(overrides: Partial<TimetableStopEntity>): TimetableStopEntity {
   } as TimetableStopEntity;
 }
 
-/** Cairo 23:00 -> Assiut 04:10 -> Aswan 09:30: the story's overnight train. */
+/** Cairo 23:00 -> Assiut 04:10 -> Aswan 09:30 overnight fixture. */
 function overnightStops(): TimetableStopEntity[] {
   return [
     stop({ stationId: CAIRO, position: 1, departureTime: '23:00' }),
@@ -84,7 +84,6 @@ function timetable(overrides: Partial<TimetableEntity> = {}): TimetableEntity {
   } as TimetableEntity;
 }
 
-/** A fare index built by hand, in the shape buildFareIndex produces. */
 function fareIndex(
   entries: [string, string, string, number][],
 ): Map<string, { effectiveFrom: Date; amountPiastres: number }[]> {
@@ -428,8 +427,8 @@ describe('Trip generation', () => {
     });
 
     it('reads the fare in force at the departure when a pair has history', () => {
-      // Newest first, as buildFareIndex sorts them. The 2030 row must lose to
-      // the 2020 one for a June 2026 departure, and 9000 keeps it monotonic.
+      // Choose the newest price effective by departure; future versions must lose.
+      // Keep the fixture monotonic.
       const fares = coveringFares(FIRST_CLASS);
       fares.set(`${FIRST_CLASS}|${CAIRO}|${ASSIUT}`, [
         {
@@ -495,8 +494,7 @@ describe('Trip generation', () => {
       ).toThrow(/ISSUE_TRAIN_HAS_NO_SEATS/);
     });
 
-    // A repeat would inflate capacity, and from Sprint 3 would make inventory
-    // create two seats with the same label.
+    // Duplicate labels inflate capacity and would create duplicate inventory seats.
     it('refuses a seat number repeated in another row of the same coach', () => {
       const repeating = coach(FIRST_CLASS);
       repeating.coachLayout.rows = [

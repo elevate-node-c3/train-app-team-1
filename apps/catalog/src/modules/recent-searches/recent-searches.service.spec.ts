@@ -88,7 +88,7 @@ describe('the recent-searches service', () => {
       });
     });
 
-    // Catalog speaks no language: both travel and the edge picks (BR-56).
+    // Send both languages; the edge chooses.
     it('returns both languages of every name', async () => {
       const { service } = makeService();
 
@@ -119,10 +119,7 @@ describe('the recent-searches service', () => {
       expect(entry.searchedAt.timeZone).toBe('Africa/Cairo');
     });
 
-    /**
-     * A search whose date has passed cannot be repeated as it stands, so the
-     * dates are withheld and the client asks for new ones.
-     */
+    /** Omit stale dates so the client asks for new ones. */
     describe('a stale entry', () => {
       it('comes back without its dates', async () => {
         const { service } = makeService([
@@ -132,8 +129,7 @@ describe('the recent-searches service', () => {
         const [entry] = (await service.list(TRAVELLER, NOW)).recentSearches;
 
         expect(entry).not.toHaveProperty('departureDate');
-        // The route, class and kind still travel: the search is repeatable
-        // once the traveller picks a date.
+        // Keep route, class, and kind so the journey is repeatable with a new date.
         expect(entry.origin.id).toBe(RAMSIS);
         expect(entry.kind).toBe('RECENT_SEARCH_KIND_ONE_WAY');
       });
@@ -174,11 +170,7 @@ describe('the recent-searches service', () => {
       expect(repository.record).toHaveBeenCalledWith(search(), NOW);
     });
 
-    /**
-     * BR-21: recording never makes a search fail. The search response is
-     * already built by the time this runs, so a throw here would turn a
-     * successful answer into an error for no benefit to the traveller.
-     */
+    /** Recording failures must not turn successful search responses into errors. */
     it('swallows a failure rather than propagating it', async () => {
       const { service, repository } = makeService();
       repository.record.mockRejectedValue(new Error('deadlock detected'));

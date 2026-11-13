@@ -12,14 +12,8 @@ import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operat
 import { catalogDataSource, closeCatalogDataSource } from './support/catalog-database.js';
 
 /**
- * The append-only audit trail, against real Postgres.
- *
- * BR-52's property -- no change without its record, no record without its
- * change -- is a fact about the database (ACID) and about `append` honouring
- * the `ctx` it is given, not about anything a mocked unit of work can prove.
- * Only a real `TypeOrmUnitOfWork`, opening a real transaction against this
- * table, can show a rejected transaction leaving no row. The trigger is a
- * database object; only a real `UPDATE`/`DELETE` against it proves it fires.
+ * Use real Postgres transactions to verify append honors ctx and rolls back
+ * with the caller (BR-52). Real UPDATE/DELETE calls verify the append-only trigger.
  */
 
 const TRAIN_A = '11111111-1111-4111-8111-111111111111';
@@ -52,8 +46,7 @@ describe('the operations audit trail', () => {
   });
 
   beforeEach(async () => {
-    // Not DELETE: the table is append-only, and the trigger under test would
-    // reject it. TRUNCATE bypasses row-level triggers entirely.
+    // TRUNCATE bypasses the append-only trigger that rejects DELETE.
     await source.query('TRUNCATE TABLE operations_audit');
   });
 
@@ -95,7 +88,6 @@ describe('the operations audit trail', () => {
       });
     });
 
-    // BR-52's teeth: the property a mocked unit of work cannot prove.
     it('leaves no row when the transaction rejects', async () => {
       const entry = row({ correlationId: 'corr-rollback' });
 
@@ -193,9 +185,7 @@ describe('the operations audit trail', () => {
       expect(entries.map((entry) => entry.correlationId)).toEqual(['feb']);
     });
 
-    // No existing test combined both narrowings in one call -- the review's
-    // own finding. A WHERE clause built by conditionally appending fragments
-    // is exactly the kind of code where two filters stop composing.
+    // Check that train and date predicates compose in the generated WHERE clause.
     it('filters by trainId and a date range together', async () => {
       await appendAll([
         row({
@@ -227,8 +217,7 @@ describe('the operations audit trail', () => {
 
     it('pages with a cursor across a page boundary, including a tie on occurred_at', async () => {
       const sameInstant = new Date('2026-02-01T00:00:00Z');
-      // Two ids, deliberately ordered so the ">"-first one is the one the
-      // keyset's `id DESC` tie-break must return before the other.
+      // Order UUIDs to exercise the id DESC tie-break.
       const [idLow, idHigh] = [randomUUID(), randomUUID()].sort();
 
       const newest = row({
@@ -245,8 +234,7 @@ describe('the operations audit trail', () => {
         correlationId: 'tied-low',
         occurredAt: sameInstant,
       });
-      // Inserted out of final-order sequence on purpose: nothing about
-      // insertion order should matter in a query ordered by occurred_at, id.
+      // Insert out of order so only occurred_at and id determine paging.
       await appendAll([tiedLow, newest, tiedHigh]);
 
       const firstPage = await repository.list({ limit: 2 });

@@ -19,7 +19,7 @@ import { RateLimitStore } from './stores/rate-limit.store.js';
 import { RevocationStore } from './stores/revocation.store.js';
 import { TokenVerifierService } from './token-verifier.service.js';
 
-/** A queue per consumer: sign-out must not share notification's mailbox. */
+/** Separate queue so notification cannot consume the gateway's sign-out events. */
 export const SESSION_REVOKED_QUEUE = 'gateway.identity-session-revoked';
 
 export function createSessionRevokedSubscriptions(
@@ -35,14 +35,7 @@ export function createSessionRevokedSubscriptions(
   ];
 }
 
-/**
- * The gateway's shared security runtime: token verification, revocation
- * markers, rate-limit counters and the session-revoked consumer.
- *
- * `GatewayModule` imports this module so both `APP_GUARD`s can resolve their
- * concrete dependencies. The consumer runtime lives here because this module
- * owns the only gateway subscription.
- */
+/** Shares security providers with global guards and owns the revocation consumer. */
 @Module({
   imports: [MessagingModule],
   providers: [

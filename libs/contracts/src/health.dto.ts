@@ -21,7 +21,7 @@ export interface AggregatedHealthReport {
   timestamp: string;
 }
 
-/** Resolves the absolute path to health.proto across dev and build environments. */
+/** Absolute health.proto path for source and built layouts. */
 export function getHealthProtoPath(): string {
   return getProtoPath('health.proto');
 }

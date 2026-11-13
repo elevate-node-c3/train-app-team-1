@@ -104,7 +104,7 @@ describe('TripLifecycleTopologyService', () => {
   });
 
   it('re-declares after the connection is replaced', async () => {
-    // A new broker has none of this; the queue must exist before the next publish.
+    // New brokers need the queue before more events are published.
     const { service, reconnectListeners, amqp } = makeService();
 
     await service.onApplicationBootstrap();

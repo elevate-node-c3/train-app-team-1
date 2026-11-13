@@ -1,8 +1,4 @@
-/**
- * Composition-root parsing for the TypeORM CLI and the station seed. The running
- * service gets its options from `createTypeOrmAsyncOptions`; this keeps the
- * `process.env` read in `config/` for the standalone tools too.
- */
+/** Keep environment reads in config for the TypeORM CLI and station seed. */
 export function databaseUrlFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -11,11 +7,7 @@ export function databaseUrlFromEnv(
   );
 }
 
-/**
- * For the dated-trip seeds, which run both inside the container and on the
- * host. `DATABASE_URL` is set in the container; the fallback is the port
- * `docker-compose.override.yml` publishes for the e2e tier.
- */
+/** Seeds use the container URL or fall back to the host's published test port. */
 export function seedDatabaseUrlFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): string {

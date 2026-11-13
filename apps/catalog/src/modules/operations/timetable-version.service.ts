@@ -8,23 +8,10 @@ import type { TransactionContext } from '@app/common/persistence/unit-of-work.po
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 
 /**
- * Does this version apply on this civil day?
- *
- * Both ends are inclusive: `effective_until` is the *last* day the version
- * applies, and null means it is still live. The exclusion constraint added in
- * 1793300000006 reads the row the same way -- `daterange(effective_from,
- * effective_until, '[]')` -- and `TimetableVersionService.supersede` bounds a
- * predecessor at the day *before* its successor takes effect, which leaves no
- * gap only because the end is included.
- *
- * ISO dates compare lexicographically, which is what lets a civil date stay a
- * string here, as the generator already relies on.
- *
- * Range only, deliberately: it says nothing about `status`. The publish path
- * asks this of a *draft* candidate -- `TimetablesService.publishTimetable`
- * validates before it flips the status -- so a status check here would make
- * publish validation skip every date and stop checking fares. Selecting among
- * versions is where status matters, and `pickEffectiveTimetable` applies it.
+ * ISO date strings compare lexicographically; both range ends are inclusive.
+ * Null effective_until is unbounded. Ending predecessors the day before successors
+ * matches the database range and leaves no gap.
+ * Ignore status here so draft publication validates; pickEffectiveTimetable filters it.
  */
 export function isWithinEffectiveRange(
   timetable: TimetableEntity,
@@ -50,18 +37,8 @@ function isNewerVersion(
 }
 
 /**
- * The one version of a train that applies on `serviceDate`, out of all of its
- * published rows.
- *
- * Pure, and shared with trip generation on purpose: generation resolving a
- * service date one way while a publish resolved it another is the whole bug
- * class this task exists to close.
- *
- * Only published rows are candidates, matching the exclusion constraint's own
- * `WHERE status = 'published'`. Every current caller already pre-filters, so
- * this is a guard rather than a filter -- but an exported function that would
- * hand back a draft as "effective" is a trap, and a draft's range is allowed
- * to overlap a live version's.
+ * Share published-version selection with generation to keep date ownership consistent.
+ * Ignore drafts and withdrawn rows, whose ranges may overlap a published version.
  */
 export function pickEffectiveTimetable(
   timetables: TimetableEntity[],
@@ -85,20 +62,8 @@ export function pickEffectiveTimetable(
 }
 
 /**
- * Is `candidate` the row its train runs on `serviceDate`?
- *
- * Compares the row **id**, so exactly one of the rows handed in can ever
- * answer true for a date -- tautologically, whatever state the table is in.
- * An earlier version of this compared `(effective_from, version)` on the
- * grounds that `uq_timetable_train_version` makes that pair unique per train;
- * that made "exactly one" a property *derived* from the constraints rather
- * than one this guard holds on its own, and two rows that happened to share
- * the pair would both have generated -- the double generation this whole task
- * exists to prevent, and which `createDatedTrip`'s unique-violation recovery
- * would then have hidden as "already exists".
- *
- * Generation asks this per date instead of trusting every published row it was
- * handed.
+ * Compare row IDs, not effectiveFrom/version pairs, so only one version can
+ * generate for a date even if rows share that pair.
  */
 export function isEffectiveVersionOn(
   candidate: TimetableEntity,
@@ -110,12 +75,7 @@ export function isEffectiveVersionOn(
   return effective !== null && effective.id === candidate.id;
 }
 
-/**
- * Timetable versions accumulate: a republish adds a row, it never rewrites
- * one. This service owns the three questions that follow from that -- which
- * version a given day belongs to, what the next version number is, and how to
- * bound the version a new one replaces.
- */
+/** Republishing adds a row rather than replacing version history. */
 @Injectable()
 export class TimetableVersionService {
   constructor(
@@ -127,12 +87,7 @@ export class TimetableVersionService {
     return manager?.getRepository(TimetableEntity) ?? this.timetableRepository;
   }
 
-  /**
-   * Every published row of one train -- the live version and whatever history
-   * is still marked published. A train carries a handful of these, so they are
-   * resolved in one query and compared in memory rather than asked for per
-   * date.
-   */
+  /** Resolve all published history in one query, then compare dates in memory. */
   private publishedVersions(
     trainId: string,
     manager?: EntityManager,
@@ -162,10 +117,8 @@ export class TimetableVersionService {
   }
 
   /**
-   * The highest version number this train has ever carried, in any status, so
-   * `latest + 1` is free of `uq_timetable_train_version` -- which does not care
-   * whether the row it collides with was withdrawn. 0 for a train with no
-   * timetable, so the first publish is version 1.
+   * Include every status when choosing the next unique train/version number.
+   * Return 0 with no timetable so first publication is version 1.
    */
   async latestVersionNumber(
     trainId: string,
@@ -184,18 +137,10 @@ export class TimetableVersionService {
   }
 
   /**
-   * Bounds the version a publish effective on `effectiveFrom` replaces, at the
-   * civil day before it. Call it before inserting the successor, inside the
-   * same transaction, or the exclusion constraint rejects the insert.
-   *
-   * Only a version that started *earlier* and still reaches `effectiveFrom` is
-   * bounded. Two cases are deliberately left to the constraint rather than
-   * patched over here: a published row that starts on `effectiveFrom` itself
-   * (nothing valid to bound it to -- `chk_timetable_dates` forbids an
-   * `effective_until` before `effective_from`, so that republish has to
-   * withdraw the row instead), and one that starts after it. Both fail loudly
-   * at insert instead of quietly producing a range this service's own reading
-   * would disagree with.
+   * Bound earlier overlapping predecessors at effectiveFrom minus one civil day,
+   * before inserting the successor in the same transaction.
+   * Leave same-day and future predecessors to the exclusion constraint. A same-day
+   * predecessor cannot have a valid earlier end; withdraw it instead.
    */
   async supersede(
     ctx: TransactionContext,

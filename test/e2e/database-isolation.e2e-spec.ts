@@ -19,7 +19,7 @@ function compose(...args: string[]): string {
   });
 }
 
-/** Reads each service's real credentials out of the resolved compose config. */
+/** Use each service's credentials from the resolved Compose config. */
 function credentialsFor(service: string, config: any): Credentials {
   const url = new URL(config.services[service].environment.DATABASE_URL);
   return {
@@ -54,9 +54,8 @@ function canConnect(as: Credentials, database: string): boolean {
   }
 }
 
-// Needs Docker. The init script only runs against an empty data directory, so
-// proving what it created means starting from one — which is why this lives in
-// the e2e suite and not in `npm test`, and why it destroys the local volumes.
+// Needs Docker and destroys local volumes: database init runs only against
+// an empty data directory.
 describe('per-service database credentials', () => {
   let config: any;
 
@@ -79,9 +78,7 @@ describe('per-service database credentials', () => {
     },
   );
 
-  // The assertion the spec sentence actually turns on. Every service is paired
-  // with the next one round the ring, so all seven are covered as both the
-  // caller and the target.
+  // Pair services around a ring so each is tested as both caller and target.
   it.each(
     SERVICES.map((s, i) => [s, SERVICES[(i + 1) % SERVICES.length]] as const),
   )('%s cannot open the %s database', (service, other) => {

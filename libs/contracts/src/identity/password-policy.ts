@@ -1,9 +1,6 @@
 /**
- * BR-02 password rules, shared by the HTTP DTO and identity's own checks.
- *
- * The 72-byte limit is not cosmetic: bcrypt truncates its input at 72 bytes, so
- * a longer multibyte password would be accepted and then only partly checked.
- * Counting UTF-8 bytes, not characters, is the correctness requirement.
+ * Shared HTTP/identity rules. Limit passwords to 72 UTF-8 bytes because bcrypt
+ * truncates longer inputs; count bytes, not characters, for that limit.
  */
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_BYTES = 72;
@@ -26,7 +23,7 @@ export function passwordPolicyViolations(
   }
 
   const violations: PasswordPolicyViolation[] = [];
-  // Count code points, so an emoji is one character rather than two UTF-16 units.
+  // Length counts Unicode code points, not UTF-16 units.
   const length = Array.from(password).length;
   const bytes = new TextEncoder().encode(password).length;
 

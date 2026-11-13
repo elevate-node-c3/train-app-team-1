@@ -27,20 +27,11 @@ import {
 } from '../../apps/catalog/src/database/seeds/today-trips.js';
 
 /**
- * One-way search, through the whole stack.
- *
- * What this tier is for is the things no other tier can reach: that the route
- * is authenticated, that a stopped catalog produces a retryable error instead
- * of a hang, that a stopped Redis changes nothing a traveller sees, and that
- * identity being down does not stop a search.
- *
- * What it deliberately does NOT cover is the clock-dependent rules -- the
- * 15-minute sales-close boundary, the Cairo-date-at-origin rule for an
- * overnight trip, the fare in force. Those need a controlled `now`, which a
- * real HTTP request through a real gateway cannot have, and they are proven at
- * the integration tier against real Postgres with a frozen clock. Repeating
- * them here with the wall clock would be a weaker test wearing a stronger
- * test's clothes.
+ * Real HTTP tests cover authentication, retryable catalog failures, Redis
+ * fallback and searching while identity is down.
+ * Integration tests use a frozen clock for the 15-minute sales-close boundary,
+ * Cairo date at the passenger origin on overnight trips, and the fare in force;
+ * real HTTP requests cannot control now.
  */
 
 const TRIPS = '/api/v1/trips/search';
@@ -79,7 +70,7 @@ interface SearchBody {
   };
   evaluatedAt: { timeZone: string };
   emptyResult?: { reason: string; message: string };
-  /** TA-18: what the day offers, before the request's own filters. */
+  /** Options for the unfiltered day. */
   filterOptions: {
     trainTypes: {
       id: string;
@@ -92,18 +83,12 @@ interface SearchBody {
 }
 
 /**
- * The stack is started once for the whole file, not once per suite.
- *
- * It has to be at this level: a suite's `afterAll` runs before the next
- * suite's `beforeAll`, so a `stopStack()` inside the first describe would tear
- * the containers down -- and `startSearchStack` begins with `compose down -v`,
- * so the second suite would have had to rebuild everything to get them back.
- * One build, two suites, six minutes instead of twelve.
+ * Share one stack across suites: suite-level afterAll would tear it down
+ * before the next suite, and startSearchStack wipes volumes and rebuilds.
  */
 let fixture: E2eSearchFixture;
-/** The traveller the suites search as. */
 let token: string;
-/** A second one, for the "never visible to another account" rule. */
+/** Separate account for the search-isolation checks. */
 let otherToken: string;
 
 beforeAll(async () => {
@@ -112,13 +97,11 @@ beforeAll(async () => {
   await waitForServiceReady('identity');
   await waitForServiceReady('catalog');
 
-  // The verification code travels identity -> rabbitmq -> notification ->
-  // mailpit, so the token cannot be obtained until that consumer is bound.
+  // Wait for notification's subscription before requesting a verification email.
   await waitForServiceReady('notification');
   await waitForConsumer(EMAIL_QUEUE);
 
-  // Seeded from the host through the published port, after catalog has
-  // migrated: the tables only exist once it has booted.
+  // Seed through the host port after catalog has created the tables.
   fixture = await seedSearchE2e();
   token = await travellerAccessToken();
   otherToken = await travellerAccessToken();
@@ -261,8 +244,7 @@ describe('One-way search, edge to catalog', () => {
       );
     });
 
-    // Every result departs on the date that was searched -- the inconsistency
-    // in the design's sample data must not be reproducible.
+    // Keep selected date-strip dates and trip departures consistent.
     it('departs on the searched date, which the strip also selects', async () => {
       const { body } = await search();
       const data = body.data as SearchBody;
@@ -288,8 +270,7 @@ describe('One-way search, edge to catalog', () => {
       }
     });
 
-    // A client on another device clock must still read Cairo time, which is
-    // the whole reason the wire carries local fields rather than an instant.
+    // Wire local fields keep Cairo time independent of the client's time zone.
     it('is unaffected by the client sending another timezone', async () => {
       const { body } = await search({}, { acceptLanguage: 'en' });
       const [trip] = (body.data as SearchBody).trips;
@@ -314,11 +295,7 @@ describe('One-way search, edge to catalog', () => {
     });
   });
 
-  /**
-   * The headline claim: the token is verified locally, so identity can be
-   * stopped and a traveller can still search. Asserted with identity actually
-   * down, which is the only way to know.
-   */
+  /** Local token verification must work while identity is stopped. */
   describe('when identity is down', () => {
     it('still searches, because the token is verified at the edge', async () => {
       compose('stop', 'identity');
@@ -437,8 +414,7 @@ describe('One-way search, edge to catalog', () => {
     );
 
     it('refuses an unknown query parameter', async () => {
-      // A typo in a parameter name is a 400, not a silently ignored filter.
-      // (`returnDate` used to be the example here; TA-18 made it real.)
+      // Unknown parameter names must return 400, not be ignored.
       const { status } = await search({
         departAfterMinutes: '360',
       } as never);
@@ -491,10 +467,8 @@ describe('One-way search, edge to catalog', () => {
       // BR-56: Arabic is the fallback, so no header means Arabic.
       expect(/[؀-ۿ]/.test(ar)).toBe(true);
 
-      // The exact sentence, not just "non-empty in the right script". The
-      // generic fallback is also non-empty and also differs by language, so a
-      // weaker assertion passed while the reason was arriving as a number and
-      // the catalogue lookup was missing entirely.
+      // Check the exact localized reason; generic fallback text can pass language
+      // checks when the enum value or catalog lookup is wrong.
       expect(en).toBe(
         'No train runs between these stations in this direction, please change the stations',
       );
@@ -523,7 +497,7 @@ describe('One-way search, edge to catalog', () => {
     });
 
     it('accepts Arabic-Indic digits', async () => {
-      // ٩٠٣, as an Arabic keyboard produces it.
+      // Use digits from an Arabic keyboard.
       const { status, body } = await search({ trainNumber: '٩٠٣' });
 
       expect(status, JSON.stringify(body.error)).toBe(200);
@@ -537,10 +511,7 @@ describe('One-way search, edge to catalog', () => {
     });
   });
 
-  /**
-   * A cache outage must not become a search outage: the same request has to
-   * return the same answer, just slower.
-   */
+  /** A Redis outage must preserve search results, even if responses are slower. */
   describe('when Redis is down', () => {
     it('returns the same results', async () => {
       const before = await search();
@@ -559,11 +530,7 @@ describe('One-way search, edge to catalog', () => {
     }, 300_000);
   });
 
-  /**
-   * A stopped catalog must produce a retryable error inside the deadline, not
-   * a request that never returns. The timing assertion is the point: a hang
-   * would otherwise look like a slow pass.
-   */
+  /** Catalog outages must return retryable errors within the request deadline. */
   describe('when catalog is down', () => {
     it('answers with a retryable error, quickly', async () => {
       compose('stop', 'catalog');
@@ -575,7 +542,7 @@ describe('One-way search, edge to catalog', () => {
 
         expect([503, 504]).toContain(status);
         expect(body.error?.retryAfterSeconds).toBeGreaterThan(0);
-        // Comfortably above the 3s deadline, far below a hang.
+        // Allow overhead above the 3s gRPC deadline, but reject hangs.
         expect(elapsed).toBeLessThan(15_000);
       } finally {
         compose('start', 'catalog');
@@ -584,20 +551,13 @@ describe('One-way search, edge to catalog', () => {
     }, 300_000);
 
     /**
-     * Recovery is polled, not asserted on the first request.
-     *
-     * `waitForServiceReady` says catalog is answering again, but the gateway's
-     * gRPC channel reconnects on its own backoff, so the first request after a
-     * restart can still be UNAVAILABLE. That is the correct behaviour -- the
-     * 503 carries `retryAfterSeconds` precisely so a client retries -- and
-     * demanding instant recovery would assert a timing detail of the channel
-     * rather than anything about search. What matters is that it recovers, and
-     * within a bound.
+     * Catalog readiness does not mean the gateway's gRPC channel has reconnected.
+     * Backoff can still yield UNAVAILABLE with retryAfterSeconds; poll for
+     * bounded recovery rather than requiring the first request to succeed.
      */
     it('recovers once catalog is back', async () => {
-      // Polled every five seconds, not twice a second: the route allows 60
-      // requests a minute per caller, and a tight loop would spend that budget
-      // on 429s and then never observe the 200 it is waiting for.
+      // Poll every five seconds to stay under 60 requests/minute per caller;
+      // faster polling can exhaust the budget and return only 429s.
       await waitFor(
         'search to succeed again after catalog restarted',
         async () => (await search()).status === 200,
@@ -613,22 +573,13 @@ describe('One-way search, edge to catalog', () => {
 });
 
 /**
- * TA-18, through the whole stack.
- *
- * Same division of labour as the suite above: the rules that need a controlled
- * clock are proven at the integration tier, and what is checked here is what
- * only a real request can show -- that the three new routes exist and are
- * authenticated, that the round trip works as two calls with the server
- * deciding the bound, and that one traveller's recent searches are invisible
- * to another.
+ * Check authenticated round-trip, filter, stop and recent-search routes,
+ * including server-selected return bounds and per-traveller search isolation.
  */
 describe('Round trip, filters, stops and recent searches, edge to catalog', () => {
   /**
-   * Recent searches are a count, so this suite starts from a clean table.
-   *
-   * The suite above searches as the same traveller, and its searches are
-   * recorded too -- which is correct behaviour and would quietly make "at most
-   * five, newest first" assert against rows this suite did not create.
+   * Clear searches recorded by the earlier suite for this same traveller,
+   * so cap and ordering checks count only this suite's entries.
    */
   beforeAll(async () => {
     await clearRecentSearches();
@@ -723,10 +674,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       ]);
     });
 
-    /**
-     * The empty result has to send the traveller to the filters, not the date
-     * picker: there ARE trains that day.
-     */
+    /** Direct travellers to filters, not another date: trains exist that day. */
     it('blames the filters when they remove everything', async () => {
       const { status, body } = await searchFilterPair(
         { maxFare: '1' },
@@ -740,8 +688,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
         'SEARCH_EMPTY_REASON_FILTERS_EXCLUDED_ALL',
       );
       expect(data.emptyResult?.message).toContain('filters');
-      // The facets still describe the unfiltered day, so a client can show
-      // what the ceiling would have to be.
+      // Keep unfiltered fares in the facets so clients can suggest a usable ceiling.
       expect(data.filterOptions.minFareMinor).toBe(9_000);
     });
 
@@ -775,7 +722,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       const { status, body } = await outbound();
 
       expect(status, JSON.stringify(body.error)).toBe(200);
-      // The return date is an intent, not a filter on this list.
+      // returnDate selects a round trip; it does not filter the outbound list.
       expect(bodyOf(body).trips).toHaveLength(1);
     });
 
@@ -806,16 +753,12 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       const data = bodyOf(body);
       // Two return trips on that date, both after any outbound arrival.
       expect(data.trips).toHaveLength(2);
-      // The reverse direction: back to where the traveller started.
       expect(data.trips[0].departure.stationId).toBe(fixture.stations.ramsis);
-      // No picker on the second leg -- the first call already sent it.
+      // Only the first leg includes a date picker.
       expect(data).not.toHaveProperty('dateStrip');
     });
 
-    /**
-     * The story's own edge case, reached honestly: the only return trip on the
-     * outbound date leaves at 06:30, and the outbound reaches Ramsis at 08:40.
-     */
+    /** The only same-day return leaves at 06:30, before outbound arrival at 08:40. */
     it('says so when everything left before the outbound arrived', async () => {
       const outboundTripId = await chosenOutboundTripId();
 
@@ -837,7 +780,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       expect(data.emptyResult?.reason).toBe(
         'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
       );
-      // Both ways out, and the arrival the server read for itself.
+      // Report the server-read arrival time and both ways to revise the search.
       expect(data.emptyResult?.message).toContain('08:40');
       expect(data.emptyResult?.message).toContain('return date');
     });
@@ -935,11 +878,11 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
       expect(stops[0].departure?.timeZone).toBe('Africa/Cairo');
       // Nothing arrives at the trip's first stop.
       expect(stops[0].arrival).toBeUndefined();
-      // Names come from the catalogue, in both languages.
+      // Catalog supplies both name languages.
       expect(stops[0].name.ar.length).toBeGreaterThan(0);
     });
 
-    /** The rule the design's chip depends on: the counts have to agree. */
+    /** Stops must match the intermediate-stop count returned by search. */
     it('has as many stops between as the search result claimed', async () => {
       const trip = await outboundTrip();
 
@@ -1015,7 +958,7 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
 
       expect(entries.length).toBeGreaterThan(0);
       expect(entries[0].origin.id).toBe(fixture.stations.alexandria);
-      // Both languages travel, so the client picks (BR-56).
+      // Return both languages so the client can choose (BR-56).
       expect(entries[0].origin.name.en.length).toBeGreaterThan(0);
       expect(entries[0].origin.name.ar.length).toBeGreaterThan(0);
     });
@@ -1098,7 +1041,6 @@ describe('Round trip, filters, stops and recent searches, edge to catalog', () =
 
       expect(entries).toHaveLength(5);
       expect(entries[0].destination.id).toBe(fixture.stations.aswan);
-      // The oldest of the six is gone.
       expect(
         entries.some(
           (entry) => entry.destination.id === fixture.stations.tanta,

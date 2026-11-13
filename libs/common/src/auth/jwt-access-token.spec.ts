@@ -33,8 +33,6 @@ function keyPair(): KeyPair {
 const ACTIVE = keyPair();
 const PREVIOUS = keyPair();
 
-// Annotated, so `roles` is the StaffRole union rather than a widened
-// `string[]` that no longer satisfies the signer's own input type.
 const SIGN_INPUT: SignAccessTokenInput = {
   sub: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   lvl: 'traveller',

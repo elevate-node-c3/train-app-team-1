@@ -3,7 +3,7 @@ import { setupApp, validateEnv } from '@app/common';
 import { gatewayEnvSchema } from './config/env.schema.js';
 import { GatewayModule } from './gateway.module.js';
 
-// 1. Fail-fast environment configuration validation at boot (§2.1)
+// Reject invalid configuration before Nest starts.
 validateEnv(gatewayEnvSchema, process.env, 'gateway');
 
 async function bootstrap() {

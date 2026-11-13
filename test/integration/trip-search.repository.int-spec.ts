@@ -14,13 +14,9 @@ import {
 } from './support/catalog-database.js';
 
 /**
- * The search query, against real Postgres and the real fixture.
- *
- * This is the statement the whole feature rests on -- the double join that
- * encodes travel order, the Cairo-day range that decides which date a trip
- * belongs to, the capacity lateral that distinguishes "no such coach" from
- * "sold out", and the fare lateral that picks the price in force. None of it
- * can be checked without a database.
+ * Real Postgres verifies travel-order joins, Cairo-day bounds and the lateral
+ * queries for capacity and the fare in force. Distinguish missing coaches from
+ * sold-out ones.
  */
 
 /** 12:00 Cairo on 15 June: inside the window, before every fixture trip. */
@@ -82,8 +78,7 @@ describe('the trip search query', () => {
       expect(rows.map((row) => row.tripId)).toContain(IDS.trips.mainLine);
     });
 
-    // Tanta -> Banha on a southbound train is not a journey: Banha comes
-    // first. This is what `d.position > o.position` buys.
+    // d.position > o.position excludes reverse journeys.
     it('returns nothing for the same pair in reverse', async () => {
       const rows = await search({
         from: IDS.stations.ramsis,
@@ -97,8 +92,8 @@ describe('the trip search query', () => {
 
   describe('the Cairo date is the one at the passenger origin (BR-16)', () => {
     it('lists an overnight trip under the date it leaves the passenger origin', async () => {
-      // The train left Ramsis at 23:00 on the 19th; Assiut is 04:10 on the
-      // 20th, so Assiut onwards belongs to the 20th.
+      // Ramsis departs at 23:00 on the 19th; Assiut departs at 04:10 on the 20th.
+      // Searches from Assiut therefore use the 20th.
       const onTwentieth = await search({
         from: IDS.stations.assiut,
         to: IDS.stations.aswan,
@@ -177,8 +172,7 @@ describe('the trip search query', () => {
       expect(second.classCapacity).toBe(SECOND_CLASS_SEATS);
     });
 
-    // Not a result at all, as distinct from sold out -- which is capacity
-    // above zero with no seats left, and IS returned.
+    // No matching coach is omitted; a matching but sold-out coach is still returned.
     it('omits a train that has no coach of the requested class', async () => {
       const inSecond = await search({
         from: IDS.stations.tanta,
@@ -228,13 +222,10 @@ describe('the trip search query', () => {
       expect(rows[0].farePiastres).toBe(14000);
     });
 
-    // A missing fare is reported, not hidden: the service decides to drop an
-    // unpriceable trip, and a null here is how it finds out.
+    // The service, not this repository, drops trips with missing fares.
     it('reports a null fare rather than dropping the row', async () => {
-      // Two trips serve Tanta -> Banha in second class: the main line, which
-      // calls at both on its way south, and train 404 which runs only that
-      // leg. Neither segment is priced, and both must still come back -- the
-      // service is what decides an unpriceable trip cannot be sold.
+      // Main-line and train 404 both serve Tanta -> Banha in second class.
+      // Neither segment is priced; return both with null fares.
       const rows = await search({
         from: IDS.stations.tanta,
         to: IDS.stations.banha,
@@ -297,8 +288,7 @@ describe('the trip search query', () => {
     });
   });
 
-  // Review Focus 3: the route calls at Banha twice, so the double join has two
-  // valid pairings for one trip. One trip must mean one row.
+  // Two Banha calls create two valid join pairs, but must still produce one trip row.
   describe('a route that calls at the same station twice', () => {
     it('returns one row per trip, taking the earliest pairing', async () => {
       const rows = await search({
@@ -372,8 +362,7 @@ describe('the trip search query', () => {
       expect(probe.routeServed).toBe(false);
     });
 
-    // Answered from the timetables, not the dated trips, so it stays correct
-    // on dates nothing has been generated for.
+    // Timetable probes work even when no dated trips have been generated.
     it('reports a train that does not serve a pair it was asked about', async () => {
       const probe = await repository.probeRouteServed(
         IDS.stations.ramsis,
@@ -397,12 +386,8 @@ describe('the trip search query', () => {
   });
 
   /**
-   * The chosen outbound trip's own segment (TA-18, BR-20).
-   *
-   * This read is the server's half of "after arrival, decided by the server":
-   * the return list's lower bound is the arrival instant found here, so a wrong
-   * row would silently offer a return train the traveller cannot physically
-   * catch. Nothing about it is checkable without a database.
+   * The server reads the outbound arrival to bound return trips (BR-20).
+   * A wrong segment can offer a connection the traveller cannot catch.
    */
   describe('the chosen outbound segment', () => {
     it('reads the departure and arrival of the passenger segment', async () => {
@@ -423,8 +408,8 @@ describe('the trip search query', () => {
       expect(segment?.destinationStationId).toBe(IDS.stations.ramsis);
     });
 
-    // The earliest return date is the date the traveller LEAVES, read in
-    // Cairo -- not the trip's service date, and not the arrival's date.
+    // Use the Cairo departure date for the earliest return date, not the trip's
+    // service date or the arrival date.
     it('derives the Cairo departure date from the departure instant', async () => {
       const segment = await repository.findPassengerSegment(
         IDS.trips.overnight,
@@ -462,8 +447,7 @@ describe('the trip search query', () => {
       expect(segment).toBeNull();
     });
 
-    // The "sold out or withdrawn between the two lists" edge case: a return
-    // bound must not be invented from a trip that is no longer sellable.
+    // Do not derive return bounds from trips that are no longer sellable.
     it.each([
       ['a draft trip', IDS.trips.draft],
       ['a withdrawn trip', IDS.trips.withdrawn],

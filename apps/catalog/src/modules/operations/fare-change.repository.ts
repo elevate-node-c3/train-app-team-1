@@ -64,10 +64,7 @@ export class FareChangeRepository {
     };
   }
 
-  /**
-   * The route in travel order for the version effective on `asOfDate`, or null
-   * when no published version covers it.
-   */
+  /** Travel-ordered stops for the published version on asOfDate, or null. */
   async routeStationOrder(
     trainId: string,
     asOfDate: string,
@@ -89,10 +86,7 @@ export class FareChangeRepository {
     return stops.map((stop) => stop.stationId);
   }
 
-  /**
-   * The newest amount already in effect at `asOf`, or null when none has taken
-   * effect yet.
-   */
+  /** Newest price in effect at asOf, or null if none. */
   async fareAmountAsOf(params: {
     trainId: string;
     travelClassId: string;
@@ -115,9 +109,9 @@ export class FareChangeRepository {
   }
 
   /**
-   * Locks this (train, class, pair) for the rest of the transaction. `tables:
-   * ['fare']` is load-bearing: a bare `pessimistic_write` also locks the joined
-   * `train` row and deadlocks against publish's `FOR KEY SHARE`.
+   * Lock only fare rows for the transaction. tables: ['fare'] is required:
+   * bare pessimistic_write also locks joined train rows and can deadlock against
+   * publication's FOR KEY SHARE.
    */
   async lockFareHistory(
     ctx: TransactionContext,
@@ -142,7 +136,7 @@ export class FareChangeRepository {
       });
   }
 
-  /** The new fare row; the previous one stays (CAT-2, BR-30). */
+  /** Append a fare version; preserve the previous price. */
   async insertFare(
     ctx: TransactionContext,
     params: {

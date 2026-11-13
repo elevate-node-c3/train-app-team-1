@@ -2,13 +2,12 @@ import type { LoggerService } from '@nestjs/common';
 
 const STRIPE_MINIMUM_ENV_VAR = 'STRIPE_MINIMUM_CHARGE_PIASTRES';
 
-// Stripe's EGP floor is not documented here; 1 piastre refuses zero or less
-// until it is configured.
+// The default only rejects nonpositive fares; configure Stripe's actual EGP minimum.
 const UNCONFIGURED_FLOOR_PIASTRES = 1;
 
 let warnedUnconfigured = false;
 
-/** The smallest fare, in piastres, that Stripe will accept as a charge. */
+/** Minimum chargeable fare in piastres. */
 export function stripeMinimumChargePiastres(): number {
   const raw = process.env[STRIPE_MINIMUM_ENV_VAR];
   if (raw === undefined) return UNCONFIGURED_FLOOR_PIASTRES;
@@ -31,7 +30,6 @@ export function isChargeableFare(amountPiastres: number): boolean {
   );
 }
 
-/** Warns once at bootstrap when the Stripe floor is unconfigured. */
 export function warnIfStripeFloorUnconfigured(logger: LoggerService): void {
   if (process.env[STRIPE_MINIMUM_ENV_VAR] !== undefined) return;
   if (warnedUnconfigured) return;
@@ -44,10 +42,10 @@ export function warnIfStripeFloorUnconfigured(logger: LoggerService): void {
 
 const INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR = 'INVENTORY_SEAT_USAGE_TIMEOUT_MS';
 
-// Long enough for a publish click, short enough not to hang when inventory is down.
+// Bound publish latency when inventory is down.
 const DEFAULT_INVENTORY_SEAT_USAGE_TIMEOUT_MS = 2000;
 
-/** How long catalog waits for inventory's seat-usage answer before refusing the publish. */
+/** Refuse publication if inventory's seat-usage check exceeds this timeout. */
 export function seatUsageTimeoutMs(): number {
   const raw = process.env[INVENTORY_SEAT_USAGE_TIMEOUT_ENV_VAR];
   if (raw === undefined) return DEFAULT_INVENTORY_SEAT_USAGE_TIMEOUT_MS;
@@ -61,8 +59,7 @@ export function seatUsageTimeoutMs(): number {
   return parsed;
 }
 
-// Longer than the seat-usage timeout on purpose: this waits for recovery,
-// not for one more round trip. Do not derive one from the other.
+// Wait for recovery, not another request; keep this independent of the seat-usage timeout.
 const DEPENDENCY_RETRY_AFTER_SECONDS = 5;
 
 /** Retry wait for `DEPENDENCY_UNAVAILABLE`, shared by the refusal text and the envelope. */

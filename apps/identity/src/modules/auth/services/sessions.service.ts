@@ -134,12 +134,8 @@ function refreshTokenGraceIsOpen(
 }
 
 /**
- * Sign-in deliberately does the password comparison while holding the account
- * and lockout rows. That is slower than a read-only check, but it is the only
- * shape in which two concurrent wrong passwords cannot both read `9`.
- *
- * An unknown address takes the same bcrypt path against a dummy hash, so the
- * response time does not answer "does this account exist?".
+ * Compare passwords under account and lockout locks to serialize failure counts.
+ * Unknown addresses use a dummy bcrypt hash to hide account existence through timing.
  */
 @Injectable()
 export class SessionsService {
@@ -186,9 +182,7 @@ export class SessionsService {
           return this.recordFailure(ctx, lockout, now);
         }
 
-        // Correct password, but the account may still be unusable. The
-        // password check happens first so a wrong password never reveals that
-        // an address exists and is disabled.
+        // Check the password before revealing that an account is disabled.
         if (!account) {
           return { failed: new AuthError(ErrorCode.INVALID_CREDENTIALS) };
         }
@@ -292,7 +286,7 @@ export class SessionsService {
           return { failed: new AuthError(ErrorCode.INVALID_REFRESH_TOKEN) };
         }
 
-        // A rotated token presented after the grace window: a replay or theft.
+        // A rotated token used after grace may be replay or theft.
         detectSessionReuse(session, now);
         await this.sessions.update(ctx, session);
         await this.refreshTokens.revokeBySession(ctx, session.id, now);

@@ -26,12 +26,7 @@ import {
   toBoolean,
 } from './search-trips.dto.js';
 
-/**
- * The outbound segment must be a journey, not a station twice over.
- *
- * Reported against the destination for the same reason the one-way DTO does:
- * a traveller told "from is invalid" would change the wrong one.
- */
+/** Stations must differ; report the destination as the invalid field. */
 @ValidatorConstraint({ name: 'differentOutboundStations', async: false })
 class DifferentOutboundStations implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
@@ -45,32 +40,16 @@ class DifferentOutboundStations implements ValidatorConstraintInterface {
 }
 
 /**
- * `GET /api/v1/trips/search/return`.
- *
- * The second list of a round trip, computed from the outbound trip the
- * traveller chose. What is deliberately *not* here is any arrival time: BR-20
- * says the server reads the chosen trip's arrival itself, and a client able to
- * send one could widen the window and be offered a train it cannot catch.
- *
- * There is no train number either. It narrowed the outbound leg only -- a
- * return train has its own number.
- *
- * The filters and the order repeat the one-way DTO's shapes, because filters
- * apply to each list separately and a traveller would not accept two different
- * spellings of the same thing.
+ * Search from the chosen outbound trip; catalog reads its arrival time.
+ * Train numbers narrow only the outbound search.
+ * Each leg has its own filters and sort order.
  */
 export class SearchReturnTripsDto {
-  /** The trip the traveller chose, from the outbound results. */
+  /** Chosen outbound trip. */
   @IsUUID()
   outboundTripId!: string;
 
-  /**
-   * The outbound journey's own two stations.
-   *
-   * Needed because a trip calls at many stations and the return search starts
-   * where this traveller actually got off. The server still checks them
-   * against the trip rather than trusting the pair.
-   */
+  /** Passenger's outbound segment; catalog verifies both stations against the trip. */
   @IsUUID()
   outboundFrom!: string;
 
@@ -83,13 +62,13 @@ export class SearchReturnTripsDto {
   })
   outboundTo!: string;
 
-  /** A Cairo civil date. BR-20's rules about it are catalog's to apply. */
+  /** Cairo date; catalog checks return-date rules. */
   @Matches(CIVIL_DATE_PATTERN, {
     context: { issueKey: 'ISSUE_CIVIL_DATE_FORMAT' },
   })
   returnDate!: string;
 
-  /** The same class for both legs: a round-trip search has one seat class. */
+  /** Both legs use the same travel class. */
   @IsUUID()
   travelClassId!: string;
 

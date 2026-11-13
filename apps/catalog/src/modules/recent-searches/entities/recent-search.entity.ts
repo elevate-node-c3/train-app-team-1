@@ -1,28 +1,13 @@
 import { Column, Entity, Index, PrimaryColumn, Unique } from 'typeorm';
 
-/** How a traveller searched: one way, or out and back. */
 export type RecentSearchKindColumn = 'one_way' | 'round_trip';
 
 /**
- * One search a traveller may want to repeat (BR-21).
- *
- * `account_id` deliberately carries no foreign key. Accounts live in identity's
- * database, and a cross-service constraint is what §2.3 forbids -- it would
- * couple catalog's schema to another service's lifecycle. The cost is that a
- * deleted account leaves rows behind, which is a cleanup job, not a correctness
- * problem: nothing can read them without that account's token.
- *
- * Both indexes are declared here as well as in the migration that creates them,
- * so a reader of the entity sees everything the table carries. The unique one is
- * load-bearing rather than defensive: it is what makes "at most five, without
- * duplicates" survive two concurrent writes, because the upsert needs a conflict
- * target and a read-then-write could not promise it.
- *
- * The relations to `station` and `travel_class` are columns rather than
- * `@ManyToOne` graphs on purpose. Nothing here navigates to a station object;
- * the read joins for names and drops entries whose station was deactivated, and
- * a row object that could reach into the station aggregate is exactly what the
- * boundary rules keep out.
+ * Accounts belong to identity, so account_id has no cross-service foreign key.
+ * Deleted accounts leave rows for cleanup; reads still require that account's token.
+ * Mirror migration indexes; account/fingerprint uniqueness supports atomic deduplication.
+ * Keep station/class references as columns, not aggregate navigation. Reads join
+ * names and omit inactive stations.
  */
 @Entity('recent_search')
 @Unique('uq_recent_search_account_fingerprint', ['accountId', 'fingerprint'])
@@ -36,9 +21,8 @@ export class RecentSearchEntity {
   accountId!: string;
 
   /**
-   * What makes two searches "the same" (BR-21): route, class, kind and train
-   * number. Dates are deliberately absent, so repeating a search with new dates
-   * moves this row to the top instead of adding a sixth.
+   * Route, class, kind, and train number define identity, not dates.
+   * Repeating with new dates refreshes the row instead of adding another entry.
    */
   @Column({ type: 'text' })
   fingerprint!: string;
@@ -59,11 +43,7 @@ export class RecentSearchEntity {
   @Column({ name: 'train_number', type: 'integer', nullable: true })
   trainNumber!: number | null;
 
-  /**
-   * Cairo civil dates, as `date` columns: these are calendar days a traveller
-   * picked, not instants, and storing them as timestamps would invite a time
-   * zone into a value that has none.
-   */
+  /** Cairo calendar days, not timestamps; timezone conversion must not shift them. */
   @Column({ name: 'departure_date', type: 'date', nullable: true })
   departureDate!: string | null;
 
@@ -71,7 +51,7 @@ export class RecentSearchEntity {
   @Column({ name: 'return_date', type: 'date', nullable: true })
   returnDate!: string | null;
 
-  /** When it was last run, which is what "newest first" orders by. */
+  /** Last run time for newest-first order. */
   @Column({ name: 'searched_at', type: 'timestamptz' })
   searchedAt!: Date;
 }

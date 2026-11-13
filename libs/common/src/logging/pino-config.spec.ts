@@ -9,10 +9,8 @@ import { CORRELATION_ID_KEY } from '../correlation/correlation.constants.js';
 import { createPinoConfig } from './pino-config.js';
 
 /**
- * Drives a real request through the real pino-http middleware. The middleware
- * runs before the correlation id is in the store, which is the production
- * order: nestjs-pino's LoggerModule is imported by CommonModule, so Nest
- * registers its middleware ahead of ClsMiddleware/CorrelationMiddleware.
+ * Match production order: pino-http runs before CLS/correlation middleware,
+ * so the correlation ID is not available when the request starts.
  */
 async function logRequest(
   correlationId: string,

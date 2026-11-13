@@ -12,12 +12,8 @@ import { TimetableEntity } from '../../timetables/entities/timetable.entity.js';
 import { CoachLayoutRow } from '../../trains/entities/coach-layout.entity.js';
 
 /**
- * One coach of a trip's train, frozen at publication.
- *
- * Exported because search reads it to work out the trip's capacity in a travel
- * class, so the shape is a published contract rather than a private detail. A
- * published trip must keep describing the train it was published with, even
- * after the live composition changes.
+ * Publish coach composition as a contract for class capacity.
+ * Trips retain that snapshot even when the live train composition changes.
  */
 export interface TrainCoachCompositionSnapshotItem {
   position: number;
@@ -37,11 +33,9 @@ export interface TrainCoachCompositionSnapshotItem {
 }
 
 /**
- * A train running on one date, with its composition frozen at publication.
- *
- * The index is declared here as well as in its migration. Search uses it to
- * prune by date and status; which trips actually belong to the searched day is
- * then decided by the passenger's origin departure, not by `service_date`.
+ * Freeze composition at publication. Mirror migration indexes here.
+ * service_date/status prune search rows; the passenger's origin departure
+ * determines the actual searched date.
  */
 @Entity('dated_trip')
 @Index('idx_dated_trip_service_date', ['serviceDate', 'status'])

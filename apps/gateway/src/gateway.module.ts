@@ -16,10 +16,7 @@ import { IdentityModule } from './modules/identity/identity.module.js';
 import { OperationsModule } from './modules/operations/operations.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
-/**
- * Root module: infrastructure wiring and feature modules only. Business
- * providers belong to the feature module that owns them.
- */
+/** Wires infrastructure; feature modules own business providers. */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync(
@@ -35,8 +32,7 @@ import { ServiceInfoController } from './service-info.controller.js';
   ],
   controllers: [ServiceInfoController],
   providers: [
-    // Rate limiting runs first so an unauthenticated flood is cut before any
-    // signature verification work.
+    // Rate limiting runs before costly signature verification.
     { provide: APP_GUARD, useClass: RateLimitGuard },
     // Deny-by-default: every route must declare `@Public()` or an access level.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

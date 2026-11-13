@@ -8,10 +8,7 @@ import {
   resolveMessageWithParams,
 } from './catalogue.js';
 
-/**
- * The reasons search can come back empty. Keyed by the wire enum value itself,
- * so there is no mapping table between the gRPC response and the sentence.
- */
+/** Wire reason keys also index the localized messages. */
 const EMPTY_REASON_KEYS: Exclude<
   SearchEmptyReason,
   'SEARCH_EMPTY_REASON_UNSPECIFIED'
@@ -37,8 +34,6 @@ describe('the search message catalogue', () => {
   });
 
   it('gives every reason a different sentence', () => {
-    // The whole point of BR-57: "change the stations" must not read like
-    // "change the date", and neither may read like "change the filters".
     for (const lang of ['ar', 'en'] as const) {
       const sentences = EMPTY_REASON_KEYS.map((key) =>
         resolveMessage(key, lang),
@@ -47,11 +42,6 @@ describe('the search message catalogue', () => {
     }
   });
 
-  /**
-   * The two TA-18 reasons each have to point somewhere the other does not:
-   * the return leg offers two ways out, and the filter sentence has to say
-   * that the date is *not* the thing to change.
-   */
   it('offers the return leg both ways out, quoting the arrival', () => {
     const message = resolveMessageWithParams(
       'SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL',
@@ -72,7 +62,6 @@ describe('the search message catalogue', () => {
     );
 
     expect(message).toContain('filters');
-    // It must not send them to the date picker: there ARE trains that day.
     expect(message).toContain('are trains on this date');
   });
 
@@ -96,8 +85,6 @@ describe('the search message catalogue', () => {
           params,
         );
 
-        // BR-57: the refusal has to tell the traveller which date to pick
-        // instead, not merely that this one is wrong.
         expect(message).toContain('2026-07-14');
         expect(message).not.toContain('{{');
       }
@@ -120,8 +107,6 @@ describe('the search message catalogue', () => {
         {},
       );
 
-      // Failing loudly beats telling a traveller the last bookable date is
-      // "undefined".
       expect(message).toContain('{{lastBookableDate}}');
     });
 

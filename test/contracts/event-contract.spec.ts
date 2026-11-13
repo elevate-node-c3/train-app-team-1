@@ -48,7 +48,7 @@ const golden: VerificationCodeIssuedEvent = JSON.parse(
   readFileSync(GOLDEN_SAMPLE_PATH, 'utf8'),
 ) as VerificationCodeIssuedEvent;
 
-/** Exactly the producer call the fixture was generated from. */
+/** Use the producer inputs that generated the committed fixture. */
 function buildEvent(): VerificationCodeIssuedEvent {
   return buildVerificationCodeIssued({
     eventId: '11111111-1111-4111-8111-111111111111',
@@ -65,11 +65,7 @@ function buildEvent(): VerificationCodeIssuedEvent {
   });
 }
 
-/**
- * The consumer's real path: the envelope parser the runtime calls, followed by
- * the payload parser the handler calls. Testing only the payload parser would
- * leave every envelope field unguarded.
- */
+/** Use both runtime parsers so envelope and payload fields are checked. */
 function parseAsConsumer(event: unknown): VerificationCodeIssuedPayloadV1 {
   const envelope: EventEnvelope = parseEventEnvelope(JSON.stringify(event), {
     type: VERIFICATION_CODE_ISSUED_EVENT_TYPE,
@@ -90,8 +86,7 @@ function mutablePayload(
 
 describe('Producer/consumer event contract (ADR-0005)', () => {
   it('the committed golden sample is exactly what the producer builds', () => {
-    // Any rename, removal or reordering of an emitted field turns this red,
-    // and going green requires editing a committed file — a visible diff.
+    // Contract changes require a committed fixture update.
     expect(buildEvent()).toEqual(golden);
   });
 
@@ -101,8 +96,7 @@ describe('Producer/consumer event contract (ADR-0005)', () => {
   });
 
   it('the golden sample carries exactly the required keys on both levels', () => {
-    // A guard against the required-key lists quietly shrinking until the
-    // deletion sweep below is vacuous.
+    // Keep required-key lists from shrinking and bypassing the deletion tests.
     expect(Object.keys(golden)).toEqual([...ENVELOPE_REQUIRED_KEYS]);
     expect(Object.keys(golden.payload)).toEqual([
       ...VERIFICATION_CODE_ISSUED_PAYLOAD_KEYS,
@@ -150,8 +144,7 @@ describe('Producer/consumer event contract (ADR-0005)', () => {
   });
 
   it('parses a code whose expiry has already passed', () => {
-    // Expiry is a handling decision, not a contract violation: failing the
-    // parse would send recoverable traffic to the DLQ (ADR-0005).
+    // Expired codes are handled by the consumer, not rejected into the DLQ (ADR-0005).
     const event = mutableClone();
     event.payload.issuedAt = '2020-01-01T00:00:00.000Z';
     event.payload.expiresAt = '2020-01-01T00:10:00.000Z';

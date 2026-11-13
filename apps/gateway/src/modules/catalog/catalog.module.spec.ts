@@ -32,8 +32,7 @@ describe('the gateway catalog module', () => {
     expect(controllers).toContain(CatalogController);
     expect(providers).toContain(CatalogService);
     expect(providers).toContain(CatalogGrpcClientService);
-    // The proxy is resolved once into a token, so the client service takes a
-    // ready interface rather than unwrapping a ClientGrpc itself.
+    // Inject a ready proxy instead of unwrapping ClientGrpc in the service.
     expect(
       providers?.some(
         (provider) =>
@@ -44,17 +43,7 @@ describe('the gateway catalog module', () => {
     ).toBe(true);
   });
 
-  /**
-   * Identity being down must not stop a traveller searching.
-   *
-   * This is true by construction -- `JwtAuthGuard` verifies the access token
-   * locally against a public key and checks the revocation store, making no
-   * call to identity -- but "by construction" is exactly the kind of property
-   * that quietly stops being true. An import of identity's client from
-   * anywhere on the search path would be the way it happened, so the import
-   * graph is what gets asserted. The e2e matrix then proves it with identity
-   * actually stopped.
-   */
+  /** Searching must stay independent of identity's client during outages. */
   it('reaches nothing in identity, so identity cannot break search', () => {
     const offenders: string[] = [];
 

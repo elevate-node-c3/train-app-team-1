@@ -5,7 +5,7 @@ import { notificationEnvSchema } from './config/env.schema.js';
 import { getHealthProtoPath, HEALTH_PACKAGE_NAME } from '@app/contracts';
 import { NotificationModule } from './notification.module.js';
 
-// 1. Fail-fast configuration validation at boot (§2.1)
+// Reject invalid configuration before Nest starts.
 validateEnv(notificationEnvSchema, process.env, 'notification');
 
 async function bootstrap() {

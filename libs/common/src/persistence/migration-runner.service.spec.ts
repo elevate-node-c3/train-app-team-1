@@ -7,14 +7,6 @@ import {
 } from '@app/common';
 import type { DataSource } from 'typeorm';
 
-/**
- * `manualInitialization: true` means Nest never connects the DataSource, so
- * `migrationsRun: true` never fires and schema changes need an explicit runner.
- * These tests pin the three things that make that runner safe: it does not
- * change the options the five services without migrations receive, it holds an
- * advisory lock across the run so two booting instances cannot both migrate,
- * and it releases that lock even when migrating fails.
- */
 
 type FakeQueryRunner = {
   calls: string[];
@@ -73,9 +65,6 @@ function fakeDataSource(options: {
 
 describe('Migration infrastructure (§2.1)', () => {
   describe('createTypeOrmAsyncOptions', () => {
-    // The five services that own no migrations must receive exactly what they
-    // received before the parameter existed, or adding migrations to identity
-    // silently changes how every other service connects.
     it('is unchanged for a service that passes no migrations', () => {
       const factory = createTypeOrmAsyncOptions().useFactory as () => Record<
         string,
@@ -110,9 +99,6 @@ describe('Migration infrastructure (§2.1)', () => {
   });
 
   describe('DataSourceInitializer', () => {
-    // There must be exactly one in-flight initialize(): two callers racing
-    // throws CannotConnectAlreadyConnectedError, and the readiness probe, the
-    // unit of work and the migration runner all connect lazily.
     it('initializes once when several callers arrive together', async () => {
       let initializeCount = 0;
       let resolveInit: () => void = () => {};
@@ -140,8 +126,6 @@ describe('Migration infrastructure (§2.1)', () => {
       expect(initializeCount).toBe(1);
     });
 
-    // A Postgres outage at boot must not be cached as permanent — the platform
-    // degrades and recovers rather than requiring a restart.
     it('retries after a failed attempt instead of caching the rejection', async () => {
       let attempts = 0;
       const dataSource = {
@@ -179,8 +163,6 @@ describe('Migration infrastructure (§2.1)', () => {
 
       await service.run();
 
-      // Order is the correctness property: locking after migrating, or
-      // unlocking before, would let two booting instances migrate at once.
       expect(runner.calls).toEqual([
         'connect',
         'lock',
@@ -204,8 +186,6 @@ describe('Migration infrastructure (§2.1)', () => {
 
       await expect(service.run()).rejects.toThrow('relation already exists');
 
-      // Without the unlock a crashed migration would leave the key held for
-      // the life of the connection and block every other instance.
       expect(runner.calls).toEqual(['connect', 'lock', 'unlock', 'release']);
       expect(service.hasCompleted).toBe(false);
     });
@@ -238,8 +218,6 @@ describe('Migration infrastructure (§2.1)', () => {
       expect(service.hasCompleted).toBe(true);
     });
 
-    // Boot must survive Postgres being unreachable: readiness already reports
-    // the database as not ready, which is a better signal than a crash loop.
     it('logs rather than throws when bootstrap cannot reach the database', async () => {
       const dataSource = {
         isInitialized: false,
@@ -266,7 +244,7 @@ describe('Migration infrastructure (§2.1)', () => {
   });
 
   describe('SchemaReadinessGate', () => {
-    // Has it opened *by now*? Awaiting it directly would hang when closed.
+    // Check without awaiting a closed gate, which would hang.
     async function isOpen(gate: SchemaReadinessGate): Promise<boolean> {
       let open = false;
       void gate.whenReady.then(() => {
@@ -276,12 +254,11 @@ describe('Migration infrastructure (§2.1)', () => {
       return open;
     }
 
-    // Default-open, or services with no migrations would wait forever.
+    // Services without migrations need the gate to start open.
     it('is ready until a migration runner closes it', async () => {
       await expect(isOpen(new SchemaReadinessGate())).resolves.toBe(true);
     });
 
-    // Construction, not bootstrap: it must precede every hook.
     it('is closed by constructing the runner, before any hook runs', async () => {
       const gate = new SchemaReadinessGate();
       const { dataSource } = fakeDataSource({});
@@ -305,7 +282,6 @@ describe('Migration infrastructure (§2.1)', () => {
       expect(service.hasCompleted).toBe(true);
     });
 
-    // A stale schema is a better signal than a waiter stalled for good.
     it('opens even when migrating fails', async () => {
       const gate = new SchemaReadinessGate();
       const { dataSource } = fakeDataSource({
@@ -341,9 +317,7 @@ describe('Migration infrastructure (§2.1)', () => {
     it('exposes generate, run, show and revert against an explicit data source', () => {
       const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 
-      // `-d` is left without a value on purpose: the caller appends the data
-      // source path, because each service owns its own migrations and there is
-      // no single repo-wide data source to default to.
+      // Pass the data source path after -d; each service owns its migrations.
       //   npm run migration:show -- apps/identity/src/database/data-source.ts
       expect(pkg.devDependencies.tsx).toBeDefined();
       for (const command of [
@@ -357,8 +331,7 @@ describe('Migration infrastructure (§2.1)', () => {
         );
       }
 
-      // Seeds run compiled, from `dist/`: the runtime image installs no
-      // devDependencies and copies no sources, so `tsx` is not there.
+      // Runtime images have no sources or tsx; seeds must run from dist.
       expect(pkg.scripts['seed:staff']).toBe(
         'node dist/apps/identity/src/database/seeds/staff-accounts.seed.js',
       );
@@ -370,12 +343,10 @@ describe('Migration infrastructure (§2.1)', () => {
         expect(pkg.scripts[command]).toMatch(/^node dist\//);
       }
 
-      // migration:generate takes the same shape, and the same convention puts
-      // its required positional path second:
+      // migration:generate takes the data source then the output path:
       //   npm run migration:generate -- apps/catalog/src/database/data-source.ts \
       //     apps/catalog/src/database/migrations/AddSomething
-      // A generated migration is a starting point, not reviewed DDL: read the
-      // SQL it emits and edit it before committing.
+      // Review and edit generated SQL before committing it.
       expect(pkg.scripts['catalog:migration:generate']).toBe(
         'tsx node_modules/typeorm/cli.js migration:generate -d apps/catalog/src/database/data-source.ts',
       );

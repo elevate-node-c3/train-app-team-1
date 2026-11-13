@@ -16,21 +16,10 @@ interface RawStopRow {
 }
 
 /**
- * The stops one passenger actually travels through.
- *
- * One statement, ordered by position. The endpoints are resolved exactly as
- * search resolves them -- earliest boardable stop at the origin, then the
- * earliest alighting stop after it -- so the list always agrees with the
- * result that offered it, including on a route that calls at a station twice.
- *
- * Only sellable trips answer, the same statuses search itself offers. Without
- * that join a client holding any trip id could read the itinerary of a draft or
- * withdrawn trip -- timetable data that was deliberately never published -- and
- * a trip withdrawn between the search and the tap on "4 Stops" would still
- * describe a journey nobody can take.
- *
- * `idx_trip_stop_trip_station` serves both the trip filter and the two
- * endpoint lookups, so this needs no index of its own.
+ * Resolve the earliest boardable origin and next alighting destination in one
+ * ordered query, matching search even on repeated-station routes.
+ * Restrict to sellable trips so draft or withdrawn itineraries do not leak.
+ * idx_trip_stop_trip_station covers trip and endpoint lookups.
  */
 @Injectable()
 export class TripStopsRepository {
@@ -56,8 +45,7 @@ export class TripStopsRepository {
       .addSelect('s.arrival_at', 'arrival_at')
       .addSelect('s.departure_at', 'departure_at')
       .where('s.trip = :tripId')
-      // The earliest boardable stop at the passenger's origin, the same
-      // pairing `findCandidates` uses.
+      // Use the same earliest boarding position as findCandidates.
       .andWhere(
         `s.position >= (
           SELECT bo.position FROM trip_stop bo
@@ -68,8 +56,7 @@ export class TripStopsRepository {
           LIMIT 1
         )`,
       )
-      // The first stop at the destination after boarding. Its subquery repeats
-      // the boarding lookup so both ends are pinned to one deterministic pair.
+      // Repeat the origin lookup so the destination stays pinned to the same pair.
       .andWhere(
         `s.position <= (
           SELECT bd.position FROM trip_stop bd

@@ -1,14 +1,11 @@
-# This repo is developed on Windows. Anything a Linux container or the Docker
-# daemon reads must be checked out with LF, or it fails inside the container in
-# ways that look like a defect in the image.
+# Use LF for files read by Linux containers.
 * text=auto
 
 *.sql text eol=lf
 *.sh text eol=lf
 Dockerfile text eol=lf
 .dockerignore text eol=lf
-# Copied to .env and parsed by Compose; a trailing CR would ride along inside
-# every value, so a password would silently fail to authenticate.
+# Keep CR out of .env values, especially passwords.
 .env.example text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf

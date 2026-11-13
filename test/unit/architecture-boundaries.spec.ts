@@ -63,16 +63,8 @@ describe('Monorepo Architecture Boundaries (§2.5)', () => {
   });
 
   /**
-   * The libraries form a chain, not a web:
-   *
-   *   contracts <- common <- messaging
-   *
-   * This is the assertion that was missing. `@app/common` imported
-   * `@app/messaging` for the broker health check, the retry budget and the
-   * consumer defaults while `@app/messaging` imported `@app/common` back, and
-   * the pair only booted because every edge was a deep subpath to a leaf that
-   * happened to import nothing. One import added to the wrong file turned that
-   * into a boot-time "cannot access before initialization".
+   * Keep runtime imports one-way: contracts <- common <- messaging.
+   * Cycles can pass with leaf imports, then fail at boot when a leaf gains an import.
    */
   it('keeps the libraries in one direction', () => {
     // Each lib may import only those to its left.

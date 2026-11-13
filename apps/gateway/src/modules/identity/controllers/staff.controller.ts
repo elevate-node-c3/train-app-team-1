@@ -2,11 +2,7 @@ import { Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { RequireRole } from '@app/common';
 import type { StaffRole } from '@app/contracts';
 
-/**
- * BR-01's staff roles are separate capabilities, not ranks. These two routes
- * are the smallest real surface that proves the distinction: neither role can
- * reach the other's route, and a traveller token reaches neither.
- */
+/** Staff roles are separate capabilities, not ranks; travellers have neither. */
 @Controller('auth/staff')
 export class StaffController {
   @RequireRole('operator')

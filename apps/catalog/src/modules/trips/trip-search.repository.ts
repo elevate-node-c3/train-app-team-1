@@ -49,16 +49,8 @@ interface RawRow {
 }
 
 /**
- * Seats in the requested class on this trip, summed out of the published
- * composition snapshot.
- *
- * A raw fragment because the query builder has no vocabulary for unnesting
- * jsonb, and because the alternative -- selecting `composition_snapshot` and
- * summing in TypeScript -- would ship every coach's full seat map for every
- * candidate trip, which is the one part of this row that is genuinely large.
- *
- * `->> 'id'` yields text, so the parameter is cast to text rather than left to
- * be inferred as uuid from its other uses.
+ * Sum class capacity in SQL from the published snapshot to avoid shipping full seat maps.
+ * JSON IDs are text, so cast travelClassId to text rather than UUID.
  */
 const CLASS_CAPACITY_FRAGMENT = `(
   SELECT COALESCE(SUM(
@@ -73,17 +65,8 @@ const CLASS_CAPACITY_FRAGMENT = `(
 )`;
 
 /**
- * The fare in force for this segment: the newest row whose `effective_from`
- * has arrived.
- *
- * A raw fragment because it is a correlated `ORDER BY ... LIMIT 1` against the
- * outer row's train and both stations, which the builder cannot express as a
- * selected scalar. It reads the existing
- * `uq_fare_effective_version (train_id, travel_class_id, origin, destination,
- * effective_from)` index backwards, so it needs no index of its own.
- *
- * Null when nothing covers the segment -- reported rather than hidden, so the
- * service can drop an unpriceable trip knowingly.
+ * Resolve the newest price effective at now; return null for uncovered segments.
+ * The correlated SQL reads uq_fare_effective_version backwards, so no extra index is needed.
  */
 const CURRENT_FARE_FRAGMENT = `(
   SELECT fa.amount_piastres
@@ -102,13 +85,8 @@ export class TripSearchRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * A day's sellable candidate trips between two stations, in one statement.
-   *
-   * Nothing here loops over rows, so the cost does not grow with the number of
-   * trips found (TA-28). The default order is applied after the fact: `DISTINCT
-   * ON` dictates the SQL ordering, and a day between two stations is tens of
-   * rows, so sorting them in memory is cheaper than a wrapping subquery and is
-   * also where CAT-4's alternative sorts will live.
+   * Load the day's candidates in one query, without per-trip statements.
+   * DISTINCT ON controls SQL order; sort results in memory after deduplication.
    */
   async findCandidates(params: {
     originStationId: string;
@@ -124,20 +102,15 @@ export class TripSearchRepository {
     const raw = await this.dataSource
       .getRepository(DatedTripEntity)
       .createQueryBuilder('t')
-      // One row per trip, even when a route calls at a station twice. Ordering
-      // by both positions makes this keep the earliest valid pairing, which is
-      // the journey a traveller would actually make.
+      // Keep one row per trip and the earliest valid pair on repeated-station routes.
       .distinctOn(['t.id'])
 
-      // Where the passenger boards.
       .innerJoin(
         TripStopEntity,
         'o',
         'o.trip = t.id AND o.stationId = :originStationId AND o.departureAt IS NOT NULL',
       )
-      // Where the passenger alights: any LATER stop of the same route.
-      // `d.position > o.position` is the travel-order rule (BR-15), and it is
-      // what makes the reverse direction return nothing.
+      // Only a later stop is a valid destination; reverse pairs do not match.
       .innerJoin(
         TripStopEntity,
         'd',
@@ -164,25 +137,22 @@ export class TripSearchRepository {
       .addSelect('d.arrival_at', 'destination_arrival_at')
       .addSelect('tc.name_en', 'travel_class_name_en')
       .addSelect('tc.name_ar', 'travel_class_name_ar')
-      // Arithmetic on dense positions, so no third join and no COUNT(*) per row.
+      // Count intermediate stops from dense positions; no extra join.
       .addSelect('d.position - o.position - 1', 'intermediate_stops')
       .addSelect(CLASS_CAPACITY_FRAGMENT, 'class_capacity')
       .addSelect(CURRENT_FARE_FRAGMENT, 'fare_piastres')
 
       .where('t.status IN (:...sellableStatuses)')
-      // Pruning only, so the service_date index stays usable. The CORRECTNESS
-      // predicate is the departure range below: a trip dated D can depart the
-      // passenger's origin on D+1.
+      // serviceDate only prunes indexed rows; the origin departure range below
+      // determines correctness, including overnight departures.
       .andWhere(
         't.serviceDate BETWEEN (CAST(:serviceDate AS date) - CAST(:daySpan AS int)) AND (CAST(:serviceDate AS date) + 1)',
       )
-      // BR-16: a trip belongs to the Cairo date it leaves the PASSENGER's
-      // origin, not the date the train left its first station. Half-open, and
-      // computed from tzdata rather than by adding 24h, so it survives a
-      // daylight-saving change.
+      // Search by the passenger's Cairo departure date, not the train's start date.
+      // Use tzdata's half-open day bounds, not a fixed 24-hour span.
       .andWhere('o.departureAt >= :dayStart')
       .andWhere('o.departureAt < :dayEnd')
-      // Optional narrowing (BR-18); one statement serves both shapes.
+      // Optional train-number narrowing stays in the same query.
       .andWhere(
         '(CAST(:trainNumber AS int) IS NULL OR tr.trainNumber = CAST(:trainNumber AS int))',
       )
@@ -227,12 +197,10 @@ export class TripSearchRepository {
           farePiastres:
             row.fare_piastres === null ? null : Number(row.fare_piastres),
         }))
-        // A train with no coach of the requested class is not a result at all,
-        // which is a different thing from sold out -- that has capacity and no
-        // seats left, and IS returned.
+        // No coach in the requested class means no result; sold-out trips still
+        // have capacity and must remain in results.
         .filter((row) => row.classCapacity > 0)
-        // The default order (BR-18), tie-broken on train number so the output is
-        // deterministic.
+        // Sort by departure, then train number for deterministic ties.
         .sort(
           (left, right) =>
             left.originDepartureAt.getTime() -
@@ -243,17 +211,9 @@ export class TripSearchRepository {
   }
 
   /**
-   * The one segment a traveller chose as their outbound.
-   *
-   * This is the server's half of BR-20: the return search is bounded by the
-   * departure and arrival instants read here, never by times a client sent.
-   * Non-sellable trips are excluded for the same reason they are absent from
-   * search, so a trip withdrawn between the two lists yields nothing and the
-   * caller can refuse instead of inventing a return bound.
-   *
-   * A loop route can stop at both stations more than once. Ordering the
-   * positions keeps the earliest pairing, which is the same journey search
-   * offered. One statement, one row.
+   * Use server-read outbound instants to bound returns, never client-supplied times.
+   * Only sellable trips qualify; refuse if withdrawal happened after search.
+   * Repeated stations use the earliest valid pairing, matching the offered journey.
    */
   async findPassengerSegment(
     tripId: string,
@@ -302,15 +262,8 @@ export class TripSearchRepository {
   }
 
   /**
-   * Is this pair served at all, and by this train?
-   *
-   * Asked of the timetables rather than the dated trips on purpose: it answers
-   * "does this route exist", which is date-independent, so it stays correct on
-   * dates nothing has been generated for -- and it is the only question that
-   * can be answered before TA-16 materializes any trips.
-   *
-   * The second question is only asked when the caller named a train, so the
-   * usual empty result costs one extra statement rather than two.
+   * Check published timetables for date-independent route existence, even before
+   * any dated trips exist. Ask about the named train only when needed.
    */
   async probeRouteServed(
     originStationId: string,

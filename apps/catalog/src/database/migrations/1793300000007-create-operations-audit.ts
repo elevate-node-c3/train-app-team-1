@@ -1,9 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * BR-52's audit trail. Append-only is enforced by a trigger, not application
- * code, so even a direct `psql` UPDATE or DELETE fails.
- * `(train_id, occurred_at DESC)` serves the newest-first read per train.
+ * A database trigger enforces append-only audit history, including direct SQL writes.
+ * The train/time index serves newest-first reads per train.
  */
 export class CreateOperationsAudit1793300000007
   implements MigrationInterface

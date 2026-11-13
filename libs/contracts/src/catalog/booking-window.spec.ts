@@ -28,9 +28,7 @@ describe('the booking window', () => {
     );
   });
 
-  // The window is a Cairo calendar fact, so it must roll when Cairo's date
-  // rolls -- not when UTC's does. At 22:30Z on 30 June, Cairo is already in
-  // July, and a traveller there must be able to search 29 July.
+  // Booking rolls over at Cairo midnight, not UTC midnight.
   it('rolls at Cairo midnight, not UTC midnight', () => {
     const window = bookingWindowFor(new Date('2026-06-30T22:30:00Z'));
 

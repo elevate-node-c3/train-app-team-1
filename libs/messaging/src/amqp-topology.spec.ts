@@ -20,11 +20,7 @@ import {
 
 type Call = Record<string, unknown>;
 
-/**
- * Typed as the slice of `Channel` that `declareTopology` takes, so the stub
- * has to answer with amqplib's own reply shapes -- a hand-written signature
- * returning `Promise<unknown>` drifted from the real one.
- */
+/** Match amqplib's reply types so stubs cannot drift from the real channel. */
 type TopologyChannel = Pick<
   Channel,
   'assertExchange' | 'assertQueue' | 'bindQueue'
@@ -41,8 +37,7 @@ function fakeChannel(): { calls: Call[]; channel: TopologyChannel } {
       },
       assertQueue: async (name, options) => {
         calls.push({ kind: 'queue', name, options });
-        // amqplib allows an absent name, in which case the broker generates
-        // one; the topology never does that, so '' is unreachable here.
+        // Topology always provides explicit queue names.
         return { queue: name ?? '', messageCount: 0, consumerCount: 0 };
       },
       bindQueue: async (queue, exchange, routingKey) => {
@@ -83,9 +78,7 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
     );
 
     expect(calls).toEqual([
-      // Re-asserted by the consumer so it can bind even when it starts before
-      // the producer. Identical parameters keep the two declarations
-      // compatible (AMQP rejects an exchange redefined with other options).
+      // Both sides must declare the exchange with identical options.
       {
         kind: 'exchange',
         name: EVENTS_EXCHANGE,
@@ -162,11 +155,7 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
     ]);
   });
 
-  // The bug this prevents: Compose starts notification and identity together,
-  // and a consumer that binds before the producer has declared `train.events`
-  // gets a 404, logs once, and never subscribes. The consumer re-asserts the
-  // exchange; the parameters must stay identical or AMQP rejects the second
-  // declaration.
+  // Consumers declare the shared exchange before binding, even when they start first.
   it("re-asserts the producer's events exchange so startup order cannot break binding", () => {
     const producer = producerTopology().exchanges.find(
       (exchange) => exchange.name === EVENTS_EXCHANGE,
@@ -191,8 +180,7 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
   });
 
   it('computes the BR-03 worst case as exactly 25 500ms', () => {
-    // Exact, not `<`: raising a delay and loosening the assertion to `<` is how
-    // a budget quietly erodes.
+    // Keep exact delays so budget changes cannot slip through.
     expect(
       worstCaseDeliveryMs({
         pollIntervalMs: OUTBOX_POLL_INTERVAL_MS,
@@ -207,10 +195,7 @@ describe('AMQP topology and BR-03 budget (ADR-0004, BR-03)', () => {
   });
 
   it('derives the relay bound as the largest interval that still fits', () => {
-    // Identity bounds its poll interval with this instead of re-summing a
-    // budget whose other 98% lives in another service's environment. The
-    // boundary is the whole value of the constant, so it is asserted from both
-    // sides rather than hardcoded.
+    // Derive identity's poll boundary from the consumer budget and test both sides.
     const consumer = {
       handlerTimeoutMs: EVENT_HANDLER_TIMEOUT_MS,
       retryDelaysMs: EVENT_RETRY_DELAYS_MS,

@@ -9,9 +9,8 @@ export class ConfigurationException extends Error {
 }
 
 /**
- * Validates environment variables against a Joi schema.
- * Throws a ConfigurationException if validation fails, naming the offending variable
- * and redacting any secret values.
+ * Throws ConfigurationException for invalid variables, naming each variable
+ * and redacting secret values.
  */
 export function validateEnvOrThrow<T = Record<string, unknown>>(
   schema: ObjectSchema,
@@ -38,7 +37,7 @@ export function validateEnvOrThrow<T = Record<string, unknown>>(
       SECRET_KEYS.has(key) || /password|secret|token|key/i.test(key);
 
     let reason = detail.message;
-    // Strip raw secret value from error message if Joi interpolated it
+    // Joi may include secret values in its error text.
     if (isSecret) {
       reason = reason.replace(/"[^"]*"/g, '[REDACTED]');
     }
@@ -59,10 +58,7 @@ export function validateEnvOrThrow<T = Record<string, unknown>>(
   throw new ConfigurationException(messages.join('\n'));
 }
 
-/**
- * Validates environment at boot and exits the process immediately (code 1)
- * if configuration is invalid or missing, printing diagnostics to stderr.
- */
+/** On invalid boot settings, print diagnostics to stderr and exit with code 1. */
 export function validateEnv<T = Record<string, unknown>>(
   schema: ObjectSchema,
   env: Record<string, unknown> = process.env,

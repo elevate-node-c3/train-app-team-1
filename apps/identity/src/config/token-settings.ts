@@ -2,10 +2,7 @@ import { TOKEN_DEFAULTS } from '@app/contracts';
 import { VERIFICATION_CODE_DEFAULTS } from '@app/common/config/env.defaults.js';
 import type { TokenSettings } from '../modules/auth/token-settings.js';
 
-/**
- * Composition-root parsing. The values have already passed the Joi schema in
- * `main.ts`; these fallbacks make a host-run unit test or migration safe too.
- */
+/** Startup validates these values; fallbacks also support tests and migrations. */
 export function tokenSettingsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): TokenSettings {
@@ -30,9 +27,8 @@ export function tokenSettingsFromEnv(
 }
 
 /**
- * The key that seals the short-lived grace payload. `TOKEN_GRACE_SECRET` is the
- * dedicated setting; the signing key and then a development-only fallback keep
- * the existing single-key deployments booting.
+ * Seal grace payloads with TOKEN_GRACE_SECRET, then JWT_PRIVATE_KEY if absent.
+ * The final fallback is for development only.
  */
 export function tokenGraceSecretFromEnv(
   env: NodeJS.ProcessEnv = process.env,

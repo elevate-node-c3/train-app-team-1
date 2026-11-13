@@ -3,9 +3,8 @@ import { ErrorCode } from '@app/contracts';
 export type SupportedLanguage = 'ar' | 'en';
 
 /**
- * A refused search date, carrying the last date the traveller could pick
- * instead. Not a `SearchEmptyReason`: the search was refused, not answered
- * with an empty list.
+ * Date refusal with lastBookableDate, not SearchEmptyReason: the request is
+ * rejected rather than answered with an empty list.
  */
 export const CATALOG_SEARCH_DATE_OUT_OF_WINDOW =
   'CATALOG_SEARCH_DATE_OUT_OF_WINDOW';
@@ -229,14 +228,8 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     en: 'This train does not serve this route, please change or clear the train number',
   },
 
-  // --- Round trip and filters (TA-18) --------------------------------------
-  //
-  // Both name a different thing to change, which is the whole point of
-  // keeping them apart from NO_TRIPS_ON_DATE. The research finding was
-  // travellers saying "I don't know what to change: station, date, or
-  // round-trip option" -- so the return-leg sentence offers the two choices
-  // that actually help, and the filter sentence says explicitly that the date
-  // is not the problem.
+  // Return-leg messages offer a new return date or outbound trip; filter
+  // messages say to change filters, not the date.
   SEARCH_EMPTY_REASON_NOTHING_AFTER_OUTBOUND_ARRIVAL: {
     ar: 'لا يوجد قطار عودة يتحرك بعد وصول رحلة الذهاب في {{outboundArrivalTime}}، يرجى تغيير تاريخ العودة أو اختيار رحلة ذهاب أخرى',
     en: 'No return train leaves after your outbound trip arrives at {{outboundArrivalTime}}; please change the return date or pick another outbound trip',
@@ -269,10 +262,7 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
   },
 };
 
-/**
- * Resolves the requested language from the Accept-Language header.
- * Defaults to 'ar' for missing, unsupported, or wildcard languages (BR-56).
- */
+/** Defaults to Arabic for missing, unsupported or wildcard Accept-Language. */
 export function resolveLanguage(
   acceptLanguageHeader?: string,
 ): SupportedLanguage {
@@ -282,7 +272,6 @@ export function resolveLanguage(
 
   const normalized = acceptLanguageHeader.toLowerCase();
 
-  // If English is specified (e.g. en, en-us, en-gb)
   const tokens = normalized.split(',').map((t) => t.trim().split(';')[0]);
   for (const token of tokens) {
     if (token.startsWith('en')) {
@@ -293,13 +282,9 @@ export function resolveLanguage(
     }
   }
 
-  // Fallback to Arabic as documented universal default
   return 'ar';
 }
 
-/**
- * Resolves message for code and language from the centralized catalogue (D14).
- */
 export function resolveMessage(
   code: string,
   lang: SupportedLanguage = 'ar',
@@ -318,16 +303,8 @@ export function resolveMessage(
 }
 
 /**
- * Resolves a message and substitutes `{{name}}` placeholders.
- *
- * Catalog supplies values and the edge supplies words: a refused search date
- * travels as a reason plus `{ lastBookableDate }`, and the sentence that
- * quotes it is assembled here. That is what keeps catalog free of any
- * language and keeps Accept-Language resolved in one place.
- *
- * An unsupplied placeholder is left verbatim rather than printed as
- * "undefined" -- a visible `{{lastBookableDate}}` is a bug report, while
- * "the last bookable date is undefined" is a lie told to a traveller.
+ * Catalog supplies values; the edge localizes and fills `{{name}}` placeholders.
+ * Missing values leave placeholders intact rather than print "undefined".
  */
 export function resolveMessageWithParams(
   code: string,

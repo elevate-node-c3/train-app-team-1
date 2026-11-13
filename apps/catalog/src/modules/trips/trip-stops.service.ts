@@ -20,12 +20,8 @@ import {
 import { TripStopsRepository } from './trip-stops.repository.js';
 
 /**
- * The stops between the pair the search result offered.
- *
- * Cache-aside with a bounded, jittered TTL. An empty repository answer is not
- * cached: it is a refusal, not a fact about the timetable, and caching it
- * would keep telling a traveller their valid pair does not exist after the
- * data was fixed.
+ * Use a bounded, jittered TTL. Never cache empty repository answers: they are
+ * refusals and must not hide trips after data is repaired.
  */
 @Injectable()
 export class TripStopsService {
@@ -81,9 +77,6 @@ export class TripStopsService {
     return { stops: this.toWire(cachedStops) };
   }
 
-  /**
-   * Drops this segment's entry.
-   */
   async invalidate(
     tripId: string,
     originStationId: string,

@@ -1,12 +1,11 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
-/** The only two writes BR-52 covers so far. */
+/** Only timetable publication and fare changes are audited so far. */
 export type OperationsAction = 'timetable.published' | 'fare.changed';
 
 /**
- * One operator action, forever (BR-52). Only ever written inside the caller's
- * transaction, and `trg_operations_audit_append_only` rejects UPDATE/DELETE.
- * `before`/`after` are snapshots; `before` is null on a first publish.
+ * Retain actions permanently; append in the caller's transaction. The database
+ * rejects UPDATE/DELETE. before/after are snapshots; before is null on first publication.
  */
 @Entity('operations_audit')
 @Index('idx_operations_audit_train_occurred', ['trainId', 'occurredAt'])
@@ -30,10 +29,7 @@ export class OperationsAuditEntity {
   @Column({ type: 'jsonb' })
   after!: unknown;
 
-  /**
-   * Always 0 this sprint: inventory has no seat tables yet, and append-only
-   * rows mean the column must exist before them.
-   */
+  /** No inventory seat tables yet; this append-only field is currently always 0. */
   @Column({ name: 'tickets_affected', type: 'integer', default: 0 })
   ticketsAffected!: number;
 

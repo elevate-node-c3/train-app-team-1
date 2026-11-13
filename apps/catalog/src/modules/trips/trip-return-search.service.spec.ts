@@ -8,9 +8,8 @@ import { TripReturnSearchService } from './trip-return-search.service.js';
 import type { TripSearchRow } from './trip-search.types.js';
 
 /**
- * The return leg, with its two load-bearing rules under test: the lower bound
- * is the outbound trip's arrival as the SERVER read it, and the reverse search
- * is a plain day query that must land on the shared cache key.
+ * Returns use server-read outbound arrival bounds and the same cached day
+ * as equivalent one-way searches.
  */
 
 const RAMSIS = '11111111-1111-4111-8111-111111111111';
@@ -42,7 +41,6 @@ const request = (
   ...overrides,
 });
 
-/** A return candidate leaving Alexandria at a Cairo wall-clock time. */
 function returnRow(
   departureIso: string,
   overrides: Partial<TripSearchRow> = {},
@@ -134,15 +132,13 @@ describe('the return search service', () => {
           destinationStationId: RAMSIS,
           serviceDate: '2026-06-25',
           travelClassId: FIRST,
-          // A train number narrowed the outbound leg only; a return train has
-          // its own.
+          // Outbound train-number filters do not constrain return trains.
           trainNumber: null,
         }),
       );
     });
 
-    // The round trip must not fragment the cache: the return list is the same
-    // day of the same route any one-way search for it would read.
+    // Equivalent one-way and return searches must share the day cache key.
     it('reads the day through the shared cache key', async () => {
       const { service, cache } = makeService({
         rows: [returnRow('2026-06-25T06:00:00Z')],
@@ -157,8 +153,7 @@ describe('the return search service', () => {
     });
 
     it('takes the stations from the trip, not from the request', async () => {
-      // A client naming stations the chosen trip does not serve cannot steer
-      // the return search: the segment the server read decides.
+      // Server-read segment stations, not client input, determine the reverse route.
       const { service, repository } = makeService({
         rows: [returnRow('2026-06-25T06:00:00Z')],
       });
@@ -183,12 +178,10 @@ describe('the return search service', () => {
 
       const response = await service.search(request(), NOW);
 
-      // Both are after 2026-06-20T05:40Z, so both survive.
       expect(response.trips).toHaveLength(2);
     });
 
-    // The story's edge case: an outbound arriving at 23:50 leaves no same-day
-    // return, and the traveller is told that rather than shown a wrong list.
+    // A 23:50 arrival can leave no same-day return; explain that instead of inventing trips.
     it('drops a trip that departs before the arrival', async () => {
       const { service } = makeService({
         segment: {
@@ -208,8 +201,7 @@ describe('the return search service', () => {
       );
     });
 
-    // Strictly after, with no minimum connection time: the platform does not
-    // know how long this station takes to cross, so it invents nothing.
+    // Require strictly later departure, with no invented minimum connection time.
     it('excludes a trip departing at the exact arrival instant', async () => {
       const { service } = makeService({
         rows: [returnRow(OUTBOUND_SEGMENT.destinationArrivalAt.toISOString())],
@@ -281,8 +273,7 @@ describe('the return search service', () => {
       expect(repository.probeRouteServed).not.toHaveBeenCalled();
     });
 
-    // The arrival bound outranks the filters: a filter the traveller changes
-    // would not bring back a train that left before they landed.
+    // Arrival bounds outrank filters; changing filters cannot restore departed trains.
     it('blames the arrival rather than the filters when both would apply', async () => {
       const { service } = makeService({
         rows: [returnRow('2026-06-20T02:00:00Z')],
@@ -329,8 +320,7 @@ describe('the return search service', () => {
       expect(repository.findPassengerSegment).not.toHaveBeenCalled();
     });
 
-    // The return date is judged against the chosen trip's own departure date,
-    // which the server read -- never against a date the client sent.
+    // Judge returnDate against the server-read Cairo departure date, never client dates.
     it('refuses a return date before the outbound trip departs', async () => {
       const { service, repository } = makeService();
 
@@ -391,8 +381,7 @@ describe('the return search service', () => {
       expect(repository.findPassengerSegment).not.toHaveBeenCalled();
     });
 
-    // Refused, not answered empty: "nothing runs that day" would send the
-    // traveller to change the date forever for a station that never answers.
+    // Refuse inactive stations; changing returnDate cannot restore service.
     it('refuses a deactivated station on the reverse route', async () => {
       const { service } = makeService({
         activeStationIds: new Set([RAMSIS]),
@@ -447,8 +436,7 @@ describe('the return search service', () => {
       expect(response.filterOptions?.trainTypes).toHaveLength(1);
     });
 
-    // No date strip and no booking window: the outbound call already sent
-    // both, and repeating them would let the two disagree.
+    // Do not repeat the outbound date strip/window; the two copies could disagree.
     it('carries no date strip or booking window', async () => {
       const { service } = makeService({
         rows: [returnRow('2026-06-25T06:00:00Z')],

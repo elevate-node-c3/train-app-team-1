@@ -10,15 +10,13 @@ import {
 } from '@app/contracts';
 import { IdentityModule } from './identity.module.js';
 
-// 1. Fail-fast configuration validation at boot (§2.1)
 validateEnv(identityEnvSchema, process.env, 'identity');
 
 async function bootstrap() {
   const app = await NestFactory.create(IdentityModule, { bufferLogs: true });
 
   const grpcPort = process.env.GRPC_PORT || 50051;
-  // Both proto packages share one server. Arrays are the supported Nest shape;
-  // two connectMicroservice calls on the same port would fight for the socket.
+  // Share one gRPC server to avoid binding the port twice.
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {

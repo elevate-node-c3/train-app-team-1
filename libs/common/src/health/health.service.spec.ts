@@ -76,7 +76,6 @@ describe('Health, Readiness & Degraded Operation (§2.3 rule 7, AUTH-1)', () => 
       );
 
       const report = await healthService.checkReadiness('booking');
-      // Must NOT throw 503; must return status: 'degraded'
       expect(report.status).toBe('degraded');
       expect(report.dependencies.database.status).toBe('ready');
       expect(report.dependencies.redis.status).toBe('degraded');
@@ -92,8 +91,6 @@ describe('Health, Readiness & Degraded Operation (§2.3 rule 7, AUTH-1)', () => 
         check: async () => ({ status: 'ready' as const }),
       } as any;
 
-      // Silently losing this is the risk the registry introduces: a report that
-      // never checked the broker still answers `ready`.
       const registry = new DependencyHealthRegistry();
       registry.register({
         name: 'broker',

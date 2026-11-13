@@ -1,7 +1,4 @@
-/**
- * Composition-root parsing. The value has already passed the Joi schema in
- * `main.ts`; the fallback keeps a host-run unit test or migration safe too.
- */
+/** Startup validates this value; the fallback also supports tests and migrations. */
 export function bcryptCostFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): number {

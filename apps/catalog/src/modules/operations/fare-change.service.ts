@@ -25,14 +25,14 @@ import {
   OperationsRequestRepository,
 } from './operations-request.repository.js';
 
-/** The operator's input (TA-20): one fare for one train, class and pair. */
+/** One fare for one train, class, and station pair. */
 export interface ChangeFareRequest {
   trainNumber: string;
   travelClassId: string;
   originStationId: string;
   destinationStationId: string;
   amountPiastres: number;
-  /** ISO instant; now or later, never strictly past (BR-51). */
+  /** ISO instant; now or later, never strictly past. */
   effectiveFrom: string;
 }
 
@@ -64,10 +64,7 @@ function hasPostgresCode(error: unknown, sqlState: string): boolean {
   );
 }
 
-/**
- * Which `23505` constraint fired. A reused `Idempotency-Key` and a reused fare
- * tuple are the same SQLSTATE, so only the constraint name tells them apart.
- */
+/** Constraint names distinguish idempotency-key and fare-tuple violations (both 23505). */
 function constraintNameOf(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
 
@@ -84,8 +81,8 @@ function constraintNameOf(error: unknown): string | undefined {
 }
 
 /**
- * Changes one fare for future sales only (TA-20, BR-30). Adds a row, never
- * rewrites one; no seam call because no trip changes, so BR-50 is not in play.
+ * Append fare versions for future sales; never rewrite past prices.
+ * No inventory call is needed because fare changes do not alter trips.
  */
 @Injectable()
 export class FareChangeService {
@@ -107,8 +104,6 @@ export class FareChangeService {
   ): Promise<ChangeFareResult> {
     const fingerprint = fingerprintOf(request);
 
-    // A genuine retry gets the first answer back; a reused key on different
-    // content is not a replay.
     const replayed = await this.replay(idempotencyKey, fingerprint);
     if (replayed) return replayed;
 
@@ -201,8 +196,7 @@ export class FareChangeService {
         actionKey: 'ACTION_SEND_POSITIVE_PIASTRES',
       });
     } else if (!isChargeableFare(request.amountPiastres)) {
-      // No fee term: the fee is positive, so `fare >= floor` implies
-      // `fare + fee >= floor` (§6.3).
+      // Fees are positive, so fare >= floor implies fare + fee >= floor.
       details.push({
         field: 'amountPiastres',
         rejectedValue: request.amountPiastres,
@@ -222,7 +216,7 @@ export class FareChangeService {
         actionKey: 'ACTION_SEND_ISO_INSTANT',
       });
     } else if (effectiveInstant.getTime() < Date.now()) {
-      // Now is accepted; only strictly past is refused (BR-51).
+      // Accept now; refuse only strictly past instants.
       details.push({
         field: 'effectiveFrom',
         rejectedValue: request.effectiveFrom,
@@ -289,9 +283,8 @@ export class FareChangeService {
   }
 
   /**
-   * CAT-2's two rules for one fare: the pair runs in travel order, and the
-   * amount does not undercut a containing segment. Both check the route
-   * effective on the fare's own civil date, not today's.
+   * Require the pair in travel order and an amount that respects fare containment.
+   * Check the route effective on the fare's civil date, not today's.
    */
   private async validateOrderAndContainment(
     request: ChangeFareRequest,
@@ -376,8 +369,7 @@ export class FareChangeService {
     const effectiveInstant = new Date(request.effectiveFrom);
 
     return this.unitOfWork.withTransaction(async (ctx) => {
-      // Lock first, or two same-second operators read the same stale previous
-      // amount and interleave.
+      // Lock before reading the prior amount so concurrent writers cannot interleave.
       const history = await this.repository.lockFareHistory(ctx, {
         trainId,
         travelClassId: request.travelClassId,
@@ -419,8 +411,7 @@ export class FareChangeService {
           amountPiastres: request.amountPiastres,
           effectiveFrom: request.effectiveFrom,
         },
-        // 0 this sprint: inventory has no ticket tables and a fare change
-        // writes no trip.
+        // No ticket tables yet; fare changes do not write trips.
         ticketsAffected: 0,
         correlationId,
       });
@@ -455,9 +446,8 @@ export class FareChangeService {
   }
 
   /**
-   * A concurrent change that recorded the same key first fails this
-   * transaction. Both constraints raise `23505`; the constraint name decides
-   * which refusal applies.
+   * Same-key and same-fare-tuple races both raise 23505.
+   * Inspect the constraint name to choose replay or refusal.
    */
   private async replayRace(
     error: unknown,

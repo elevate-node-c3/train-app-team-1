@@ -11,12 +11,7 @@ import {
 import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
-/**
- * The stub `recordFailure` spies are built from, carrying the repository's own
- * parameter list. `vi.fn(async () => {})` records its calls as an empty tuple,
- * so reading `calls[0][2]` -- the message, which is what these specs are
- * about -- did not typecheck.
- */
+/** Match repository parameters so spies record the error message's argument. */
 async function recordFailureStub(
   _ctx: TransactionContext,
   _id: string,
@@ -53,7 +48,7 @@ function fakeCls(): any {
   };
 }
 
-// Must wrap the whole body: the interval is read from the env on every tick.
+// Wrap the test body; every tick reads its interval from the environment.
 async function withPollInterval(
   ms: number,
   work: () => Promise<void>,
@@ -76,9 +71,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(CLAIM_OUTBOX_SQL).toContain('published_at IS NULL');
   });
 
-  // The row lock only protects the publish if claim, publish and mark all run
-  // on the same transaction context. Passing anything else would let a sibling
-  // relay republish the same row.
+  // Claim, publish, and mark must share the same transaction and row lock.
   it('publishes between claim and mark on the same context', async () => {
     const transaction = ctx();
     const calls: string[] = [];
@@ -119,9 +112,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(outbox.recordFailure).not.toHaveBeenCalled();
   });
 
-  // Throwing would roll back the attempt_count/next_attempt_at update along
-  // with the batch, so the next tick would claim the same failing row at full
-  // speed. The relay must commit the failure and stop this batch instead.
+  // Commit retry bookkeeping and stop the batch; throwing would roll back the backoff.
   it('breaks the batch without throwing when a publish is rejected', async () => {
     const transaction = ctx();
     const rows = [
@@ -198,8 +189,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(stored).not.toContain('user@example.com');
   });
 
-  // Guards the bug where the relay's hook ran before the migration's and the
-  // first CLAIM hit a table that did not exist yet.
+  // Wait for migrations before the first claim touches its table.
   it('does not claim rows until the schema is settled', async () => {
     const gate = new SchemaReadinessGate();
     gate.expectMigrations();
@@ -233,8 +223,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     });
   });
 
-  // A failed migration opens the gate too, so the loop must survive a throw
-  // rather than die on it.
+  // Failed migrations settle the gate; errors must not kill polling.
   it('keeps ticking after a tick throws', async () => {
     const gate = new SchemaReadinessGate();
     gate.expectMigrations();

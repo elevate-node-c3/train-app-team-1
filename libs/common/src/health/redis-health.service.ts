@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RedisClientService } from '../cache/redis-client.service.js';
 
-/**
- * Health-view adapter over the process's shared client. Kept as a separate
- * provider because `HealthService` treats Redis specially: it is the one
- * dependency the platform deliberately degrades around rather than fails on.
- */
+/** Shared Redis health adapter; outages degrade rather than fail readiness. */
 @Injectable()
 export class RedisHealthService {
   constructor(private readonly redis: RedisClientService) {}

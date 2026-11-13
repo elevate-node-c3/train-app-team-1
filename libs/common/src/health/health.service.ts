@@ -43,14 +43,10 @@ export class HealthService {
     let isFullyReady = true;
     let isDegraded = false;
 
-    // 1. Check PostgreSQL Database
     if (this.dataSource) {
       try {
-        // Through the shared initializer, not `dataSource.initialize()`
-        // directly: a readiness probe arriving while a use-case is opening the
-        // same DataSource would otherwise race it and throw
-        // CannotConnectAlreadyConnectedError, reporting a healthy database as
-        // not ready.
+        // Share initialization with use-cases and migrations so concurrent
+        // initialize() calls do not make a healthy database look unavailable.
         if (this.initializer) {
           await this.initializer.ensureInitialized();
         } else if (!this.dataSource.isInitialized) {
@@ -70,7 +66,6 @@ export class HealthService {
       }
     }
 
-    // 2. Whatever registered itself — the broker, today.
     for (const contributor of this.dependencies?.all() ?? []) {
       const result = await contributor.check();
       if (result.ready) {
@@ -87,7 +82,7 @@ export class HealthService {
       );
     }
 
-    // 3. Check Redis Cache (Degraded, not dead per §2.3 rule 7)
+    // Redis outages degrade readiness rather than fail it.
     const redisResult = await this.redisHealth.check();
     if (redisResult.status === 'ready') {
       dependencies.redis = { status: 'ready' };

@@ -27,13 +27,8 @@ import { TripsModule } from '../trips/trips.module.js';
 import { CacheInvalidationConsumer } from './cache-invalidation.consumer.js';
 
 /**
- * One queue per event type, never one queue for all four.
- *
- * A subscription validates a delivery against its own `eventType`
- * (`parseEventEnvelope`), so four subscriptions sharing a queue get the
- * deliveries round-robin and reject the three types that are not theirs as
- * `invalid-payload`. Measured on the shared queue: two of eight events handled,
- * the rest dead-lettered.
+ * Use one queue per event type. Shared queues deliver events to mismatched
+ * subscriptions, which reject them as invalid-payload.
  */
 export const CATALOG_FARE_CHANGED_QUEUE = 'catalog.invalidation.fare-changed';
 export const CATALOG_TIMETABLE_PUBLISHED_QUEUE =
@@ -43,7 +38,6 @@ export const CATALOG_STATION_CHANGED_QUEUE =
 export const CATALOG_SEAT_AVAILABILITY_QUEUE =
   'catalog.invalidation.seat-availability-changed';
 
-/** Every queue this module reads, for tests and for operational checks. */
 export const CATALOG_INVALIDATION_QUEUES = [
   CATALOG_FARE_CHANGED_QUEUE,
   CATALOG_TIMETABLE_PUBLISHED_QUEUE,

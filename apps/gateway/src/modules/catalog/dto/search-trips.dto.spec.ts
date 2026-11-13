@@ -9,7 +9,7 @@ const CAIRO = '11111111-1111-4111-8111-111111111111';
 const ALEX = '22222222-2222-4222-8222-222222222222';
 const FIRST = '33333333-3333-4333-8333-333333333333';
 
-/** As the global pipe does it: plain query object in, validated class out. */
+/** Validate queries like the global pipe. */
 function validate(query: Record<string, unknown>): {
   fields: string[];
   dto: SearchTripsDto;
@@ -43,7 +43,7 @@ describe('the search query parameters', () => {
     expect(validate(validQuery({ to: undefined })).fields).toContain('to');
   });
 
-  // The rule names To, so the refusal must too.
+  // Errors must name the destination field.
   it('refuses the same station twice, against To', () => {
     expect(validate(validQuery({ to: CAIRO })).fields).toEqual(['to']);
   });
@@ -57,8 +57,7 @@ describe('the search query parameters', () => {
     }
   });
 
-  // Whether the date is bookable is catalog's to answer -- the edge only
-  // checks the shape, so a valid-looking future date passes here.
+  // Catalog checks bookability; this layer checks date format.
   it('does not judge whether the date is bookable', () => {
     expect(
       validate(validQuery({ departureDate: '2030-01-01' })).fields,
@@ -72,8 +71,7 @@ describe('the search query parameters', () => {
   });
 
   it('rejects an unknown query parameter', () => {
-    // forbidNonWhitelisted, so a typo in a parameter name is a 400 rather
-    // than a silently ignored filter.
+    // Reject unknown parameters rather than silently ignoring typos.
     expect(
       validate(validQuery({ departAfterMinutes: '360' })).fields,
     ).toContain('departAfterMinutes');
@@ -91,8 +89,7 @@ describe('the search query parameters', () => {
       expect(dto.trainNumber).toBe(903);
     });
 
-    // A traveller on an Arabic keyboard types ٨٠٣, and the rule says that is
-    // a valid train number. Normalized here so catalog only sees ASCII.
+    // Normalize keyboard digits before catalog receives the train number.
     it('accepts Arabic-Indic digits and normalizes them', () => {
       const { fields, dto } = validate(validQuery({ trainNumber: '٩٠٣' }));
 
@@ -149,8 +146,7 @@ describe('the search query parameters', () => {
       );
     });
 
-    // Whether it is on or after the departure date, and inside the booking
-    // window, is BR-20 and therefore catalog's to answer.
+    // Catalog checks return-date ordering and the booking window.
     it('does not judge the date against the departure date', () => {
       expect(validate(validQuery({ returnDate: '2026-06-01' })).fields).toEqual(
         [],
@@ -171,15 +167,13 @@ describe('the search query parameters', () => {
     });
 
     it('refuses an invented order rather than ignoring it', () => {
-      // Silently falling back to the default would show the traveller a list
-      // in an order they did not ask for.
+      // Invalid sorts must not silently select a different order.
       expect(validate(validQuery({ sort: 'cheapest' })).fields).toEqual([
         'sort',
       ]);
     });
 
-    // UNSPECIFIED is the wire's way of saying "absent"; a client should omit
-    // the parameter instead of naming the absence.
+    // Omit the sort for defaults; UNSPECIFIED is not a query value.
     it('refuses UNSPECIFIED, which is what absence already means', () => {
       expect(
         validate(validQuery({ sort: 'SEARCH_SORT_UNSPECIFIED' })).fields,
@@ -214,7 +208,7 @@ describe('the search query parameters', () => {
     it('treats an empty value as no preference', () => {
       const { fields, dto } = validate(validQuery({ trainTypeIds: '' }));
 
-      // Not "a filter matching nothing", which would return an empty list.
+      // Blank CSV means no filter.
       expect(fields).toEqual([]);
       expect(dto.trainTypeIds).toBeUndefined();
     });
@@ -263,8 +257,7 @@ describe('the search query parameters', () => {
       }
     });
 
-    // The ordering of the two bounds is BR-18 and catalog refuses it, naming
-    // the field; the edge only checks that each one is a time.
+    // Catalog checks window ordering; the gateway checks each time's format.
     it('does not judge the two bounds against each other', () => {
       expect(
         validate(validQuery({ departAfter: '22:00', departBefore: '02:00' }))
@@ -307,8 +300,7 @@ describe('the search query parameters', () => {
       ).toBe(false);
     });
 
-    // 'no' is truthy as a string, so the usual coercion would hide exactly the
-    // trips the traveller asked to see.
+    // Do not treat the string "no" as a true flag.
     it('refuses anything else rather than guessing', () => {
       for (const bad of ['no', 'yes', '1', '0', '']) {
         expect(

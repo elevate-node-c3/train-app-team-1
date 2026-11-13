@@ -2,12 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
- * The shape *inside* a service. `test/unit/architecture-boundaries.spec.ts`
- * guards the boundary *between* services.
- *
- * A feature is `modules/<feature>/` with concrete `*.controller.ts`,
- * `*.service.ts`, `*.repository.ts` files and a `<feature>.module.ts` at its
- * root.
+ * Check feature layout within services; architecture-boundaries.spec.ts checks
+ * service boundaries. Features live in modules/<feature>/ with concrete
+ * controllers, services and repositories, plus a module file at the root.
  */
 
 const APPS_DIR = join(process.cwd(), 'apps');
@@ -30,9 +27,7 @@ function tsFilesIn(dir: string): string[] {
     } else if (
       entry.endsWith('.ts') &&
       !entry.endsWith('.d.ts') &&
-      // Specs live beside their subject. A test is not part of a feature: it
-      // reaches across all of them on purpose, and imports vitest and whatever
-      // the file under test does.
+      // Colocated specs may cross feature boundaries and import test libraries.
       !entry.endsWith('.spec.ts')
     ) {
       found.push(full);
@@ -59,11 +54,7 @@ function appNames(): string[] {
     .map((entry) => entry.name);
 }
 
-/**
- * Derived from the tree, not listed by hand: a service grows feature modules
- * when it gets its first feature, and these rules should start applying to it
- * the moment it does rather than when somebody remembers to add it here.
- */
+/** Discover feature apps so new services are checked without updating a list. */
 function featureModuleApps(): string[] {
   return appNames().filter((app) => existsSync(modulesDirOf(app)));
 }
@@ -90,10 +81,7 @@ function directoriesIn(root: string): string[] {
   return directories;
 }
 
-/**
- * Block comments and whole-line `//` comments removed. Anchored deliberately:
- * stripping every `//` would also eat the one inside a `postgres://` literal.
- */
+/** Anchor line comments to preserve URLs such as `postgres://`; also strip blocks. */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
@@ -118,9 +106,8 @@ interface ImportStatement {
 }
 
 /**
- * Import statements with enough shape to distinguish `import type` (and an
- * all-`type` named list) from a runtime dependency. Entity imports are allowed
- * to carry sibling types, because a row's string unions have to live somewhere.
+ * Treat `import type` and all-type named imports as type-only dependencies.
+ * Entity modules may also export row types.
  */
 function importStatementsOf(content: string): ImportStatement[] {
   const statements: ImportStatement[] = [];
@@ -167,7 +154,7 @@ const featureFiles = featureModuleApps().flatMap(moduleFilesOf);
 
 describe('Feature module boundaries (§2.5)', () => {
   it('finds feature modules to check', () => {
-    // A rename of `modules/` would make every assertion below vacuously pass.
+    // An empty scan would let every boundary check pass.
     expect(featureFiles.length).toBeGreaterThan(0);
   });
 
@@ -249,14 +236,8 @@ describe('Feature module boundaries (§2.5)', () => {
         }
 
         if (specifier.startsWith('.')) {
-          // A relation needs its target class at runtime: TypeORM's
-          // `@ManyToOne(() => OtherEntity)` evaluates that arrow when the
-          // metadata is built, so the import cannot be type-only. Entity to
-          // entity is therefore allowed; anything else relative must stay
-          // type-only, which is what keeps a row object from reaching into a
-          // service, a repository or a module.
-          //
-          // The cycle this permits is caught separately, below.
+          // TypeORM relations need runtime entity classes; other relative
+          // imports must be type-only. The next test checks entity cycles.
           const entityToEntity = /\.entity(\.js|\.ts)?$/.test(specifier);
 
           if (!typeOnly && !entityToEntity) {
@@ -279,20 +260,10 @@ describe('Feature module boundaries (§2.5)', () => {
   });
 
   /**
-   * Entities may reference each other at runtime, but the graph they form
-   * must stay acyclic.
-   *
-   * Two entity modules that import each other are a genuine ESM cycle: one
-   * of them is evaluated while the other is still a half-initialised module
-   * record, so a decorator that touches the other class gets `undefined`.
-   * TypeORM's lazy `() => Entity` arrow usually defers past the hazard, but
-   * it depends on load order and fails without a useful message when it does
-   * fail.
-   *
-   * The fix is never to drop the relation: an inverse side takes its target
-   * as a string -- `@OneToMany('StationEntity', 'city')` -- and imports the
-   * class with `import type`. The relation still works in both directions
-   * and the back-edge disappears.
+   * ESM entity cycles can expose uninitialized classes to decorators;
+   * TypeORM's lazy arrows do not make every load order safe.
+   * Keep the relation by using a string target on the inverse side,
+   * such as `@OneToMany('StationEntity', 'city')`, with `import type`.
    */
   it('keeps the entity runtime-import graph acyclic', () => {
     const edges = new Map<string, string[]>();
@@ -306,7 +277,7 @@ describe('Feature module boundaries (§2.5)', () => {
         if (typeOnly || !specifier.startsWith('.')) continue;
         if (!/\.entity(\.js|\.ts)?$/.test(specifier)) continue;
 
-        // '../x/y.entity.js' resolves to the '.ts' that actually exists.
+        // Map emitted .js import paths to the .ts source files.
         targets.push(resolve(dirname(file), specifier).replace(/\.js$/, '.ts'));
       }
 
@@ -481,8 +452,7 @@ describe('Feature module boundaries (§2.5)', () => {
   });
 
   it('keeps every service root module at src/<service>.module.ts', () => {
-    // Every app, not only the ones with features: a service whose root module
-    // is somewhere else has nowhere obvious to register its first one.
+    // Include apps without features so their first feature has a known entry point.
     const missing = appNames().filter(
       (app) => !existsSync(join(srcDirOf(app), `${app}.module.ts`)),
     );

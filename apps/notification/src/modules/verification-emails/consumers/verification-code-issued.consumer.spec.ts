@@ -225,7 +225,6 @@ describe('Verification-code issued consumer (BR-03, BR-54, BR-56, ADR-0003)', ()
       acceptedAt: new Date(NOW.getTime() + 2_000),
       latencyMs: 2_000,
     });
-    // The delivery log is a measurement, never a place a live code can land.
     expect(JSON.stringify(recorded[0])).not.toContain(CODE);
   });
 

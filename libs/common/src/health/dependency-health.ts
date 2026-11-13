@@ -8,16 +8,9 @@ export interface DependencyHealthContributor {
 }
 
 /**
- * Contributors push themselves in; nothing pulls them.
- *
- * A pull would mean `@app/common` importing the libraries it reports on, and
- * `HealthModule` importing `MessagingModule` for the broker check is what made
- * the two libraries mutually dependent.
- *
- * Unavailable means not ready. A dependency the service can degrade around
- * rather than fail on — Redis — is reported by `HealthService` directly,
- * because that is a judgement about one named dependency, not a severity knob
- * worth generalising before there is a second case.
+ * Contributors register themselves to avoid circular library imports.
+ * Unavailable contributors make the service not ready. HealthService reports
+ * Redis separately because Redis outages only degrade the service.
  */
 @Injectable()
 export class DependencyHealthRegistry {

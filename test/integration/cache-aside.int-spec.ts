@@ -1,19 +1,14 @@
 import { CacheAsideService } from '../../libs/common/src/cache/cache-aside.service.js';
 import { RedisClientService } from '../../libs/common/src/cache/redis-client.service.js';
-// Named, as `redis-client.service.ts` imports it: the default export is a
-// namespace under this module resolution, not the constructor.
+// The named Redis export is the constructor; the default resolves to a namespace.
 import { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { assertReachable } from './support/catalog-database.js';
 
 /**
- * The cache against a real Redis.
- *
- * The unit spec uses a fake client, so it proves the branching but not that
- * `set(key, value, 'EX', ttl)` is a call ioredis actually accepts, nor that a
- * TTL is really applied. Both are the kind of thing a fake agrees with and a
- * server does not.
+ * Real Redis checks the `set(key, value, 'EX', ttl)` signature and expiry
+ * that the unit spec's fake client cannot verify.
  */
 const REDIS_URL = `redis://127.0.0.1:${process.env.REDIS_HOST_PORT ?? '16379'}`;
 
@@ -23,9 +18,7 @@ describe('cache-aside against Redis', () => {
   let probe: Redis;
 
   beforeAll(async () => {
-    // Same reason as the database probe: ioredis retries for half a minute
-    // before giving up, and the tests then report as skipped rather than as
-    // "start Redis".
+    // Fail fast instead of waiting for retries and reporting skipped tests.
     const url = new URL(REDIS_URL);
     await assertReachable('Redis', url.hostname, Number(url.port || 6379));
 
@@ -40,9 +33,7 @@ describe('cache-aside against Redis', () => {
   });
 
   afterAll(async () => {
-    // Guarded because afterAll still runs when beforeAll threw -- without this
-    // a missing Redis produces a confusing "cannot read properties of
-    // undefined" that buries the actual reason.
+    // afterAll still runs if beforeAll fails; keep cleanup from hiding that error.
     if (probe !== undefined) {
       await probe.del('int:cache:trip');
       probe.disconnect();
@@ -62,8 +53,7 @@ describe('cache-aside against Redis', () => {
     ).resolves.toEqual({ tripId: 'a', fare: 15500 });
   });
 
-  // The TTL is the only thing bounding how long a stale list survives, so a
-  // silently-ignored expiry argument would matter.
+  // TTL bounds how long stale lists survive.
   it('applies the ttl it was given', async () => {
     await cache.set('int:cache:trip', { tripId: 'a' }, 120);
 
@@ -78,8 +68,7 @@ describe('cache-aside against Redis', () => {
   });
 
   it('treats a value written by something else as a miss', async () => {
-    // Exactly what an older deploy's payload, or an unrelated writer, looks
-    // like: present, readable, and not JSON this caller can use.
+    // Older deploys or other writers may leave values this caller cannot parse.
     await probe.set('int:cache:trip', 'plain text, not json');
 
     await expect(cache.get('int:cache:trip')).resolves.toBeNull();

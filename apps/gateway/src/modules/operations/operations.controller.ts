@@ -24,10 +24,7 @@ import {
 
 const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 
-/**
- * "Safe to retry" is a rule, not an optional capability. Catalog refuses a
- * missing key too; catching it here keeps a malformed change off the wire.
- */
+/** Safe retries need an Idempotency-Key header; reject missing keys here. */
 function requireIdempotencyKey(value: string | undefined): string {
   const key = value?.trim();
   if (key) return key;
@@ -48,10 +45,7 @@ function requireIdempotencyKey(value: string | undefined): string {
   );
 }
 
-/**
- * The operator-only edge (TA-20). Catalog owns every validity rule; this
- * surface checks shape, role and the idempotency header, then makes the hop.
- */
+/** Check shape, role, and retry keys; catalog owns business rules. */
 @Controller('operations')
 export class OperationsController {
   constructor(private readonly operations: OperationsService) {}

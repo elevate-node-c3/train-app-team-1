@@ -5,12 +5,7 @@ import {
   UnsupportedEventVersionError,
 } from '../event-errors.js';
 
-/**
- * The consumer-side structural parse. It deliberately says nothing about the
- * payload shape: that is the subscribing handler's parser (ADR-0005), and
- * keeping the two separate lets a bad envelope and an unsupported version
- * produce distinct dead-letter reasons.
- */
+/** Parse the envelope; keep payload validation and version routing separate. */
 export function parseEventEnvelope(
   raw: Buffer | string,
   expected: { type: string; version: number },

@@ -1,7 +1,4 @@
-/**
- * The statements are the design, so they live beside the adapter that runs
- * them and are exported for the schema-agreement test.
- */
+/** Exported SQL lets tests check schema and adapter agreement. */
 
 export const INSERT_OUTBOX_SQL = `
   INSERT INTO outbox_event (
@@ -12,12 +9,8 @@ export const INSERT_OUTBOX_SQL = `
 `;
 
 /**
- * `FOR UPDATE SKIP LOCKED` is the entire multi-instance story: a sibling relay
- * steps over the rows this one holds instead of blocking on them, so both make
- * progress on disjoint batches without a leader election.
- *
- * The publish happens inside this transaction, so the row lock is still held
- * when `markPublished` runs.
+ * SKIP LOCKED lets relays process separate batches without waiting for each other.
+ * Hold the row lock through publication and marking within the same transaction.
  */
 export const CLAIM_OUTBOX_SQL = `
   SELECT id, event_type, event_version, routing_key, payload,
@@ -37,10 +30,7 @@ export const MARK_OUTBOX_PUBLISHED_SQL = `
    WHERE id = $1
 `;
 
-/**
- * Only `error.message` is stored — never the payload, which can contain a live
- * verification code.
- */
+/** Store error text only, never a payload with a live verification code. */
 export const RECORD_OUTBOX_FAILURE_SQL = `
   UPDATE outbox_event
      SET attempt_count = attempt_count + 1,

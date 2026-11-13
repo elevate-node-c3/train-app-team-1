@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { TripSeatUsage } from '@app/contracts';
 
-/** No seat tables yet, so every trip reports zero sold/held -- an answer, not silence. */
+/** No seat tables yet; report zero sold and held counts for every trip. */
 @Injectable()
 export class SeatUsageService {
   async seatUsageForTrips(tripIds: string[]): Promise<TripSeatUsage[]> {

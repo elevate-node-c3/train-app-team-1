@@ -1,16 +1,10 @@
-/**
- * The consumer's idempotency guard, as the application layer sees it.
- *
- * `claim` is one round trip by contract: a `SELECT` followed by an `INSERT`
- * lets two instances both observe "not handled" and both send. The store's
- * implementation puts the race in a single `INSERT ... ON CONFLICT`.
- */
+/** Claim in one call so two workers cannot both observe an unhandled event. */
 export const PROCESSED_EVENT_STORE = Symbol('PROCESSED_EVENT_STORE');
 
 export interface ClaimEvent {
   eventId: string;
   eventType: string;
-  /** `msg.fields.redelivered`: true means a channel closed unacked. */
+  /** True when the previous channel closed before acknowledgment. */
   redelivered: boolean;
   leaseSeconds: number;
 }

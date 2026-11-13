@@ -23,10 +23,6 @@ function timetable(overrides: Partial<TimetableEntity> = {}): TimetableEntity {
   } as TimetableEntity;
 }
 
-/**
- * A service whose only live port is the timetable repository. `createDatedTrip`
- * is replaced by a recorder, so these tests see the dates it was asked for.
- */
 function makeService(timetables: TimetableEntity[]): {
   service: TripsService;
   dates: string[];
@@ -71,8 +67,7 @@ describe('Generation window', () => {
     expect(new Set(dates).size).toBe(31);
   });
 
-  // The coupling that matters: if generation stopped a day earlier, search
-  // would offer its last bookable date with no trips on it.
+  // Generation must cover search's last bookable date plus its margin.
   it('reaches one day past the last date search will offer', async () => {
     const { service, dates } = makeService([timetable()]);
 
@@ -84,8 +79,7 @@ describe('Generation window', () => {
     expect(dates.at(-1)).toBe('2026-07-15');
   });
 
-  // "The generation job was down for three days": the window is recomputed from
-  // today, so the run after an outage covers the days it missed.
+  // Recompute from today after downtime so missed dates are filled.
   it('fills the gap after three days down, and still reaches the end', async () => {
     const { service, dates } = makeService([timetable()]);
 
@@ -96,7 +90,6 @@ describe('Generation window', () => {
     vi.setSystemTime(new Date('2026-06-18T09:00:00.000Z'));
     await service.generateUpcomingTrips();
 
-    // The three days the first run would have left at the end.
     for (const missed of ['2026-07-16', '2026-07-17', '2026-07-18']) {
       expect(before).not.toContain(missed);
       expect(dates).toContain(missed);
@@ -124,14 +117,9 @@ describe('Generation window', () => {
     ).rejects.toThrow('Start date cannot be after end date');
   });
 
-  // One broken timetable must not cost every other timetable its window.
-  //
-  // Two trains, not two timetables of one train: since TA-20 a service date
-  // belongs to exactly one of a train's published versions, so two rows of
-  // one train would be two versions of the same timetable and only the
-  // effective one would generate -- which is a different test. The failure
-  // isolation this test is about is between timetables, and that is what
-  // separate trains express.
+  // One bad timetable must not block other trains' windows.
+  // Use separate trains: two rows of one train test effective-version selection,
+  // not failure isolation across timetables.
   it('keeps generating other timetables when one fails', async () => {
     const { service, dates } = makeService([
       timetable({ id: 'broken', train: { id: 'train-broken' } as never }),

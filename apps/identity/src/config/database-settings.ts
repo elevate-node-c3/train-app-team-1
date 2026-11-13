@@ -1,8 +1,4 @@
-/**
- * Composition-root parsing for the TypeORM CLI and the staff seed. The running
- * service gets its options from `createTypeOrmAsyncOptions`; this keeps the
- * `process.env` read in `config/` for the standalone tools too.
- */
+/** Read the database URL for the TypeORM CLI and staff seed. */
 export function databaseUrlFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): string {

@@ -11,12 +11,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /**
- * Root module: infrastructure wiring and feature modules only. Business
- * providers belong to the feature module that owns them.
- *
- * The migration list is passed to the same DataSource the unit of work uses;
- * `MigrationRunnerService` applies it at bootstrap and no provider connects in
- * its constructor (the skeleton test compiles this module without Docker).
+ * Run migrations at bootstrap on the unit of work's DataSource.
+ * Constructors must not open connections.
  */
 @Module({
   imports: [

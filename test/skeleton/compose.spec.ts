@@ -13,16 +13,13 @@ const SERVICES = [
 const INFRA = ['postgres', 'redis', 'rabbitmq', 'mailpit'] as const;
 const ONE_SHOT = ['seeder'] as const;
 
-// `merge: true` is required, not cosmetic: the `yaml` package leaves `<<` as a
-// literal key under the YAML 1.2 core schema, while Docker Compose resolves
-// merge keys. Without it this suite would read a different file than Compose
-// does, and the shared `x-service` anchor would look like missing config.
+// Resolve YAML merge keys like Compose; otherwise `<<` stays a literal key
+// and config from the shared x-service anchor appears missing.
 const compose = parse(readFileSync('docker-compose.yml', 'utf8'), {
   merge: true,
 });
-// A .sh rather than a .sql: the per-service passwords come from the
-// environment, and .sql cannot interpolate them. `.gitattributes` pins *.sh to
-// LF, so the usual CRLF-shebang hazard is closed.
+// Use .sh because .sql cannot read passwords from the environment.
+// .gitattributes keeps shell scripts at LF so their shebangs work.
 const initScript = readFileSync(
   'docker/postgres/init/01-create-databases.sh',
   'utf8',
@@ -36,12 +33,9 @@ describe('compose infrastructure', () => {
     expect(svc.image).not.toMatch(/latest|^[^:]+$/);
   });
 
-  // `toBeDefined()` above would accept `['CMD', 'true']`. This pins the one
-  // probe whose exact spelling is load-bearing: Compose interpolates `$VAR`
-  // itself, so a single-`$` `pg_isready -U $POSTGRES_USER` is substituted at
-  // parse time, reaches the container empty, and Postgres never reports
-  // healthy — leaving all seven services waiting on service_healthy forever.
-  // CMD-SHELL is required too: exec form has no shell to expand anything.
+  // `$$` delays variable expansion until the container runs the probe.
+  // A single `$` lets Compose substitute an empty value, blocking app startup.
+  // CMD-SHELL supplies the shell needed for expansion.
   it('probes Postgres with a command that resolves inside the container', () => {
     const [form, script] = compose.services.postgres.healthcheck.test;
     expect(form).toBe('CMD-SHELL');
@@ -61,11 +55,9 @@ describe('compose infrastructure', () => {
     expect(initScript).toMatch(
       /CREATE ROLE :"service" LOGIN PASSWORD :'password'/,
     );
-    // Owner, so the service has full DDL on its own database and can run its
-    // own migrations without any extra grant.
+    // Ownership lets each service run its own migrations.
     expect(initScript).toMatch(/CREATE DATABASE :"service" OWNER :"service"/);
-    // Creating roles is not enough on its own: Postgres grants CONNECT on a new
-    // database to PUBLIC, so without this every role could open every database.
+    // Postgres grants CONNECT to PUBLIC by default, so roles alone do not isolate databases.
     expect(initScript).toMatch(
       /REVOKE CONNECT ON DATABASE :"service" FROM PUBLIC/,
     );
@@ -75,10 +67,7 @@ describe('compose infrastructure', () => {
     expect(initScript).toMatch(/if \[ -z "\$password" \]/);
   });
 
-  // Review Focus #1. `*.sql` and `*.sh` are the files the plan named; the
-  // Dockerfile is read by the Linux daemon for the same reason and is pinned
-  // here too, because `core.autocrlf` would otherwise hand a Windows clone a
-  // CRLF copy of it.
+  // Pin LF for Linux-read files even on Windows clones.
   it('commits container-executed files as LF', () => {
     const attrs = readFileSync('.gitattributes', 'utf8');
     expect(attrs).toMatch(/\*\.sql\s+text\s+eol=lf/);
@@ -139,9 +128,7 @@ describe('compose services', () => {
     );
   });
 
-  // Spec point 5: "each service holding credentials for its own only". Naming
-  // its own database is not enough — authenticating as the superuser would let
-  // any service open any other's. The credential has to be the service's own.
+  // A database name is not isolation if the service logs in as the superuser.
   it.each(SERVICES)(
     '%s authenticates as its own role, never the superuser',
     (name) => {
@@ -157,9 +144,6 @@ describe('compose services', () => {
     expect(published).toEqual(['gateway']);
   });
 
-  // The assertion above only looks at the seven app services, so publishing
-  // Postgres on 5432 or Redis on 6379 would pass it while breaking spec point
-  // 7. This one covers every service in the file, infra included.
   it('exposes nothing to the host beyond the gateway and the two dev UIs', () => {
     const publishing = Object.keys(compose.services).filter(
       (n) => compose.services[n].ports?.length,
@@ -167,10 +151,8 @@ describe('compose services', () => {
     expect(publishing.sort()).toEqual(['gateway', 'mailpit', 'rabbitmq']);
   });
 
-  // Review Focus #5: a reviewer must be able to move a colliding port without
-  // editing compose. Sourcing every published port from a variable is what
-  // makes that true; hardcoding '3000:3000' would otherwise pass the suite,
-  // since the .env.example test would simply stop finding GATEWAY_PORT.
+  // Let developers change colliding host ports without editing Compose.
+  // The env example check alone would miss a hardcoded port.
   it('sources every published host port from an environment variable', () => {
     for (const name of Object.keys(compose.services)) {
       for (const mapping of compose.services[name].ports ?? []) {

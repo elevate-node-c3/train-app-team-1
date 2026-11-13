@@ -9,9 +9,7 @@ export interface SignedAccessToken {
   expiresAt: Date;
 }
 
-/**
- * Identity owns the only private key. Nothing else can mint an access token.
- */
+/** Only identity holds the private key and can issue access tokens. */
 @Injectable()
 export class IdentityJwtSigner implements OnModuleInit {
   private readonly logger = new Logger(IdentityJwtSigner.name);

@@ -42,7 +42,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<
 
     return next.handle().pipe(
       map((result: any) => {
-        // If already structured with ApiResponse fields, pass through with guaranteed metadata
+        // Keep existing envelopes; only fill missing metadata.
         if (
           result &&
           typeof result === 'object' &&

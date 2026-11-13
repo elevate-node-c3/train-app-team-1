@@ -1,9 +1,6 @@
 export const TOKEN_SETTINGS = Symbol('TOKEN_SETTINGS');
 
-/**
- * The token lifetimes the auth feature needs. Binding these once from the
- * validated environment keeps environment access at the composition root.
- */
+/** Read validated token lifetimes once during app setup. */
 export interface TokenSettings {
   accessTtlSeconds: number;
   refreshTtlSeconds: number;

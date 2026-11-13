@@ -28,9 +28,8 @@ export interface PreparedVerificationCode {
 }
 
 /**
- * One place issues every code. Sign-up, resend and password recovery must be
- * indistinguishable in TTL, hashing and rate accounting, or a difference
- * becomes an enumeration signal.
+ * Use the same TTL, hashing and quotas across sign-up, resend and recovery
+ * to avoid revealing whether an account exists.
  */
 @Injectable()
 export class VerificationCodeIssuer {
@@ -41,10 +40,7 @@ export class VerificationCodeIssuer {
     @Inject(TOKEN_SETTINGS) private readonly tokens: TokenSettings,
   ) {}
 
-  /**
-   * Hash before the caller opens its transaction. scrypt is deliberately part
-   * of the response latency, not of the row-lock lifetime.
-   */
+  /** Hash before the transaction so scrypt does not hold row locks. */
   prepare(
     accountId: string,
     purpose: VerificationCodePurpose,
@@ -63,8 +59,7 @@ export class VerificationCodeIssuer {
 
     const plaintext = generateVerificationCode();
     const salt = generateVerificationCodeSalt();
-    // Deliberately before the timestamp: scrypt is not part of the delivery
-    // budget, it is part of the sign-up response.
+    // Keep scrypt time out of the delivery budget.
     const codeHash = hashVerificationCode(plaintext, salt);
 
     const code = new VerificationCodeEntity();
@@ -120,11 +115,7 @@ export class VerificationCodeIssuer {
     );
   }
 
-  /**
-   * A request for an address with no account still consumes the hourly quota.
-   * Without this row, "forgot password" would answer differently on the sixth
-   * attempt only when the address exists.
-   */
+  /** Unknown addresses count toward the quota to prevent account discovery. */
   async recordRequest(
     ctx: TransactionContext,
     options: {

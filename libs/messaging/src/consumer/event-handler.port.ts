@@ -7,10 +7,8 @@ export interface EventHandlingResult {
 }
 
 /**
- * A handler is the consumer's business logic. It runs only after the claim was
- * won and may throw:
- * - a `PermanentEventError` dead-letters immediately;
- * - anything else is transient and enters the retry topology.
+ * Run business logic only after winning the event claim.
+ * PermanentEventError dead-letters; other errors enter retries.
  */
 export interface EventHandlerPort {
   handle(

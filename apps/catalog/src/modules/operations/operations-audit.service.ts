@@ -21,15 +21,12 @@ export interface AppendAuditInput {
   before: unknown;
   /** Always present. */
   after: unknown;
-  /** 0 this sprint; the column exists ahead of inventory having seats. */
+  /** No inventory seat tables yet; currently always 0. */
   ticketsAffected: number;
   correlationId: string;
 }
 
-/**
- * BR-52's trail. `append` takes the caller's transaction, so a change and its
- * record commit together or not at all.
- */
+/** Append in the caller's transaction so changes and audit records commit together. */
 @Injectable()
 export class OperationsAuditService {
   constructor(private readonly repository: OperationsAuditRepository) {}

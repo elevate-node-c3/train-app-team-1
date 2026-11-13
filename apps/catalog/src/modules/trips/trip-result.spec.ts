@@ -3,13 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildTripList, toTripResult } from './trip-result.js';
 import type { CachedStaticTrip } from './trip-search-cache.js';
 
-/**
- * The shared tail of both search legs.
- *
- * Tested on its own because it is the reason the return list cannot filter or
- * order by different rules than the outbound one: there is one implementation,
- * and these are its rules.
- */
+/** Both search legs must share filter and sort rules. */
 
 const RAMSIS = '11111111-1111-4111-8111-111111111111';
 const ALEX = '22222222-2222-4222-8222-222222222222';
@@ -64,9 +58,8 @@ describe('building the trip list', () => {
   });
 
   /**
-   * `filteredCount` is what lets the caller tell "the filters emptied this"
-   * from "the day was empty". An unpriced trip must not inflate it into the
-   * first answer when the truth is the second.
+   * Keep filter survivors separate from priced results; unpriced trips must not
+   * make an empty result blame filters.
    */
   it('counts filter survivors, not priced survivors', () => {
     const list = buildTripList({
@@ -76,8 +69,7 @@ describe('building the trip list', () => {
     });
 
     expect(list.trips).toEqual([]);
-    // Survived the (absent) filters, then dropped for having no price: the day
-    // was not emptied by a filter.
+    // Unpriced removal is not a filter-empty result.
     expect(list.filteredCount).toBe(1);
   });
 
@@ -98,8 +90,7 @@ describe('building the trip list', () => {
     expect(onUnpriced.mock.calls[0][0].tripId).toBe('unpriced');
   });
 
-  // The sold-out set is derived from the seats the response already needed, so
-  // the filter costs no query.
+  // Reuse the response's seat counts for sold-out filters; no extra query.
   it('hides sold-out trips from the seats it was given, only when asked', () => {
     const eligible = [trip({ tripId: 'open' }), trip({ tripId: 'full' })];
     const seats = seatsFor(['open', 10], ['full', 0]);
@@ -112,8 +103,7 @@ describe('building the trip list', () => {
       filters: { excludeSoldOut: true },
     });
 
-    // Both share a departure time and a train number, so the tie-break on
-    // tripId decides -- which is the point of having one.
+    // Equal departure and train number require the tripId tie-break.
     expect(shown.trips.map((result) => result.tripId)).toEqual([
       'full',
       'open',
@@ -154,7 +144,7 @@ describe('one trip on the wire', () => {
     expect(result.arrival.at.localTime).toBe('08:40');
   });
 
-  // BR-16: a trip with no seats left is returned and marked, never hidden.
+  // Sold-out trips are returned and marked, never hidden.
   it('marks a trip with no seats as sold out rather than dropping it', () => {
     expect(toTripResult(trip(), FIRST, 0).soldOut).toBe(true);
     expect(toTripResult(trip(), FIRST, 1).soldOut).toBe(false);

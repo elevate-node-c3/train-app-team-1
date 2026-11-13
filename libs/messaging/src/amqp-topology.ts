@@ -1,11 +1,8 @@
 import type { Channel } from 'amqplib';
 
 /**
- * The AMQP topology as data, so it can be reviewed rather than discovered in a
- * console. Ownership is load-bearing: the producer declares `train.events` and
- * nothing else, a consumer declares its own exchanges and queues. Consumers
- * re-assert `train.events` identically, so startup order does not matter --
- * binding to a missing exchange 404s and subscribes them to nothing.
+ * Producers declare the shared exchange; each consumer owns its queues.
+ * Consumers repeat the same exchange declaration so startup order is safe.
  */
 export const EVENTS_EXCHANGE = 'train.events';
 export const RETRY_EXCHANGE = 'train.events.retry';
@@ -30,7 +27,7 @@ export interface QueueDeclaration {
   name: string;
   durable: boolean;
   autoDelete: boolean;
-  /** AMQP `x-*` arguments, omitted rather than `{}` when there are none. */
+  /** Omit unused AMQP arguments. */
   arguments?: Record<string, unknown>;
   bindings: QueueBindingDeclaration[];
 }
@@ -62,7 +59,7 @@ const DURABLE_QUEUE = (
   bindings,
 });
 
-/** The producer's entire topology: the durable topic exchange, no queues. */
+/** Producer owns only the durable topic exchange. */
 export function producerTopology(): TopologyDeclaration {
   return {
     exchanges: [DURABLE_EXCHANGE(EVENTS_EXCHANGE, 'topic')],
@@ -71,18 +68,15 @@ export function producerTopology(): TopologyDeclaration {
 }
 
 export interface ConsumerTopologyConfig {
-  /** The consumer's own queue name. Never shared with another consumer. */
+  /** Queue belongs to one consumer only. */
   queue: string;
-  /** The event's topic routing key (also the envelope `type`). */
+  /** Event type and topic routing key. */
   eventType: string;
   /** One retry queue per delay: a queue's TTL is fixed. */
   retryDelaysMs: readonly number[];
 }
 
-/**
- * The consumer-owned half. The requeue exchange is `direct`, keyed on the queue
- * name: a topic redelivery would fan this consumer's retry out to every other.
- */
+/** Direct retries target this queue only, not every consumer of the event. */
 export function consumerTopology(
   config: ConsumerTopologyConfig,
 ): TopologyDeclaration {
@@ -104,8 +98,7 @@ export function consumerTopology(
 
   return {
     exchanges: [
-      // Identical to the producer's. Without it a consumer that starts first
-      // cannot bind, and misses every event until restarted.
+      // Match the producer's declaration so consumers can start first.
       DURABLE_EXCHANGE(EVENTS_EXCHANGE, 'topic'),
       DURABLE_EXCHANGE(RETRY_EXCHANGE, 'direct'),
       DURABLE_EXCHANGE(REQUEUE_EXCHANGE, 'direct'),
@@ -132,7 +125,7 @@ export function deadLetterQueueName(queue: string): string {
   return `${queue}.dlq`;
 }
 
-/** Idempotent: AMQP asserts are declarative, so every boot can run this. */
+/** Repeated AMQP declarations are safe on every startup. */
 export async function declareTopology(
   channel: Pick<Channel, 'assertExchange' | 'assertQueue' | 'bindQueue'>,
   topology: TopologyDeclaration,

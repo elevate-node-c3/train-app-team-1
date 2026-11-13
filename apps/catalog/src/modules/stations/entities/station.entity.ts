@@ -13,9 +13,8 @@ import { CityEntity } from './city.entity.js';
 import type { Relation } from 'typeorm';
 
 /**
- * A station belongs to a city, and the city to a governorate. The governorate
- * is never stored here, so the two can not disagree.
- * A station that trips still stop at is deactivated, never deleted.
+ * Derive governorate from city to avoid inconsistent data.
+ * Deactivate stations still used by trips; never delete them.
  */
 @Entity('station')
 @Check('station_name_ar_not_empty', `name_ar <> ''`)

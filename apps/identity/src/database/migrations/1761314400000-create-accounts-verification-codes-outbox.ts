@@ -1,10 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Identity's own schema. Hand-written because these tables carry invariants
- * TypeORM's synchronizer does not express: the case-insensitive email index,
- * the live-code partial index, and the relay's backlog-only index.
- */
+/** SQL handles email uniqueness and partial indexes that TypeORM sync cannot. */
 export class CreateAccountsVerificationCodesOutbox1761314400000
   implements MigrationInterface
 {
@@ -23,8 +19,7 @@ export class CreateAccountsVerificationCodesOutbox1761314400000
       )
     `);
 
-    // The uniqueness rule is on the normalized value, not on the stored text:
-    // otherwise User@Example.com and user@example.com are two accounts.
+    // Email uniqueness must ignore case.
     await queryRunner.query(`
       CREATE UNIQUE INDEX uq_account_email_lower
         ON account (lower(email))
@@ -46,8 +41,7 @@ export class CreateAccountsVerificationCodesOutbox1761314400000
       )
     `);
 
-    // Partial: the lookup is always for a live code, so dead history does not
-    // belong in the index.
+    // Index only live codes, not consumed history.
     await queryRunner.query(`
       CREATE INDEX idx_verification_code_live
         ON verification_code (account_id, expires_at DESC)
@@ -71,8 +65,7 @@ export class CreateAccountsVerificationCodesOutbox1761314400000
       )
     `);
 
-    // Partial, so the relay index stays the size of the backlog rather than of
-    // history, and its predicate is the poll's predicate exactly.
+    // Match the relay poll predicate so the index contains only the backlog.
     await queryRunner.query(`
       CREATE INDEX idx_outbox_event_unpublished
         ON outbox_event (next_attempt_at, occurred_at)

@@ -40,11 +40,7 @@ import type {
 } from './catalog.dto.js';
 
 /**
- * The descriptor shapes this spec reads.
- *
- * proto-loader types a loaded entry's `type` as a bare `object` — it is the
- * protobuf descriptor, whose fields it does not describe — so the parts
- * asserted on below have to be spelled out here.
+ * Declare the descriptor fields proto-loader's object type does not describe.
  */
 interface MessageDescriptor {
   field?: {
@@ -90,11 +86,7 @@ function serviceDefinition(options?: Options): ServiceDefinition {
 }
 
 /**
- * Field names declared on a loaded message, in declaration order.
- *
- * Synthetic oneofs — the `_trainNumber` that proto3 `optional` generates —
- * live under `oneofDecl`, not `field`, so the list below is exactly the
- * author-declared fields.
+ * Return declared message fields in order; omit generated oneof metadata.
  */
 function fieldNamesOf(messageName: string): string[] {
   return (messageDescriptor(messageName).field ?? []).map(
@@ -103,10 +95,7 @@ function fieldNamesOf(messageName: string): string[] {
 }
 
 /**
- * The drift guard's other half. TypeScript interfaces vanish at runtime, so
- * each key map below is typed as `Record<keyof T, true>`: the compiler rejects
- * it if the interface gains a field the map omits, and the assertion rejects it
- * if the proto and the map disagree. Together they fail in both directions.
+ * Typed key maps and proto comparisons catch missing fields in either direction.
  */
 const TRIP_RESULT_KEYS: Record<keyof TripResult, true> = {
   tripId: true,
@@ -302,10 +291,7 @@ const RPC_NAMES = [
 ] as const;
 
 describe('the catalog contract surface', () => {
-  // Every spec in this folder imports its subject directly, so a module left
-  // out of the barrel passes all of them and then fails at the first
-  // cross-package import -- which is how apps actually consume this. Asserting
-  // the barrel is what makes those specs representative.
+  // Check public exports too; direct-file tests can miss a broken package index.
   it('re-exports every catalog module from @app/contracts', async () => {
     const barrel = await import('../index.js');
 
@@ -408,8 +394,7 @@ describe('the catalog search gRPC contract', () => {
       messageDescriptor('SearchOneWayTripsResponse').field ?? []
     ).find((candidate) => candidate.name === 'filterOptions');
 
-    // 6 was reserved before anything was serialized there, so taking it is
-    // safe; 7 onwards stays reserved for a future page token.
+    // Field 6 was unused and safe; 7 onward stays reserved for pagination.
     expect(field?.number).toBe(6);
   });
 
@@ -422,8 +407,7 @@ describe('the catalog search gRPC contract', () => {
     );
   });
 
-  // BR-20: the server reads the outbound arrival. A client-supplied arrival
-  // would be a second authority and could widen the window.
+  // Catalog reads arrival time so clients cannot widen the return window.
   it('carries no outbound arrival and no train number on the return request', () => {
     const fields = fieldNamesOf('SearchReturnTripsRequest');
 
@@ -460,8 +444,7 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('carries no traveller identity in the recent-search request', () => {
-    // The traveller comes from caller metadata, never from a body a client
-    // could forge.
+    // Use verified caller metadata, never a client-supplied account.
     expect(fieldNamesOf('ListRecentSearchesRequest')).toEqual(['language']);
   });
 
@@ -485,15 +468,12 @@ describe('the catalog search gRPC contract', () => {
       (candidate) => candidate.name === 'amountMinor',
     );
 
-    // Not int64: proto-loader maps 64-bit integers to JS strings by default,
-    // which would silently turn a fare into a string at the gateway. int32
-    // holds 21 million EGP in piastres — far beyond any single ticket.
+    // int32 keeps fares numeric; proto-loader turns int64 into strings.
     expect(field?.type).toBe('TYPE_INT32');
   });
 
   it('defaults the sort to departure-ascending, the mandated order', () => {
-    // Proto3 enum 0 is the default an absent field decodes to, so TA-18 can
-    // add sorts without changing what today's clients get.
+    // Enum zero preserves the default sort when no order is supplied.
     const zeroValue = (enumDescriptor('SearchSort').value ?? []).find(
       (value) => value.number === 0,
     );
@@ -501,8 +481,7 @@ describe('the catalog search gRPC contract', () => {
   });
 
   it('keeps the appended search-empty reasons append-only', () => {
-    // Existing numbers already travel; the two new reasons must extend the
-    // enum rather than renumber it, or a client would read the wrong message.
+    // Extend enum values without renumbering those already on the wire.
     const byNumber = new Map(
       (enumDescriptor('SearchEmptyReason').value ?? []).map((value) => [
         value.number,

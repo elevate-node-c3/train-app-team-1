@@ -149,8 +149,7 @@ describe('OperationsGrpcController', () => {
     expect(response.entries[0].beforeJson).toBe('null');
     expect(response.entries[1].afterJson).toBe(JSON.stringify({ version: 1 }));
     expect(response.nextCursor).toBeUndefined();
-    // A missing limit still reaches the repository positive; `limit + 1`
-    // would otherwise fetch 1.
+    // Normalize missing limits before the repository's limit + 1 pagination.
     expect(list.mock.calls[0][0].limit).toBeGreaterThan(0);
   });
 
