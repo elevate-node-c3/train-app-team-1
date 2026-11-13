@@ -65,6 +65,6 @@ export function createTripLifecycleSubscriptions(
     EventFailureRouter,
     EventConsumerService,
   ],
-  exports: [TripLifecycleTopologyService],
+  exports: [TripLifecycleTopologyService, TripLifecycleConsumer],
 })
 export class TripLifecycleModule {}
