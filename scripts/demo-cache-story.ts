@@ -92,7 +92,7 @@ async function runDemo() {
     id: 'evt-fare-change-demo',
     type: EVENT_TYPES.fareChanged,
     occurredAt: new Date().toISOString(),
-    source: 'ops',
+    producer: 'ops',
     version: 1,
     correlationId: 'corr-demo',
     payload: {

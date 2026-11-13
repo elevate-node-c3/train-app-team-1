@@ -565,7 +565,6 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
 
     const error = await httpErrorOf(
       adapter.completeProfile({
-        accountId: 'acc-1',
         fullName: 'Single',
         phoneNumber: '123',
         nationalId: '123',

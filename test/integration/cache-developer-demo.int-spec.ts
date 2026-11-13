@@ -142,7 +142,7 @@ describe('Developer Flow & Demo Verification Suite (Story TA-19)', () => {
       id: 'evt-fare-change-123',
       type: EVENT_TYPES.fareChanged,
       occurredAt: new Date().toISOString(),
-      source: 'ops',
+      producer: 'ops',
       version: 1,
       correlationId: 'corr-demo-1',
       payload: {
@@ -230,8 +230,8 @@ describe('Developer Flow & Demo Verification Suite (Story TA-19)', () => {
     privRedis.handleConnectionReady();
 
     const testKey = 'catalog:reconnect-test:v1';
-    await cache.set(testKey, { reconnected: true }, 60, 'search');
-    const cached = await cache.get<{ reconnected: boolean }>(testKey, 'search');
+    await cache.set(testKey, { reconnected: true }, 60);
+    const cached = await cache.get<{ reconnected: boolean }>(testKey);
     expect(cached?.reconnected).toBe(true);
 
     const health = await healthService.checkReadiness('catalog');
