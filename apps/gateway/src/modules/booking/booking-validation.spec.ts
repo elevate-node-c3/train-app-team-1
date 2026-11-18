@@ -38,13 +38,17 @@ describe('BookingController & Route Validation', () => {
   });
 
   describe('Route Security & Metadata (BR-01, R4)', () => {
-    it('declares traveller access level on BookingController', () => {
-      const classLevel = Reflect.getMetadata(ACCESS_LEVEL_KEY, BookingController);
+    it('requires the existing bookable access level at the single booking entry', () => {
+      const classLevel = Reflect.getMetadata(
+        ACCESS_LEVEL_KEY,
+        BookingController,
+      );
       const handlerLevel = Reflect.getMetadata(
         ACCESS_LEVEL_KEY,
         BookingController.prototype.createBooking,
       );
-      expect(classLevel === 'traveller' || handlerLevel === 'traveller').toBe(true);
+      expect(classLevel).toBe('bookable');
+      expect(handlerLevel).toBe('bookable');
     });
   });
 
@@ -117,9 +121,7 @@ describe('BookingController & Route Validation', () => {
           travelClassId: '22222222-2222-4222-8222-222222222222',
           originStationId: '33333333-3333-4333-8333-333333333333',
           destinationStationId: '44444444-4444-4444-8444-444444444444',
-          passengers: [
-            { fullName: 'Passenger 1', seatId: 'seat-uuid-22' },
-          ],
+          passengers: [{ fullName: 'Passenger 1', seatId: 'seat-uuid-22' }],
         },
         expectedKey: 'seatId',
       },
@@ -130,9 +132,7 @@ describe('BookingController & Route Validation', () => {
           travelClassId: '22222222-2222-4222-8222-222222222222',
           originStationId: '33333333-3333-4333-8333-333333333333',
           destinationStationId: '44444444-4444-4444-8444-444444444444',
-          passengers: [
-            { fullName: 'Passenger 1', coachNumber: 4 },
-          ],
+          passengers: [{ fullName: 'Passenger 1', coachNumber: 4 }],
         },
         expectedKey: 'coachNumber',
       },
@@ -220,11 +220,15 @@ describe('BookingController & Route Validation', () => {
   describe('Booking Forwarding & Successful Draft Assembly', () => {
     it('forwards valid single-leg booking draft and returns HTTP 201 response', async () => {
       const validDto = {
+        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        passengerIds: [
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+        ],
         tripId: '11111111-1111-4111-8111-111111111111',
         travelClassId: '22222222-2222-4222-8222-222222222222',
         originStationId: '33333333-3333-4333-8333-333333333333',
         destinationStationId: '44444444-4444-4444-8444-444444444444',
-        passengers: [{ fullName: 'Passenger 1' }, { fullName: 'Passenger 2' }],
       };
 
       const expectedDraft = {
@@ -240,7 +244,10 @@ describe('BookingController & Route Validation', () => {
             originStationId: validDto.originStationId,
             destinationStationId: validDto.destinationStationId,
             allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-            seats: ['Passenger · Coach 5 · Seat 44', 'Passenger · Coach 5 · Seat 45'],
+            seats: [
+              'Passenger · Coach 5 · Seat 44',
+              'Passenger · Coach 5 · Seat 45',
+            ],
             expiresAt: new Date().toISOString(),
           },
         ],
@@ -249,14 +256,19 @@ describe('BookingController & Route Validation', () => {
 
       mockBookingService.createBooking.mockResolvedValueOnce(expectedDraft);
 
-      const result = await controller.createBooking(validDto as any, { body: validDto } as any);
+      const result = await controller.createBooking(
+        validDto as any,
+        { body: validDto } as any,
+      );
 
       expect(mockBookingService.createBooking).toHaveBeenCalledWith(
         validDto,
         'user-acc-123',
       );
       expect(result).toEqual(expectedDraft);
-      expect(result.legs[0].allocationOutcome).toBe(AllocationOutcome.SIDE_BY_SIDE);
+      expect(result.legs[0].allocationOutcome).toBe(
+        AllocationOutcome.SIDE_BY_SIDE,
+      );
       expect(result.legs[0].seats).toEqual([
         'Passenger · Coach 5 · Seat 44',
         'Passenger · Coach 5 · Seat 45',
@@ -265,6 +277,13 @@ describe('BookingController & Route Validation', () => {
 
     it('forwards valid round-trip and surfaces splitNotice on return leg only', async () => {
       const roundTripDto = {
+        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        passengerIds: [
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
+        ],
         legs: [
           {
             tripId: '11111111-1111-4111-8111-111111111111',
@@ -325,9 +344,14 @@ describe('BookingController & Route Validation', () => {
 
       mockBookingService.createBooking.mockResolvedValueOnce(expectedDraft);
 
-      const result = await controller.createBooking(roundTripDto as any, { body: roundTripDto } as any);
+      const result = await controller.createBooking(
+        roundTripDto as any,
+        { body: roundTripDto } as any,
+      );
 
-      expect(result.legs[0].allocationOutcome).toBe(AllocationOutcome.SIDE_BY_SIDE);
+      expect(result.legs[0].allocationOutcome).toBe(
+        AllocationOutcome.SIDE_BY_SIDE,
+      );
       expect(result.legs[0].splitNotice).toBeUndefined();
       expect(result.legs[1].allocationOutcome).toBe(AllocationOutcome.SPLIT);
       expect(result.legs[1].splitNotice).toEqual(SEATS_SPLIT_NOTICE);
@@ -351,6 +375,8 @@ describe('BookingController & Route Validation', () => {
       );
 
       const validDto = {
+        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
         tripId: '11111111-1111-4111-8111-111111111111',
         travelClassId: '22222222-2222-4222-8222-222222222222',
         originStationId: '33333333-3333-4333-8333-333333333333',
@@ -363,7 +389,10 @@ describe('BookingController & Route Validation', () => {
       ).rejects.toThrowError(HttpException);
 
       try {
-        await controller.createBooking(validDto as any, { body: validDto } as any);
+        await controller.createBooking(
+          validDto as any,
+          { body: validDto } as any,
+        );
       } catch (error) {
         const httpError = error as HttpException;
         expect(httpError.getStatus()).toBe(HttpStatus.CONFLICT);
@@ -371,5 +400,51 @@ describe('BookingController & Route Validation', () => {
         expect(res.code).toBe(ErrorCode.INSUFFICIENT_SEATS);
       }
     });
+  });
+
+  it('never falls back to a body-supplied owner when caller context is absent', async () => {
+    mockClsService.get.mockReturnValue(undefined);
+    await expect(
+      controller.createBooking({ userId: 'attacker' } as never),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
+  });
+
+  it('requires actual saved passenger references instead of count-only requests', async () => {
+    await expect(
+      controller.createBooking({
+        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        groupSize: 2,
+      } as never),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
+  });
+
+  it('uses an immutable Idempotency-Key header and the authenticated owner', async () => {
+    const bookingKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const dto = {
+      passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
+      userId: 'spoofed',
+    };
+    await controller.createBooking(dto as never, {
+      headers: { 'idempotency-key': bookingKey },
+    });
+    expect(mockBookingService.createBooking).toHaveBeenCalledWith(
+      { ...dto, bookingKey },
+      'user-acc-123',
+    );
+  });
+
+  it('rejects disagreeing body/header keys without calling Booking', async () => {
+    const dto = {
+      bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
+    };
+    await expect(
+      controller.createBooking(dto, {
+        headers: { 'idempotency-key': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
   });
 });

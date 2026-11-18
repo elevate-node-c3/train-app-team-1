@@ -6,12 +6,14 @@ import {
   HttpStatus,
   Post,
   Req,
+  UseGuards,
   UsePipes,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CALLER_ACCOUNT_ID_KEY, RequireAccess } from '@app/common';
+import { CALLER_ACCOUNT_ID_KEY, RequireAccess, isUuidShape } from '@app/common';
 import { ErrorCode } from '@app/contracts';
 import { BookingService } from './booking.service.js';
+import { BookingRequestGuard } from './booking-request.guard.js';
 import {
   CreateBookingDto,
   findForbiddenSeatSelectionKey,
@@ -19,7 +21,7 @@ import {
   type BookingDraftResponse,
 } from './dto/create-booking.dto.js';
 
-@RequireAccess('traveller')
+@RequireAccess('bookable')
 @Controller('bookings')
 export class BookingController {
   constructor(
@@ -33,7 +35,8 @@ export class BookingController {
    * parameters (BR-25, D2). The server allocates all seats automatically.
    */
   @Post()
-  @RequireAccess('traveller')
+  @RequireAccess('bookable')
+  @UseGuards(BookingRequestGuard)
   @UsePipes(new NoSeatSelectionPipe())
   @HttpCode(HttpStatus.CREATED)
   async createBooking(
@@ -53,8 +56,38 @@ export class BookingController {
     }
 
     const callerId = this.cls.get<string>(CALLER_ACCOUNT_ID_KEY);
-    const userId = callerId || dto.userId || 'anonymous-traveller';
+    if (!callerId) {
+      throw new HttpException(
+        { code: ErrorCode.UNAUTHORIZED },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
 
-    return this.bookingService.createBooking(dto, userId);
+    // The same client key and owned passenger references survive a timeout retry.
+    const headerKey = req?.headers?.['idempotency-key'];
+    const bookingKey = headerKey ?? dto.bookingKey;
+    if (
+      !isUuidShape(bookingKey) ||
+      (headerKey && dto.bookingKey && headerKey !== dto.bookingKey)
+    ) {
+      throw new HttpException(
+        { code: ErrorCode.VALIDATION_ERROR },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (
+      !Array.isArray(dto.passengerIds) ||
+      dto.passengerIds.length < 1 ||
+      dto.passengerIds.length > 4 ||
+      !dto.passengerIds.every(isUuidShape) ||
+      new Set(dto.passengerIds).size !== dto.passengerIds.length
+    ) {
+      throw new HttpException(
+        { code: ErrorCode.VALIDATION_ERROR },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return this.bookingService.createBooking({ ...dto, bookingKey }, callerId);
   }
 }

@@ -692,9 +692,12 @@ describe('IdentityGrpcClient wire contract', () => {
     };
 
     expect(service.serviceName).toBe('IdentityService');
-    expect(Object.keys(service.service)).toEqual(
-      METHODS.map((method) => method.charAt(0).toUpperCase() + method.slice(1)),
-    );
+    expect(Object.keys(service.service)).toEqual([
+      ...METHODS.map(
+        (method) => method.charAt(0).toUpperCase() + method.slice(1),
+      ),
+      'ResolveHoldPassengers',
+    ]);
   });
 
   it('returns the verification response in identity wire shape', async () => {

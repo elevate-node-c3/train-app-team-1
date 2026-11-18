@@ -6,6 +6,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ErrorCode } from '@app/contracts';
+import { ClsService } from 'nestjs-cls';
+import { CORRELATION_ID_KEY, isUuidShape } from '@app/common';
 import type {
   BookingDraftResponse,
   CreateBookingDto,
@@ -28,7 +30,10 @@ export interface BookingClient {
 export class BookingHttpService implements BookingClient {
   private readonly normalizedBaseUrl: string;
 
-  constructor(baseUrl = 'http://booking:3000') {
+  constructor(
+    baseUrl = 'http://booking:3000',
+    private readonly cls?: ClsService,
+  ) {
     this.normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
   }
 
@@ -37,12 +42,37 @@ export class BookingHttpService implements BookingClient {
     userId: string,
   ): Promise<BookingDraftResponse> {
     const url = `${this.normalizedBaseUrl}/drafts`;
+    const serviceKey = process.env.GATEWAY_BOOKING_SERVICE_KEY;
+    if (!serviceKey || serviceKey.length < 32) {
+      throw new HttpException(
+        { code: ErrorCode.SERVICE_UNAVAILABLE },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     let response: Response;
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, dto, { userId })),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-gateway-booking-key': serviceKey,
+          'x-correlation-id': this.cls?.get<string>(CORRELATION_ID_KEY) ?? '',
+        },
+        // Never forward inline National IDs, caller-selected tokens, or owner overrides.
+        body: JSON.stringify({
+          userId,
+          bookingKey: dto.bookingKey,
+          passengerIds: dto.passengerIds,
+          legs: dto.legs ?? [
+            {
+              tripId: dto.tripId,
+              travelClassId: dto.travelClassId,
+              originStationId: dto.originStationId,
+              destinationStationId: dto.destinationStationId,
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(10_000),
       });
     } catch {
       throw new HttpException(
@@ -54,11 +84,55 @@ export class BookingHttpService implements BookingClient {
       );
     }
 
-    const payload = (await response.json()) as any;
+    const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok) {
-      throw new HttpException(payload, response.status);
+      const error =
+        payload.error && typeof payload.error === 'object'
+          ? (payload.error as Record<string, unknown>)
+          : payload;
+      const code = Object.values(ErrorCode).includes(error.code as ErrorCode)
+        ? error.code
+        : ErrorCode.SERVICE_UNAVAILABLE;
+      const detail = Array.isArray(error.details)
+        ? (error.details.find((item: unknown) => {
+            if (!item || typeof item !== 'object') return false;
+            const value = (item as Record<string, unknown>).rejectedValue;
+            if (!value || typeof value !== 'object') return false;
+            const passenger = value as Record<string, unknown>;
+            return (
+              isUuidShape(passenger.passengerRef) &&
+              /^\*{10}\d{4}$/.test(String(passenger.maskedNationalId))
+            );
+          }) as Record<string, unknown> | undefined)
+        : undefined;
+      const passenger = detail?.rejectedValue as
+        { passengerRef: string; maskedNationalId: string } | undefined;
+      throw new HttpException(
+        {
+          code,
+          ...(code === ErrorCode.PASSENGER_OVERLAP && passenger
+            ? {
+                details: [
+                  {
+                    field: 'passengerIds',
+                    rejectedValue: {
+                      passengerRef: passenger.passengerRef,
+                      maskedNationalId: passenger.maskedNationalId,
+                    },
+                    issueKey: 'ISSUE_PASSENGER_ALREADY_TRAVELLING',
+                    actionKey: 'ACTION_CHANGE_PASSENGER_OR_TRIP',
+                    params: { maskedNationalId: passenger.maskedNationalId },
+                  },
+                ],
+              }
+            : {}),
+        },
+        response.status,
+      );
     }
-    return payload as BookingDraftResponse;
+    return (
+      payload.success === true ? payload.data : payload
+    ) as BookingDraftResponse;
   }
 }
 

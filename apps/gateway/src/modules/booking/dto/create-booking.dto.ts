@@ -8,11 +8,12 @@ import {
 import { Type } from 'class-transformer';
 import {
   IsArray,
-  IsInt,
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsOptional,
   IsString,
-  Max,
-  Min,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -96,24 +97,6 @@ export class NoSeatSelectionPipe implements PipeTransform {
   }
 }
 
-export class BookingPassengerDto {
-  @IsOptional()
-  @IsString()
-  id?: string;
-
-  @IsOptional()
-  @IsString()
-  fullName?: string;
-
-  @IsOptional()
-  @IsString()
-  nationalId?: string;
-
-  @IsOptional()
-  @IsString()
-  profileType?: string;
-}
-
 export class BookingLegDto {
   @IsString()
   tripId!: string;
@@ -130,8 +113,15 @@ export class BookingLegDto {
 
 export class CreateBookingDto {
   @IsOptional()
-  @IsString()
-  userId?: string;
+  @IsUUID()
+  bookingKey?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(4)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  passengerIds!: string[];
 
   @IsOptional()
   @IsArray()
@@ -154,22 +144,6 @@ export class CreateBookingDto {
   @IsOptional()
   @IsString()
   destinationStationId?: string;
-
-  @IsOptional()
-  @IsArray()
-  passengers?: (BookingPassengerDto | string)[];
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(4)
-  passengerCount?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(4)
-  groupSize?: number;
 }
 
 export interface BookingDraftLegResponse {
@@ -189,7 +163,13 @@ export interface BookingDraftResponse {
   id: string;
   userId: string;
   status: string;
-  expiresAt: string | Date;
+  expiresAt: string | Date | null;
   legs: BookingDraftLegResponse[];
   createdAt: string | Date;
+  holdId?: string | null;
+  holdState?: string | null;
+  holdVersion?: number;
+  serverNow?: string | Date | null;
+  extensionUsed?: boolean;
+  reconciliationPending?: boolean;
 }
