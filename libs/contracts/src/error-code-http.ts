@@ -3,6 +3,7 @@ import { ErrorCode } from './error-codes.enum.js';
 export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.VALIDATION_ERROR]: 400,
   [ErrorCode.BAD_REQUEST]: 400,
+  [ErrorCode.INVALID_PAYLOAD]: 400,
   [ErrorCode.UNAUTHORIZED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.RESOURCE_NOT_FOUND]: 404,

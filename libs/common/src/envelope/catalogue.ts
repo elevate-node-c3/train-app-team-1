@@ -49,6 +49,10 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'طلب غير صالح، يرجى التحقق من المدخلات',
     en: 'Bad request, please verify your input',
   },
+  [ErrorCode.INVALID_PAYLOAD]: {
+    ar: 'بيانات الطلب غير صالحة',
+    en: 'The request payload is invalid',
+  },
   [ErrorCode.UNAUTHORIZED]: {
     ar: 'غير مصرح لك بالوصول، يرجى تسجيل الدخول',
     en: 'Unauthorized access, please authenticate',
