@@ -49,4 +49,15 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.PASSENGER_LIMIT_REACHED]: 422,
   [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: 422,
   [ErrorCode.NATIONAL_ID_LOCKED]: 422,
+
+  // Atomic hold lifecycle: a retryable ownership/state conflict is 409.
+  [ErrorCode.INSUFFICIENT_SEATS]: 409,
+  [ErrorCode.SEAT_ALREADY_TAKEN]: 409,
+  [ErrorCode.SEAT_TAKEN]: 409,
+  [ErrorCode.PASSENGER_OVERLAP]: 409,
+  [ErrorCode.SALES_CLOSED]: 409,
+  [ErrorCode.HOLD_TERMINAL]: 409,
+  [ErrorCode.EXTENSION_NOT_ALLOWED]: 409,
+  [ErrorCode.BOOKING_KEY_CONFLICT]: 409,
+  [ErrorCode.HOLD_NOT_FOUND]: 404,
 };

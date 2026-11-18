@@ -17,6 +17,10 @@ export const EVENT_TYPES = {
   seatAvailabilityChanged: 'inventory.seat.availability-changed',
   tripSeatsCreated: 'inventory.trip.seats-created',
   tripPublicationRefused: 'inventory.trip.publication-refused',
+  holdHeld: 'inventory.hold.held',
+  holdReleased: 'inventory.hold.released',
+  holdExpired: 'inventory.hold.expired',
+  holdExtended: 'inventory.hold.extended',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -14,11 +14,6 @@ import {
 import {
   AllocationOutcome,
   SEATS_SPLIT_NOTICE,
-  type AssignedSeat,
-  type HoldSeatsRequest,
-  type HoldSeatsResponse,
-  type ReleaseSeatsRequest,
-  type ReleaseSeatsResponse,
   type SplitNoticePayload,
 } from './seat-allocation.dto.js';
 import { ErrorCode } from '../error-codes.enum.js';
@@ -68,44 +63,10 @@ function fieldNamesOf(messageName: string): string[] {
   );
 }
 
-const HOLD_SEATS_REQUEST_KEYS: Record<keyof HoldSeatsRequest, true> = {
-  tripId: true,
-  travelClassId: true,
-  originStationId: true,
-  destinationStationId: true,
-  groupSize: true,
-  ttlSeconds: true,
-  bookingId: true,
-};
-
-const ASSIGNED_SEAT_KEYS: Record<keyof AssignedSeat, true> = {
-  seatId: true,
-  coachNumber: true,
-  seatNumber: true,
-  rowNumber: true,
-  label: true,
-};
-
 const SPLIT_NOTICE_KEYS: Record<keyof SplitNoticePayload, true> = {
   code: true,
   message: true,
   messageEn: true,
-};
-
-const HOLD_SEATS_RESPONSE_KEYS: Record<keyof HoldSeatsResponse, true> = {
-  holdId: true,
-  allocationOutcome: true,
-  seats: true,
-  expiresAt: true,
-  splitNotice: true,
-};
-
-const RELEASE_SEATS_REQUEST_KEYS: Record<keyof ReleaseSeatsRequest, true> = {
-  holdId: true,
-};
-
-const RELEASE_SEATS_RESPONSE_KEYS: Record<keyof ReleaseSeatsResponse, true> = {
-  success: true,
 };
 
 describe('Seat Allocation and Hold Contracts', () => {
@@ -157,11 +118,13 @@ describe('Seat Allocation and Hold Contracts', () => {
       expect(existsSync(protoPath)).toBe(true);
     });
 
-    it('declares HoldSeats and ReleaseSeats unary RPCs on InventoryService', () => {
+    it('declares its unary RPCs on InventoryService', () => {
       const service = serviceDefinition();
       expect(service).toBeDefined();
 
-      const rpcNames = ['SeatUsageForTrips', 'HoldSeats', 'ReleaseSeats'];
+      // Hold creation lives on the MT-02 lifecycle RPCs, covered by
+      // seat-hold.dto.spec.ts; no legacy HoldSeats/ReleaseSeats pair remains.
+      const rpcNames = ['SeatUsageForTrips', 'CreateHold', 'GetHold'];
       for (const name of rpcNames) {
         const method = service[name];
         expect(method, `RPC ${name} is missing from InventoryService`).toBeDefined();
@@ -173,39 +136,9 @@ describe('Seat Allocation and Hold Contracts', () => {
       }
     });
 
-    it('keeps HoldSeatsRequest fields in step with TypeScript interface', () => {
-      expect(fieldNamesOf('HoldSeatsRequest').sort()).toEqual(
-        Object.keys(HOLD_SEATS_REQUEST_KEYS).sort(),
-      );
-    });
-
-    it('keeps AssignedSeat fields in step with TypeScript interface', () => {
-      expect(fieldNamesOf('AssignedSeat').sort()).toEqual(
-        Object.keys(ASSIGNED_SEAT_KEYS).sort(),
-      );
-    });
-
     it('keeps SplitNoticePayload fields in step with TypeScript interface', () => {
       expect(fieldNamesOf('SplitNoticePayload').sort()).toEqual(
         Object.keys(SPLIT_NOTICE_KEYS).sort(),
-      );
-    });
-
-    it('keeps HoldSeatsResponse fields in step with TypeScript interface', () => {
-      expect(fieldNamesOf('HoldSeatsResponse').sort()).toEqual(
-        Object.keys(HOLD_SEATS_RESPONSE_KEYS).sort(),
-      );
-    });
-
-    it('keeps ReleaseSeatsRequest fields in step with TypeScript interface', () => {
-      expect(fieldNamesOf('ReleaseSeatsRequest').sort()).toEqual(
-        Object.keys(RELEASE_SEATS_REQUEST_KEYS).sort(),
-      );
-    });
-
-    it('keeps ReleaseSeatsResponse fields in step with TypeScript interface', () => {
-      expect(fieldNamesOf('ReleaseSeatsResponse').sort()).toEqual(
-        Object.keys(RELEASE_SEATS_RESPONSE_KEYS).sort(),
       );
     });
 
@@ -220,102 +153,6 @@ describe('Seat Allocation and Hold Contracts', () => {
       expect(byNumber.get(1)).toBe('SIDE_BY_SIDE');
       expect(byNumber.get(2)).toBe('SAME_COACH');
       expect(byNumber.get(3)).toBe('SPLIT');
-    });
-  });
-
-  describe('gRPC Serialization and Deserialization', () => {
-    it('round-trips HoldSeatsRequest', () => {
-      const service = serviceDefinition();
-      const request: HoldSeatsRequest = {
-        tripId: '11111111-1111-4111-8111-111111111111',
-        travelClassId: '22222222-2222-4222-8222-222222222222',
-        originStationId: '33333333-3333-4333-8333-333333333333',
-        destinationStationId: '44444444-4444-4444-8444-444444444444',
-        groupSize: 3,
-        ttlSeconds: 600,
-        bookingId: '55555555-5555-4555-8555-555555555555',
-      };
-
-      const encoded = service.HoldSeats.requestSerialize(request);
-      const decoded = service.HoldSeats.requestDeserialize(encoded);
-      expect(decoded).toEqual(request);
-    });
-
-    it('round-trips HoldSeatsResponse with SIDE_BY_SIDE outcome and no notice', () => {
-      const service = serviceDefinition({ enums: String, defaults: false });
-      const response: HoldSeatsResponse = {
-        holdId: 'hold-123',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 3,
-            seatNumber: '12',
-            rowNumber: 3,
-            label: 'Coach 3 · Seat 12',
-          },
-          {
-            seatId: 'seat-2',
-            coachNumber: 3,
-            seatNumber: '13',
-            rowNumber: 3,
-            label: 'Coach 3 · Seat 13',
-          },
-        ],
-        expiresAt: '2026-11-14T20:30:00.000Z',
-      };
-
-      const encoded = service.HoldSeats.responseSerialize(response);
-      const decoded = service.HoldSeats.responseDeserialize(encoded);
-      expect(decoded).toEqual(response);
-    });
-
-    it('round-trips HoldSeatsResponse with SPLIT outcome and SEATS_SPLIT_NOTICE', () => {
-      const service = serviceDefinition({ enums: String, defaults: false });
-      const response: HoldSeatsResponse = {
-        holdId: 'hold-456',
-        allocationOutcome: AllocationOutcome.SPLIT,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 2,
-            seatNumber: '5',
-            rowNumber: 2,
-            label: 'Coach 2 · Seat 5',
-          },
-          {
-            seatId: 'seat-2',
-            coachNumber: 4,
-            seatNumber: '8',
-            rowNumber: 2,
-            label: 'Coach 4 · Seat 8',
-          },
-        ],
-        expiresAt: '2026-11-14T20:30:00.000Z',
-        splitNotice: SEATS_SPLIT_NOTICE,
-      };
-
-      const encoded = service.HoldSeats.responseSerialize(response);
-      const decoded = service.HoldSeats.responseDeserialize(encoded);
-      expect(decoded).toEqual(response);
-    });
-
-    it('round-trips ReleaseSeatsRequest and ReleaseSeatsResponse', () => {
-      const service = serviceDefinition();
-      const request: ReleaseSeatsRequest = {
-        holdId: 'hold-123',
-      };
-      const response: ReleaseSeatsResponse = {
-        success: true,
-      };
-
-      const encodedReq = service.ReleaseSeats.requestSerialize(request);
-      const decodedReq = service.ReleaseSeats.requestDeserialize(encodedReq);
-      expect(decodedReq).toEqual(request);
-
-      const encodedRes = service.ReleaseSeats.responseSerialize(response);
-      const decodedRes = service.ReleaseSeats.responseDeserialize(encodedRes);
-      expect(decodedRes).toEqual(response);
     });
   });
 });
