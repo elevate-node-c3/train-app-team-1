@@ -15,6 +15,7 @@ import {
   sixStopPayload,
   withTwoCoachesNumbered,
 } from '../seats/seat-plan.fixture.js';
+import { WHOLE_TRIP } from '../seats/availability-publisher.service.js';
 import type { ApplyOutcome } from '../seats/seat-plan.repository.js';
 import { TripLifecycleConsumer } from './trip-lifecycle.consumer.js';
 
@@ -45,6 +46,7 @@ describe('TripLifecycleConsumer', () => {
   let repository: { apply: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
   let outbox: { append: ReturnType<typeof vi.fn> };
   let unitOfWork: { withTransaction: ReturnType<typeof vi.fn> };
+  let availability: { publishChange: ReturnType<typeof vi.fn> };
   let consumer: TripLifecycleConsumer;
 
   beforeEach(() => {
@@ -53,6 +55,7 @@ describe('TripLifecycleConsumer', () => {
       close: vi.fn().mockResolvedValue(undefined),
     };
     outbox = { append: vi.fn().mockResolvedValue(undefined) };
+    availability = { publishChange: vi.fn().mockResolvedValue(0) };
     unitOfWork = {
       withTransaction: vi.fn(
         (work: (ctx: TransactionContext) => Promise<unknown>) => work(ctx),
@@ -62,6 +65,7 @@ describe('TripLifecycleConsumer', () => {
       repository as never,
       unitOfWork as never,
       outbox as never,
+      availability as never,
     );
   });
 
@@ -94,6 +98,14 @@ describe('TripLifecycleConsumer', () => {
       ctx,
       expect.objectContaining({ type: 'inventory.trip.seats-created' }),
     );
+    // Same transaction as the plan: catalog cannot see new seats whose counts
+    // were never announced.
+    expect(availability.publishChange).toHaveBeenCalledWith(
+      ctx,
+      tripId,
+      WHOLE_TRIP,
+      'corr-1',
+    );
   });
 
   it('skips a stale version with the reason recorded', async () => {
@@ -107,6 +119,7 @@ describe('TripLifecycleConsumer', () => {
       skipReason: 'stale-version',
     });
     expect(outbox.append).not.toHaveBeenCalled();
+    expect(availability.publishChange).not.toHaveBeenCalled();
   });
 
   it('throws a plain error for an incomplete payload, so the platform retries', async () => {
