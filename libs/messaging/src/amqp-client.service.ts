@@ -26,11 +26,13 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
   private connection: amqp.ChannelModel | null = null;
   private channel: amqp.Channel | null = null;
   private confirmChannel: amqp.ConfirmChannel | null = null;
+  private confirmConnecting: Promise<amqp.ConfirmChannel> | null = null;
   private connecting: Promise<void> | null = null;
   private shuttingDown = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private readonly reconnectListeners = new Set<AmqpReconnectListener>();
   private readonly livenessProbes = new Set<() => AmqpLiveness>();
+  private readonly resourceListeners = new WeakMap<Closeable, () => void>();
 
   // Announce reconnects only after the first connection or a failed startup.
   private announceOpens = false;
@@ -69,7 +71,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     // Close old connection state before dialing again to avoid leaks.
     await this.teardown();
 
-    const connection = await amqp.connect(url);
+    const connection = await amqp.connect(url, { timeout: 5_000 });
     const channel = await connection.createChannel();
     this.connection = connection;
     this.channel = channel;
@@ -82,19 +84,18 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       this.connection = null;
       this.channel = null;
       this.confirmChannel = null;
+      this.confirmConnecting = null;
       // Consumer-only services need automatic reconnects.
       this.scheduleReconnect();
     };
-    connection.on('error', forgetConnection);
-    connection.on('close', forgetConnection);
+    this.watch(connection, forgetConnection);
 
     const forgetChannel = (): void => {
       if (this.channel === channel) {
         this.channel = null;
       }
     };
-    channel.on('error', forgetChannel);
-    channel.on('close', forgetChannel);
+    this.watch(channel, forgetChannel);
 
     const announce = this.announceOpens;
     this.announceOpens = true;
@@ -109,6 +110,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
     this.connection = null;
     this.channel = null;
     this.confirmChannel = null;
+    this.confirmConnecting = null;
 
     await this.release(confirmChannel);
     await this.release(channel);
@@ -120,12 +122,22 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     try {
-      // Remove listeners before closing to avoid reconnecting during teardown.
-      resource.removeAllListeners();
+      // Keep amqplib's internal close handler, which rejects pending confirms.
+      this.resourceListeners.get(resource)?.();
+      this.resourceListeners.delete(resource);
       await resource.close();
     } catch {
       // Ignore an already closed connection.
     }
+  }
+
+  private watch(resource: Closeable, forget: () => void): void {
+    resource.on('error', forget);
+    resource.on('close', forget);
+    this.resourceListeners.set(resource, () => {
+      resource.removeListener('error', forget);
+      resource.removeListener('close', forget);
+    });
   }
 
   /** Connection and channel errors share one reconnect timer. */
@@ -201,17 +213,43 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
       throw new Error('AMQP connection is not available');
     }
     if (!this.confirmChannel) {
-      const confirm = await this.connection.createConfirmChannel();
-      const forget = (): void => {
-        if (this.confirmChannel === confirm) {
-          this.confirmChannel = null;
-        }
-      };
-      confirm.on('error', forget);
-      confirm.on('close', forget);
-      this.confirmChannel = confirm;
+      const connection = this.connection;
+      if (!this.confirmConnecting) {
+        // Concurrent publishers must share one channel-opening handshake.
+        const opening = connection
+          .createConfirmChannel()
+          .then((confirm) => {
+            if (this.connection !== connection || this.shuttingDown) {
+              void this.release(confirm);
+              throw new Error(
+                'AMQP connection changed while opening confirm channel',
+              );
+            }
+            const forget = (): void => {
+              if (this.confirmChannel === confirm) {
+                this.confirmChannel = null;
+              }
+            };
+            this.watch(confirm, forget);
+            this.confirmChannel = confirm;
+            return confirm;
+          })
+          .finally(() => {
+            if (this.confirmConnecting === opening)
+              this.confirmConnecting = null;
+          });
+        this.confirmConnecting = opening;
+      }
+      return this.confirmConnecting;
     }
     return this.confirmChannel;
+  }
+
+  /** Stop reusing a stalled channel without waiting for its close handshake. */
+  invalidateConfirmChannel(channel: amqp.ConfirmChannel): void {
+    if (this.confirmChannel !== channel) return;
+    this.confirmChannel = null;
+    void this.release(channel);
   }
 
   private requireUrl(): string {
@@ -264,7 +302,7 @@ export class AmqpClientService implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown(): Promise<void> {
-    // Remove listeners before closing so teardown is not treated as an outage.
+    // Detach owned listeners so teardown is not treated as an outage.
     this.shuttingDown = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

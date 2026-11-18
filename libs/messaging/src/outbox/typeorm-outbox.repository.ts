@@ -7,7 +7,9 @@ import type { OutboxPort } from './outbox.port.js';
 import { appendParams, fromDbRow, type OutboxRow } from './outbox-row.js';
 import {
   CLAIM_OUTBOX_SQL,
+  INSERT_OUTBOX_BATCH_SQL,
   INSERT_OUTBOX_SQL,
+  MARK_OUTBOX_BATCH_PUBLISHED_SQL,
   MARK_OUTBOX_PUBLISHED_SQL,
   RECORD_OUTBOX_FAILURE_SQL,
 } from './outbox.sql.js';
@@ -37,6 +39,17 @@ export class TypeOrmOutboxRepository implements OutboxPort {
     ]);
   }
 
+  async appendBatch(
+    ctx: TransactionContext,
+    events: readonly EventEnvelope[],
+  ): Promise<void> {
+    if (events.length === 0) return;
+    // One JSON parameter keeps large expiry batches in the domain transaction.
+    await entityManagerOf(ctx).query(INSERT_OUTBOX_BATCH_SQL, [
+      JSON.stringify(events.map(appendParams)),
+    ]);
+  }
+
   async claimBatch(
     ctx: TransactionContext,
     limit: number,
@@ -51,15 +64,24 @@ export class TypeOrmOutboxRepository implements OutboxPort {
     await entityManagerOf(ctx).query(MARK_OUTBOX_PUBLISHED_SQL, [id]);
   }
 
+  async markPublishedBatch(
+    ctx: TransactionContext,
+    ids: readonly string[],
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    // Called only for confirmed IDs, still under the original claim locks.
+    await entityManagerOf(ctx).query(MARK_OUTBOX_BATCH_PUBLISHED_SQL, [ids]);
+  }
+
   async recordFailure(
     ctx: TransactionContext,
     id: string,
     lastError: string,
-    nextAttemptAt: Date,
+    retryDelayMs: number,
   ): Promise<void> {
     await entityManagerOf(ctx).query(RECORD_OUTBOX_FAILURE_SQL, [
       id,
-      nextAttemptAt.toISOString(),
+      retryDelayMs,
       lastError,
     ]);
   }

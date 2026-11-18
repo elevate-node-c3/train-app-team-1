@@ -32,6 +32,7 @@ export class OutboxRelayService
   private stopping = false;
   private timer: NodeJS.Timeout | null = null;
   private wake: (() => void) | null = null;
+  private batchFailed = false;
 
   constructor(
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
@@ -66,34 +67,44 @@ export class OutboxRelayService
   /** Testable batch without timers. */
   async runOnce(): Promise<number> {
     let published = 0;
+    this.batchFailed = false;
 
     await this.unitOfWork.withTransaction(async (ctx) => {
       const rows = await this.outbox.claimBatch(ctx, this.batchSize());
+      const concurrency = this.publishConcurrency();
+      const confirmed: string[] = [];
 
-      for (const row of rows) {
-        try {
-          await this.publishRow(row);
-          await this.outbox.markPublished(ctx, row.id);
-          published += 1;
-        } catch (error: unknown) {
+      for (let offset = 0; offset < rows.length; offset += concurrency) {
+        const window = rows.slice(offset, offset + concurrency);
+        // Bound in-flight confirms; settle every attempt before releasing its lock.
+        const results = await Promise.allSettled(
+          window.map((row) => this.publishRow(row)),
+        );
+        for (let index = 0; index < results.length; index += 1) {
+          const result = results[index];
+          const row = window[index];
+          if (result.status === 'fulfilled') {
+            confirmed.push(row.id);
+            continue;
+          }
+          this.batchFailed = true;
+          const error: unknown = result.reason;
           const message =
-            error instanceof Error ? error.message : String(error);
-          const nextAttemptAt = new Date(
-            Date.now() + relayBackoffMs(row.attemptCount + 1),
-          );
-          await this.outbox.recordFailure(
-            ctx,
-            row.id,
-            // Store the error message only, never the secret-bearing payload.
-            message,
-            nextAttemptAt,
-          );
+            error instanceof Error
+              ? error.message
+              : 'Broker confirmation failed';
+          const retryDelayMs = relayBackoffMs(row.attemptCount + 1);
+          await this.outbox.recordFailure(ctx, row.id, message, retryDelayMs);
           this.logger.warn(
-            `Outbox publish failed for ${row.id}; retrying at ${nextAttemptAt.toISOString()}: ${message}`,
+            `Outbox publish failed for ${row.id}; retrying in ${retryDelayMs}ms: ${message}`,
           );
-          break;
         }
+        if (this.batchFailed) break;
       }
+      // A database failure rolls back all marks; already confirmed IDs may replay.
+      if (confirmed.length > 0)
+        await this.outbox.markPublishedBatch(ctx, confirmed);
+      published = confirmed.length;
     });
 
     return published;
@@ -113,8 +124,9 @@ export class OutboxRelayService
     await this.schema.whenReady;
 
     while (!this.stopping) {
+      let published = 0;
       try {
-        await this.runOnce();
+        published = await this.runOnce();
       } catch (error: unknown) {
         // Keep polling after temporary database failures.
         this.logger.error(
@@ -125,7 +137,10 @@ export class OutboxRelayService
       }
 
       if (this.stopping) break;
-      await this.wait(this.pollIntervalMs());
+      // Drain healthy backlogs immediately; delay only idle or failed batches.
+      if (published === 0 || this.batchFailed) {
+        await this.wait(this.pollIntervalMs());
+      }
     }
   }
 
@@ -166,5 +181,12 @@ export class OutboxRelayService
   private batchSize(): number {
     const raw = Number(process.env.OUTBOX_BATCH_SIZE);
     return Number.isInteger(raw) && raw > 0 ? raw : OUTBOX_DEFAULTS.batchSize;
+  }
+
+  private publishConcurrency(): number {
+    const raw = Number(process.env.OUTBOX_PUBLISH_CONCURRENCY);
+    return Number.isInteger(raw) && raw > 0 && raw <= 64
+      ? raw
+      : OUTBOX_DEFAULTS.publishConcurrency;
   }
 }

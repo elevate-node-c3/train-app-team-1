@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope } from '@app/contracts';
 import {
   CLAIM_OUTBOX_SQL,
@@ -16,7 +16,7 @@ async function recordFailureStub(
   _ctx: TransactionContext,
   _id: string,
   _lastError: string,
-  _nextAttemptAt: Date,
+  _retryDelayMs: number,
 ): Promise<void> {}
 
 const EVENT: EventEnvelope = {
@@ -65,7 +65,113 @@ async function withPollInterval(
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+afterEach(() => vi.unstubAllEnvs());
+
+function pipelineHarness(
+  count: number,
+  publishConfirmed: (event: EventEnvelope) => Promise<void>,
+) {
+  const transaction = ctx();
+  const rows = Array.from({ length: count }, (_, index) =>
+    rowFrom(
+      appendParams({
+        ...EVENT,
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      }),
+    ),
+  );
+  const outbox = {
+    claimBatch: vi.fn(async () => rows),
+    markPublishedBatch: vi.fn(
+      async (_ctx: TransactionContext, _ids: readonly string[]) => {},
+    ),
+    recordFailure: vi.fn(recordFailureStub),
+  };
+  const relay = new OutboxRelayService(
+    {
+      withTransaction: async <T>(
+        work: (ctx: TransactionContext) => Promise<T>,
+      ) => work(transaction),
+    },
+    outbox as never,
+    { publishConfirmed } as never,
+    fakeCls(),
+    new SchemaReadinessGate(),
+  );
+  return { relay, outbox, transaction, ids: rows.map((row) => row.id) };
+}
+
 describe('Outbox relay (ADR-0001, ADR-0002)', () => {
+  it('bounds parallel confirms and marks the entire confirmed batch once', async () => {
+    vi.stubEnv('OUTBOX_PUBLISH_CONCURRENCY', '2');
+    const finish: (() => void)[] = [];
+    let active = 0;
+    let maximum = 0;
+    const publish = vi.fn(async (_event: EventEnvelope) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>((resolve) => finish.push(resolve));
+      active -= 1;
+    });
+    const h = pipelineHarness(5, publish);
+    const run = h.relay.runOnce();
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    finish[1]();
+    await Promise.resolve();
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(h.outbox.markPublishedBatch).not.toHaveBeenCalled();
+    finish[0]();
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(4));
+    finish[2]();
+    finish[3]();
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(5));
+    finish[4]();
+    await expect(run).resolves.toBe(5);
+    expect(maximum).toBe(2);
+    expect(h.outbox.markPublishedBatch).toHaveBeenCalledExactlyOnceWith(
+      h.transaction,
+      h.ids,
+    );
+  });
+
+  it('marks confirmed neighbours but retries a failed ID and stops new windows', async () => {
+    vi.stubEnv('OUTBOX_PUBLISH_CONCURRENCY', '2');
+    const publish = vi.fn(async (event: EventEnvelope) => {
+      if (event.id.endsWith('2'))
+        throw new Error('AMQP mandatory return 312 NO_ROUTE');
+    });
+    const h = pipelineHarness(4, publish);
+    await expect(h.relay.runOnce()).resolves.toBe(1);
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(h.outbox.markPublishedBatch).toHaveBeenCalledExactlyOnceWith(
+      h.transaction,
+      [h.ids[0]],
+    );
+    expect(h.outbox.recordFailure).toHaveBeenCalledExactlyOnceWith(
+      h.transaction,
+      h.ids[1],
+      'AMQP mandatory return 312 NO_ROUTE',
+      250,
+    );
+  });
+
+  it.each(['0', '65', 'NaN', '2.5'])(
+    'keeps invalid concurrency %s on the serial fallback',
+    async (value) => {
+      vi.stubEnv('OUTBOX_PUBLISH_CONCURRENCY', value);
+      let active = 0;
+      let maximum = 0;
+      const h = pipelineHarness(3, async () => {
+        active += 1;
+        maximum = Math.max(maximum, active);
+        await Promise.resolve();
+        active -= 1;
+      });
+      await expect(h.relay.runOnce()).resolves.toBe(3);
+      expect(maximum).toBe(1);
+    },
+  );
+
   it('claims rows with FOR UPDATE SKIP LOCKED', () => {
     expect(CLAIM_OUTBOX_SQL).toContain('FOR UPDATE SKIP LOCKED');
     expect(CLAIM_OUTBOX_SQL).toContain('published_at IS NULL');
@@ -83,10 +189,13 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
         expect(received).toBe(transaction);
         return rows;
       },
-      markPublished: async (received: TransactionContext, id: string) => {
-        calls.push('markPublished');
+      markPublishedBatch: async (
+        received: TransactionContext,
+        ids: readonly string[],
+      ) => {
+        calls.push('markPublishedBatch');
         expect(received).toBe(transaction);
-        expect(id).toBe(EVENT.id);
+        expect(ids).toEqual([EVENT.id]);
       },
       recordFailure: vi.fn(),
     };
@@ -109,7 +218,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     );
 
     await expect(relay.runOnce()).resolves.toBe(1);
-    expect(calls).toEqual(['claim', 'publishConfirmed', 'markPublished']);
+    expect(calls).toEqual(['claim', 'publishConfirmed', 'markPublishedBatch']);
     expect(outbox.recordFailure).not.toHaveBeenCalled();
   });
 
@@ -124,7 +233,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     const markPublished = vi.fn(async () => {});
     const outbox = {
       claimBatch: async () => rows,
-      markPublished,
+      markPublishedBatch: markPublished,
       recordFailure,
     };
     const publisher = {
@@ -149,13 +258,13 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(markPublished).not.toHaveBeenCalled();
     expect(recordFailure).toHaveBeenCalledTimes(1);
 
-    const [receivedCtx, id, message, nextAttemptAt] =
+    const [receivedCtx, id, message, retryDelayMs] =
       recordFailure.mock.calls[0];
     expect(receivedCtx).toBe(transaction);
     expect(id).toBe(EVENT.id);
     expect(message).toBe('broker rejected the publish');
     expect(message).not.toContain((EVENT.payload as { code: string }).code);
-    expect(nextAttemptAt).toBeInstanceOf(Date);
+    expect(retryDelayMs).toBe(relayBackoffMs(1));
   });
 
   it('never stores the payload in last_error', async () => {
@@ -169,7 +278,7 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
       },
       {
         claimBatch: async () => rows,
-        markPublished: vi.fn(),
+        markPublishedBatch: vi.fn(),
         recordFailure,
       } as any,
       {
@@ -189,6 +298,146 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
     expect(stored).not.toContain('user@example.com');
   });
 
+  it('retries the same envelope ID after a rejected confirmation', async () => {
+    const transaction = ctx();
+    const publishConfirmed = vi
+      .fn(async (_event: EventEnvelope) => {})
+      .mockRejectedValueOnce(new Error('AMQP mandatory return 312 NO_ROUTE'));
+    const markPublished = vi.fn(async () => {});
+    const recordFailure = vi.fn(recordFailureStub);
+    const relay = new OutboxRelayService(
+      {
+        withTransaction: async <T>(
+          work: (c: TransactionContext) => Promise<T>,
+        ) => work(transaction),
+      },
+      {
+        claimBatch: async () => [rowFrom(appendParams(EVENT))],
+        markPublishedBatch: markPublished,
+        recordFailure,
+      } as any,
+      { publishConfirmed } as any,
+      fakeCls(),
+      new SchemaReadinessGate(),
+    );
+
+    await expect(relay.runOnce()).resolves.toBe(0);
+    expect(markPublished).not.toHaveBeenCalled();
+    await expect(relay.runOnce()).resolves.toBe(1);
+    expect(publishConfirmed.mock.calls.map(([event]) => event)).toEqual([
+      EVENT,
+      EVENT,
+    ]);
+    expect(recordFailure).toHaveBeenCalledWith(
+      transaction,
+      EVENT.id,
+      'AMQP mandatory return 312 NO_ROUTE',
+      250,
+    );
+    expect(markPublished).toHaveBeenCalledWith(transaction, [EVENT.id]);
+  });
+
+  it('propagates a post-confirmation database failure without marking a broker failure', async () => {
+    const recordFailure = vi.fn(recordFailureStub);
+    const publishConfirmed = vi.fn(async () => {});
+    const relay = new OutboxRelayService(
+      {
+        withTransaction: async <T>(
+          work: (c: TransactionContext) => Promise<T>,
+        ) => work(ctx()),
+      },
+      {
+        claimBatch: async () => [rowFrom(appendParams(EVENT))],
+        markPublishedBatch: vi.fn(async () => {
+          throw new Error('database connection lost');
+        }),
+        recordFailure,
+      } as any,
+      { publishConfirmed } as any,
+      fakeCls(),
+      new SchemaReadinessGate(),
+    );
+
+    await expect(relay.runOnce()).rejects.toThrow('database connection lost');
+    expect(publishConfirmed).toHaveBeenCalledTimes(1);
+    expect(recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('drains consecutive nonempty successful batches before the idle delay', async () => {
+    vi.useFakeTimers();
+    try {
+      await withPollInterval(1_000, async () => {
+        const relay = new OutboxRelayService(
+          { withTransaction: vi.fn() } as any,
+          {} as any,
+          {} as any,
+          fakeCls(),
+          new SchemaReadinessGate(),
+        );
+        const runOnce = vi
+          .spyOn(relay, 'runOnce')
+          .mockResolvedValue(0)
+          .mockResolvedValueOnce(2)
+          .mockResolvedValueOnce(1);
+        const wait = vi.spyOn(relay as any, 'wait');
+        try {
+          relay.onApplicationBootstrap();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(runOnce).toHaveBeenCalledTimes(3);
+          expect(wait).toHaveBeenCalledExactlyOnceWith(1_000);
+          await vi.advanceTimersByTimeAsync(999);
+          expect(runOnce).toHaveBeenCalledTimes(3);
+        } finally {
+          await relay.beforeApplicationShutdown();
+        }
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('delays a partially successful batch that ended in a publish failure', async () => {
+    vi.useFakeTimers();
+    try {
+      await withPollInterval(1_000, async () => {
+        const claimBatch = vi.fn(async () => [
+          rowFrom(appendParams(EVENT)),
+          rowFrom(appendParams({ ...EVENT, id: 'second' })),
+        ]);
+        const publishConfirmed = vi.fn(async (event: EventEnvelope) => {
+          if (event.id === 'second') throw new Error('broker disconnected');
+        });
+        const relay = new OutboxRelayService(
+          {
+            withTransaction: async <T>(
+              work: (c: TransactionContext) => Promise<T>,
+            ) => work(ctx()),
+          },
+          {
+            claimBatch,
+            markPublishedBatch: vi.fn(async () => {}),
+            recordFailure: vi.fn(recordFailureStub),
+          } as any,
+          { publishConfirmed } as any,
+          fakeCls(),
+          new SchemaReadinessGate(),
+        );
+        try {
+          relay.onApplicationBootstrap();
+          await vi.advanceTimersByTimeAsync(0);
+          expect(claimBatch).toHaveBeenCalledTimes(1);
+          expect(publishConfirmed).toHaveBeenCalledTimes(2);
+          await vi.advanceTimersByTimeAsync(999);
+          expect(claimBatch).toHaveBeenCalledTimes(1);
+        } finally {
+          await relay.beforeApplicationShutdown();
+        }
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Wait for migrations before the first claim touches its table.
   it('does not claim rows until the schema is settled', async () => {
     const gate = new SchemaReadinessGate();
@@ -203,7 +452,11 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
             work: (c: TransactionContext) => Promise<T>,
           ) => work(ctx()),
         },
-        { claimBatch, markPublished: vi.fn(), recordFailure: vi.fn() } as any,
+        {
+          claimBatch,
+          markPublishedBatch: vi.fn(),
+          recordFailure: vi.fn(),
+        } as any,
         { publishConfirmed: vi.fn() } as any,
         fakeCls(),
         gate,
@@ -240,7 +493,11 @@ describe('Outbox relay (ADR-0001, ADR-0002)', () => {
             work: (c: TransactionContext) => Promise<T>,
           ) => work(ctx()),
         },
-        { claimBatch, markPublished: vi.fn(), recordFailure: vi.fn() } as any,
+        {
+          claimBatch,
+          markPublishedBatch: vi.fn(),
+          recordFailure: vi.fn(),
+        } as any,
         { publishConfirmed: vi.fn() } as any,
         fakeCls(),
         gate,
