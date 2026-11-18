@@ -11,14 +11,18 @@ const URL = 'amqp://guest:guest@localhost:5672';
 
 /** Real EventEmitters let tests check listener removal from old connections. */
 class FakeChannel extends EventEmitter {
-  close = vi.fn(async () => {});
+  close = vi.fn(async () => {
+    this.emit('close');
+  });
   assertQueue = vi.fn(async () => ({ queue: 'amq.gen-probe' }));
   deleteQueue = vi.fn(async () => {});
 }
 
 class FakeConnection extends EventEmitter {
   readonly channels: FakeChannel[] = [];
-  close = vi.fn(async () => {});
+  close = vi.fn(async () => {
+    this.emit('close');
+  });
   createChannel = vi.fn(async () => {
     const channel = new FakeChannel();
     this.channels.push(channel);
@@ -46,6 +50,8 @@ describe('AmqpClientService connection replacement', () => {
 
     const client = new AmqpClientService();
     await client.connect(URL);
+
+    expect(connect).toHaveBeenCalledWith(URL, { timeout: 5_000 });
 
     // Replace dead channels without leaking their surviving connection.
     first.channels[0].emit('close');
@@ -75,6 +81,102 @@ describe('AmqpClientService connection replacement', () => {
 
     expect(await client.ensureChannel()).toBe(second.channels[0]);
     expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the internal confirm-close listener during channel replacement', async () => {
+    const first = new FakeConnection();
+    const second = new FakeConnection();
+    connect.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const client = new AmqpClientService();
+    await client.connect(URL);
+    const confirm =
+      (await client.ensureConfirmChannel()) as unknown as FakeChannel;
+    let rejectPending: (error: Error) => void = () => {};
+    const pending = new Promise<void>((_resolve, reject) => {
+      rejectPending = reject;
+    });
+    const internalClose = vi.fn(() =>
+      rejectPending(new Error('channel closed')),
+    );
+    const internalAck = vi.fn();
+    const internalNack = vi.fn();
+    confirm.on('close', internalClose);
+    confirm.on('ack', internalAck);
+    confirm.on('nack', internalNack);
+    const rejected = expect(pending).rejects.toThrow('channel closed');
+
+    first.channels[0].emit('close');
+    await client.ensureChannel();
+    await rejected;
+
+    expect(internalClose).toHaveBeenCalledTimes(1);
+    expect(confirm.listeners('close')).toContain(internalClose);
+    expect(confirm.listeners('ack')).toContain(internalAck);
+    expect(confirm.listeners('nack')).toContain(internalNack);
+    expect(confirm.close).toHaveBeenCalledTimes(1);
+    await client.onApplicationShutdown();
+  });
+
+  it('shares one confirm-channel handshake across concurrent publishers', async () => {
+    const connection = new FakeConnection();
+    connect.mockResolvedValueOnce(connection);
+    const client = new AmqpClientService();
+    await client.connect(URL);
+
+    const [first, second] = await Promise.all([
+      client.ensureConfirmChannel(),
+      client.ensureConfirmChannel(),
+    ]);
+
+    expect(first).toBe(second);
+    expect(connection.createConfirmChannel).toHaveBeenCalledTimes(1);
+    await client.onApplicationShutdown();
+  });
+
+  it('invalidates a stalled confirm channel without clearing its replacement', async () => {
+    const connection = new FakeConnection();
+    connect.mockResolvedValueOnce(connection);
+    const client = new AmqpClientService();
+    await client.connect(URL);
+    const first =
+      (await client.ensureConfirmChannel()) as unknown as FakeChannel;
+
+    client.invalidateConfirmChannel(first as any);
+    const second = await client.ensureConfirmChannel();
+    first.emit('close');
+
+    expect(second).not.toBe(first);
+    expect(await client.ensureConfirmChannel()).toBe(second);
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(connection.createConfirmChannel).toHaveBeenCalledTimes(2);
+    await client.onApplicationShutdown();
+  });
+
+  it('closes a confirm channel that finishes opening on a replaced connection', async () => {
+    const first = new FakeConnection();
+    const second = new FakeConnection();
+    let release: (channel: FakeChannel) => void = () => {};
+    first.createConfirmChannel.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    connect.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const client = new AmqpClientService();
+    await client.connect(URL);
+    const opening = client.ensureConfirmChannel();
+    const rejected = expect(opening).rejects.toThrow('connection changed');
+
+    first.channels[0].emit('close');
+    await client.ensureChannel();
+    const stale = new FakeChannel();
+    release(stale);
+    await rejected;
+
+    expect(stale.close).toHaveBeenCalledTimes(1);
+    expect(await client.ensureConfirmChannel()).not.toBe(stale);
+    await client.onApplicationShutdown();
   });
 
   it('notifies reconnect listeners on replacement but not on first connect', async () => {

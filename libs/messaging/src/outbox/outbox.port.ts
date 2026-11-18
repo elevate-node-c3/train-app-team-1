@@ -6,4 +6,8 @@ export const OUTBOX = Symbol('OUTBOX');
 
 export interface OutboxPort {
   append(ctx: TransactionContext, envelope: EventEnvelope): Promise<void>;
+  appendBatch(
+    ctx: TransactionContext,
+    events: readonly EventEnvelope[],
+  ): Promise<void>;
 }

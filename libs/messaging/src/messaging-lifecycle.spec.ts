@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConsumeMessage } from 'amqplib';
 import { CORRELATION_ID_HEADER as COMMON_CORRELATION_ID_HEADER } from '@app/common';
@@ -49,21 +50,17 @@ describe('Messaging lifecycle (ADR-0003, ADR-0004)', () => {
   it('closes the channels only at onApplicationShutdown, after acks', async () => {
     const calls: string[] = [];
     const client = new AmqpClientService() as any;
-    // Fakes need removeAllListeners because closing detaches handlers first.
     client.confirmChannel = {
-      removeAllListeners: () => {},
       close: async () => {
         calls.push('confirm-close');
       },
     };
     client.channel = {
-      removeAllListeners: () => {},
       close: async () => {
         calls.push('channel-close');
       },
     };
     client.connection = {
-      removeAllListeners: () => {},
       close: async () => {
         calls.push('connection-close');
       },
@@ -361,23 +358,24 @@ describe('Producer topology re-assertion', () => {
       payload: {},
     };
 
-    const newChannel = () => ({
-      assertExchange: vi.fn(async () => {}),
-      assertQueue: vi.fn(async () => {}),
-      bindQueue: vi.fn(async () => {}),
-      publish: vi.fn(
-        (
-          _exchange: string,
-          _key: string,
-          _body: Buffer,
-          _opts: unknown,
-          cb: (error: unknown) => void,
-        ) => {
-          cb(null);
-          return true;
-        },
-      ),
-    });
+    const newChannel = () =>
+      Object.assign(new EventEmitter(), {
+        assertExchange: vi.fn(async () => {}),
+        assertQueue: vi.fn(async () => {}),
+        bindQueue: vi.fn(async () => {}),
+        publish: vi.fn(
+          (
+            _exchange: string,
+            _key: string,
+            _body: Buffer,
+            _opts: unknown,
+            cb: (error: unknown) => void,
+          ) => {
+            cb(null);
+            return true;
+          },
+        ),
+      });
 
     const first = newChannel();
     const second = newChannel();
