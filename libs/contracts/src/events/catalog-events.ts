@@ -71,3 +71,8 @@ export interface SeatAvailabilityChangedPayloadV1 {
   travelClassId: string;
   availableSeats: number;
 }
+
+export type SeatAvailabilityChangedEvent = EventEnvelope<
+  typeof SEAT_AVAILABILITY_CHANGED_EVENT_TYPE,
+  SeatAvailabilityChangedPayloadV1
+>;
