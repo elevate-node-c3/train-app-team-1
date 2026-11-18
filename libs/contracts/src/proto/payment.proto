@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package train.payment.v1;
+
+service PaymentService {
+  // Booking applies an 1800ms gRPC deadline and retries with the same key.
+  rpc StartCharge (StartChargeRequest) returns (StartChargeResponse);
+  // Cancellation compensation applies an 1800ms deadline and retries with the same key.
+  rpc CancelCharge (CancelChargeRequest) returns (CancelChargeResponse);
+}
+
+message StartChargeRequest {
+  string bookingReference = 1;
+  int32 amountPiastres = 2;
+  string currency = 3;
+  string idempotencyKey = 4;
+}
+
+message StartChargeResponse {
+  string paymentReference = 1;
+  string status = 2;
+}
+
+message CancelChargeRequest {
+  string bookingReference = 1;
+  string paymentReference = 2;
+  string idempotencyKey = 3;
+}
+
+message CancelChargeResponse {
+  string status = 1;
+}
