@@ -27,6 +27,22 @@ export const CONSTRAINT_ISSUE_KEYS: Record<string, string> = {
 };
 
 export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
+  ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_COMPOSITION: {
+    ar: 'سيؤدي النشر إلى تغيير عربات أو درجات أو مقاعد رحلة بها حجوزات نشطة.',
+    en: 'Publishing would change coaches, classes, or seats on a trip with active reservations.',
+  },
+  ACTION_KEEP_IN_USE_COMPOSITION_OR_PUBLISH_LATER: {
+    ar: 'احتفظ بتكوين الرحلة الحالي أو انشر التغيير بعد انتهاء الحجوزات النشطة.',
+    en: 'Keep the current trip composition or publish after active reservations end.',
+  },
+  ISSUE_PASSENGER_ALREADY_TRAVELLING: {
+    ar: 'الراكب صاحب الرقم القومي {{maskedNationalId}} لديه مقعد بالفعل على جزء متداخل من هذه الرحلة.',
+    en: 'Passenger {{maskedNationalId}} already has a seat on an overlapping part of this trip.',
+  },
+  ACTION_CHANGE_PASSENGER_OR_TRIP: {
+    ar: 'غيّر الراكب أو اختر رحلة أخرى، أو حرّر الحجز القائم أولاً.',
+    en: 'Change the passenger or trip, or release the existing reservation first.',
+  },
   ISSUE_STATION_NOT_FOUND: {
     ar: 'هذه المحطة غير موجودة في قائمة المحطات.',
     en: 'This station does not exist in the station catalog.',

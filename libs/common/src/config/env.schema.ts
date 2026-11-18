@@ -2,6 +2,8 @@ import Joi from 'joi';
 
 export const SECRET_KEYS = new Set([
   'DATABASE_URL',
+  'RABBITMQ_URL',
+  'REDIS_URL',
   'POSTGRES_PASSWORD',
   'RABBITMQ_PASSWORD',
   'CATALOG_DB_PASSWORD',
@@ -11,6 +13,12 @@ export const SECRET_KEYS = new Set([
   'BOOKING_DB_PASSWORD',
   'PAYMENT_DB_PASSWORD',
   'NOTIFICATION_DB_PASSWORD',
+  'GATEWAY_BOOKING_SERVICE_KEY',
+  'BOOKING_INVENTORY_SERVICE_KEY',
+  'BOOKING_IDENTITY_SERVICE_KEY',
+  'HOLD_PASSENGER_TOKEN_KEYS',
+  'NATIONAL_ID_ENCRYPTION_KEYS',
+  'NATIONAL_ID_BLIND_INDEX_KEY',
 ]);
 
 /** Shared boot settings only; service-specific schemas stay with each service. */

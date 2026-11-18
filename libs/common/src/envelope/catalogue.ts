@@ -264,6 +264,44 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'لا يمكن تعديل الرقم القومي بعد إصدار التذكرة',
     en: 'National ID cannot be changed once a ticket has been issued',
   },
+
+  // Atomic hold lifecycle (MT-02/MT-03)
+  [ErrorCode.INSUFFICIENT_SEATS]: {
+    ar: 'لا توجد مقاعد متاحة كافية في الدرجة المطلوبة لهذه الرحلة، يرجى اختيار درجة أخرى أو رحلة مختلفة',
+    en: 'There are not enough seats left in the requested class for this trip; please choose another class or trip',
+  },
+  [ErrorCode.SEAT_ALREADY_TAKEN]: {
+    ar: 'تم حجز أحد المقاعد المطلوبة للتو، يرجى إعادة المحاولة',
+    en: 'One of the requested seats was just taken; please try again',
+  },
+  [ErrorCode.SEAT_TAKEN]: {
+    ar: 'تم حجز المقعد المطلوب للتو، يرجى إعادة المحاولة',
+    en: 'The requested seat was just taken; please try again',
+  },
+  [ErrorCode.PASSENGER_OVERLAP]: {
+    ar: 'لدى أحد المسافرين حجز آخر متداخل على هذه الرحلة، يرجى مراجعة بيانات المسافرين',
+    en: 'One of the passengers already has an overlapping booking on this trip; please review the passenger details',
+  },
+  [ErrorCode.SALES_CLOSED]: {
+    ar: 'انتهت فترة بيع التذاكر لهذه الرحلة، يرجى اختيار رحلة أخرى',
+    en: 'Ticket sales for this trip have closed; please choose another trip',
+  },
+  [ErrorCode.HOLD_TERMINAL]: {
+    ar: 'انتهت صلاحية هذا الحجز أو تم إلغاؤه، يرجى بدء حجز جديد',
+    en: 'This hold has expired or was released; please start a new booking',
+  },
+  [ErrorCode.EXTENSION_NOT_ALLOWED]: {
+    ar: 'لا يمكن تمديد هذا الحجز مرة أخرى أو لا توجد مدة إضافية متاحة',
+    en: 'This hold cannot be extended again or has no additional time available',
+  },
+  [ErrorCode.BOOKING_KEY_CONFLICT]: {
+    ar: 'تم استخدام مفتاح الحجز هذا لطلب مختلف، يرجى استخدام مفتاح جديد',
+    en: 'This booking key was already used for a different request; please use a new key',
+  },
+  [ErrorCode.HOLD_NOT_FOUND]: {
+    ar: 'لا يوجد حجز بهذا المفتاح',
+    en: 'No hold exists for this booking key',
+  },
 };
 
 /** Defaults to Arabic for missing, unsupported or wildcard Accept-Language. */
