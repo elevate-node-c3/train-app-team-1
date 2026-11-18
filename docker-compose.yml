@@ -20,6 +20,17 @@ x-service: &service
 services:
   postgres:
     image: postgres:17-alpine
+    # Constraint DETAIL and failing SQL can contain National-ID comparison tokens.
+    command:
+      [
+        'postgres',
+        '-c',
+        'log_error_verbosity=terse',
+        '-c',
+        'log_min_error_statement=panic',
+        '-c',
+        'log_parameter_max_length_on_error=0',
+      ]
     restart: unless-stopped
     environment:
       # Admin and healthcheck credentials; never used by app services.
@@ -118,6 +129,8 @@ services:
       IDENTITY_GRPC_URL: ${IDENTITY_GRPC_URL:-identity:50051}
       INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
       BOOKING_GRPC_URL: ${BOOKING_GRPC_URL:-booking:50051}
+      BOOKING_SERVICE_URL: ${BOOKING_SERVICE_URL:-http://booking:3000}
+      GATEWAY_BOOKING_SERVICE_KEY: ${GATEWAY_BOOKING_SERVICE_KEY:-}
       PAYMENT_GRPC_URL: ${PAYMENT_GRPC_URL:-payment:50051}
       NOTIFICATION_GRPC_URL: ${NOTIFICATION_GRPC_URL:-notification:50051}
       JWT_KEY_ID: ${JWT_KEY_ID:-dev-1}
@@ -145,6 +158,12 @@ services:
       REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
       REFRESH_TOKEN_GRACE_SECONDS: ${REFRESH_TOKEN_GRACE_SECONDS:-10}
       TOKEN_GRACE_SECRET: ${TOKEN_GRACE_SECRET:-change-me-in-production}
+      BOOKING_IDENTITY_SERVICE_KEY: ${BOOKING_IDENTITY_SERVICE_KEY:-}
+      HOLD_PASSENGER_TOKEN_KEYS: ${HOLD_PASSENGER_TOKEN_KEYS:-}
+      HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: ${HOLD_PASSENGER_TOKEN_ACTIVE_VERSION:-}
+      NATIONAL_ID_ACTIVE_KEY_VERSION: ${NATIONAL_ID_ACTIVE_KEY_VERSION:-}
+      NATIONAL_ID_ENCRYPTION_KEYS: ${NATIONAL_ID_ENCRYPTION_KEYS:-}
+      NATIONAL_ID_BLIND_INDEX_KEY: ${NATIONAL_ID_BLIND_INDEX_KEY:-}
       JWT_PRIVATE_KEY_FILE: /app/config/jwt/dev-private.pem
     volumes:
       # Only identity can sign tokens.
@@ -159,6 +178,16 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://inventory:${INVENTORY_DB_PASSWORD:-inventory_dev}@postgres:5432/inventory
+      HOLD_CREATION_ENABLED: ${HOLD_CREATION_ENABLED:-false}
+      BOOKING_INVENTORY_SERVICE_KEY: ${BOOKING_INVENTORY_SERVICE_KEY:-}
+      HOLD_EXPIRY_WORKER_ENABLED: ${HOLD_EXPIRY_WORKER_ENABLED:-true}
+      HOLD_EXPIRY_BATCH_SIZE: ${HOLD_EXPIRY_BATCH_SIZE:-500}
+      HOLD_EXPIRY_POLL_INTERVAL_MS: ${HOLD_EXPIRY_POLL_INTERVAL_MS:-250}
+      OUTBOX_RELAY_ENABLED: ${OUTBOX_RELAY_ENABLED:-true}
+      OUTBOX_BATCH_SIZE: ${INVENTORY_OUTBOX_BATCH_SIZE:-100}
+      OUTBOX_POLL_INTERVAL_MS: ${INVENTORY_OUTBOX_POLL_INTERVAL_MS:-100}
+      OUTBOX_PUBLISH_CONCURRENCY: ${INVENTORY_OUTBOX_PUBLISH_CONCURRENCY:-32}
+      AMQP_PUBLISH_CONFIRM_TIMEOUT_MS: ${AMQP_PUBLISH_CONFIRM_TIMEOUT_MS:-5000}
 
   booking:
     <<: *service
@@ -169,6 +198,11 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://booking:${BOOKING_DB_PASSWORD:-booking_dev}@postgres:5432/booking
+      INVENTORY_GRPC_URL: ${INVENTORY_GRPC_URL:-inventory:50051}
+      IDENTITY_GRPC_URL: ${IDENTITY_GRPC_URL:-identity:50051}
+      GATEWAY_BOOKING_SERVICE_KEY: ${GATEWAY_BOOKING_SERVICE_KEY:-}
+      BOOKING_INVENTORY_SERVICE_KEY: ${BOOKING_INVENTORY_SERVICE_KEY:-}
+      BOOKING_IDENTITY_SERVICE_KEY: ${BOOKING_IDENTITY_SERVICE_KEY:-}
 
   payment:
     <<: *service
