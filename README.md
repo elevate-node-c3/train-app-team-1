@@ -10,6 +10,8 @@ command.
 >
 > **Authentication complete**: the verification code completes sign-up and returns the first RS256 token pair. The gateway enforces deny-by-default JWT access, shared rate limits, and prompt session revocation; sign-in, refresh rotation with a 10-second replay window, sign-out and password recovery are live under `/api/v1/auth`.
 
+> **MT-02 seat holds**: the existing SEAT-2 allocator now sits behind a single atomic, all-leg hold operation. Gateway bookable admission, private Identity passenger tokens, durable Booking intents, database-owned expiry, and retryable lifecycle events are described in [Inventory MT-02](apps/inventory/README.md#mt-02-current-hold-lifecycle). New creation is deliberately disabled until the documented credentials and rollout checks are complete.
+
 ## The services
 
 | Service | Role |
@@ -57,9 +59,9 @@ docker compose run --rm seeder
 It seeds every service's database -- the BR-01 operator and conductor, catalog's
 network, and its trips -- and is safe to run again: nothing is duplicated.
 
-Every variable also has the same default baked into `docker-compose.yml`, so
-`docker compose up` on its own works too — copying `.env` is what lets you
-change ports or credentials.
+Infrastructure defaults are also provided in `docker-compose.yml`. Private
+MT-02 service credentials and passenger-token keys have no development fallback;
+provision them explicitly before enabling `HOLD_CREATION_ENABLED`.
 
 ### What comes up
 
