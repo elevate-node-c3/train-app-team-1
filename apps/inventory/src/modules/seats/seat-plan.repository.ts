@@ -9,11 +9,16 @@ import { parseInt4Range, stationsInUse } from './segment.js';
 import type { SeatPlan } from './seat-plan.js';
 
 export type ApplyOutcome =
-  | { kind: 'created'; seatCount: number; seatCountByClass: Record<string, number> }
+  | {
+      kind: 'created';
+      seatCount: number;
+      seatCountByClass: Record<string, number>;
+    }
   | { kind: 'skipped'; reason: 'stale-version' }
   | {
       kind: 'refused';
-      reason: 'occupied-seats-dropped' | 'stops-changed';
+      reason:
+        'occupied-seats-dropped' | 'stops-changed' | 'hold-promise-changed';
       occupiedSeatNumbers: string[];
       occupiedStationIds: string[];
     };
@@ -70,7 +75,13 @@ export class SeatPlanRepository {
          WHERE inventory_trip.status <> 'closed'
            AND inventory_trip.timetable_version < EXCLUDED.timetable_version
        RETURNING id`,
-      [plan.tripId, plan.timetableVersion, plan.trainId, plan.trainNumber, plan.serviceDate],
+      [
+        plan.tripId,
+        plan.timetableVersion,
+        plan.trainId,
+        plan.trainNumber,
+        plan.serviceDate,
+      ],
     );
 
     if (upserted.length === 0) {
@@ -79,7 +90,18 @@ export class SeatPlanRepository {
       return { kind: 'skipped', reason: 'stale-version' };
     }
 
-    const refusal = await this.refusalFor(manager, plan);
+    // The trip upsert owns the same lock used by holds. Expired occupations
+    // no longer protect a layout; their durable head/event remains for expiry.
+    await manager.query(
+      `UPDATE seat_occupation
+       SET released_at = clock_timestamp(), updated_at = clock_timestamp()
+       WHERE trip_id = $1 AND state = 'held'
+         AND released_at IS NULL AND hold_expires_at <= clock_timestamp()`,
+      [plan.tripId],
+    );
+    const refusal =
+      (await this.holdPromiseRefusal(manager, plan)) ??
+      (await this.refusalFor(manager, plan));
     if (refusal) {
       await manager.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
       await manager.query(`RELEASE SAVEPOINT ${savepoint}`);
@@ -137,7 +159,9 @@ export class SeatPlanRepository {
       plan.coaches.map((coach) => [coach.id, coach.coachNumber]),
     );
     return new Set(
-      plan.seats.map((seat) => `${coachNumberById.get(seat.coachId)}:${seat.seatNumber}`),
+      plan.seats.map(
+        (seat) => `${coachNumberById.get(seat.coachId)}:${seat.seatNumber}`,
+      ),
     );
   }
 
@@ -151,6 +175,61 @@ export class SeatPlanRepository {
        WHERE ts.trip_id = $1`,
       [tripId],
     );
+  }
+
+  /** Never shorten an active hold's promised sale window or change its class. */
+  private async holdPromiseRefusal(
+    manager: EntityManager,
+    plan: SeatPlan,
+  ): Promise<ApplyOutcome | null> {
+    const promised: {
+      originStationId: string;
+      expiresAt: Date;
+      coachNumber: number;
+      seatNumber: string;
+      travelClassId: string;
+    }[] = await manager.query(
+      `SELECT a.origin_station_id AS "originStationId", h.expires_at AS "expiresAt",
+              a.coach_number AS "coachNumber", a.seat_number AS "seatNumber",
+              a.travel_class_id AS "travelClassId"
+       FROM seat_hold_group h
+       JOIN seat_hold_assignment a ON a.hold_id = h.id
+       WHERE a.trip_id = $1 AND h.state = 'held' AND h.expires_at > clock_timestamp()`,
+      [plan.tripId],
+    );
+    const coachNumbers = new Map(
+      plan.coaches.map((coach) => [coach.id, coach.coachNumber]),
+    );
+    const plannedSeats = new Map(
+      plan.seats.map((seat) => [
+        `${coachNumbers.get(seat.coachId)}:${seat.seatNumber}`,
+        seat,
+      ]),
+    );
+    const incompatible = promised.filter((promise) => {
+      const departure = plan.stops.find(
+        (stop) => stop.stationId === promise.originStationId,
+      )?.departureAt;
+      const seat = plannedSeats.get(
+        `${promise.coachNumber}:${promise.seatNumber}`,
+      );
+      return (
+        !departure ||
+        departure.getTime() - 15 * 60_000 < promise.expiresAt.getTime() ||
+        (seat !== undefined && seat.travelClassId !== promise.travelClassId)
+      );
+    });
+    if (incompatible.length === 0) return null;
+    return {
+      kind: 'refused',
+      reason: 'hold-promise-changed',
+      occupiedSeatNumbers: [
+        ...new Set(incompatible.map((promise) => promise.seatNumber)),
+      ],
+      occupiedStationIds: [
+        ...new Set(incompatible.map((promise) => promise.originStationId)),
+      ],
+    };
   }
 
   /**
@@ -256,8 +335,13 @@ export class SeatPlanRepository {
   }
 
   /** Stops carry no occupation; always replace them with the plan's current order. */
-  private async replaceStops(manager: EntityManager, plan: SeatPlan): Promise<void> {
-    await manager.query(`DELETE FROM trip_stop WHERE trip_id = $1`, [plan.tripId]);
+  private async replaceStops(
+    manager: EntityManager,
+    plan: SeatPlan,
+  ): Promise<void> {
+    await manager.query(`DELETE FROM trip_stop WHERE trip_id = $1`, [
+      plan.tripId,
+    ]);
     if (plan.stops.length === 0) return;
 
     const values: string[] = [];
@@ -267,7 +351,13 @@ export class SeatPlanRepository {
       values.push(
         `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`,
       );
-      params.push(plan.tripId, stop.position, stop.stationId, stop.arrivalAt, stop.departureAt);
+      params.push(
+        plan.tripId,
+        stop.position,
+        stop.stationId,
+        stop.arrivalAt,
+        stop.departureAt,
+      );
     });
 
     await manager.query(
@@ -292,17 +382,22 @@ export class SeatPlanRepository {
       // refusalFor already proved none of these are actively occupied, so any
       // remaining seat_occupation rows here are released; RESTRICT still
       // blocks the seat delete until those released rows go too.
-      await manager.query(`DELETE FROM seat_occupation WHERE trip_seat_id = ANY($1::uuid[])`, [
+      await manager.query(
+        `DELETE FROM seat_occupation WHERE trip_seat_id = ANY($1::uuid[])`,
+        [droppedSeatIds],
+      );
+      await manager.query(`DELETE FROM trip_seat WHERE id = ANY($1::uuid[])`, [
         droppedSeatIds,
       ]);
-      await manager.query(`DELETE FROM trip_seat WHERE id = ANY($1::uuid[])`, [droppedSeatIds]);
     }
 
     const existingCoaches: ExistingCoachRow[] = await manager.query(
       `SELECT id, coach_number AS "coachNumber" FROM trip_coach WHERE trip_id = $1`,
       [plan.tripId],
     );
-    const desiredCoachNumbers = new Set(plan.coaches.map((coach) => coach.coachNumber));
+    const desiredCoachNumbers = new Set(
+      plan.coaches.map((coach) => coach.coachNumber),
+    );
     const droppedCoachNumbers = existingCoaches
       .filter((coach) => !desiredCoachNumbers.has(coach.coachNumber))
       .map((coach) => coach.coachNumber);
@@ -387,9 +482,14 @@ export class SeatPlanRepository {
 
     plan.seats.forEach((seat, index) => {
       const coachNumber = coachNumberById.get(seat.coachId);
-      const coachId = coachNumber === undefined ? undefined : coachIdByNumber.get(coachNumber);
+      const coachId =
+        coachNumber === undefined
+          ? undefined
+          : coachIdByNumber.get(coachNumber);
       if (!coachId) {
-        throw new Error(`Seat ${seat.id} names coach ${seat.coachId}, which is not in this plan`);
+        throw new Error(
+          `Seat ${seat.id} names coach ${seat.coachId}, which is not in this plan`,
+        );
       }
 
       const offset = index * 8;

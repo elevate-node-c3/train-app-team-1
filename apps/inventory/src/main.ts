@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
+import { setupApp, validateEnv } from '@app/common';
 import {
   getHealthProtoPath,
   getInventoryProtoPath,
@@ -8,8 +8,23 @@ import {
   INVENTORY_PACKAGE_NAME,
 } from '@app/contracts';
 import { InventoryModule } from './inventory.module.js';
+import { inventoryEnvSchema } from './config/inventory-env.schema.js';
 
-validateEnv(commonEnvSchema, process.env, 'inventory');
+const settings = validateEnv(inventoryEnvSchema, process.env, 'inventory');
+// Apply validated non-secret flags and Inventory's measured relay settings.
+for (const key of [
+  'HOLD_CREATION_ENABLED',
+  'HOLD_EXPIRY_WORKER_ENABLED',
+  'HOLD_EXPIRY_BATCH_SIZE',
+  'HOLD_EXPIRY_POLL_INTERVAL_MS',
+  'OUTBOX_RELAY_ENABLED',
+  'OUTBOX_BATCH_SIZE',
+  'OUTBOX_POLL_INTERVAL_MS',
+  'OUTBOX_PUBLISH_CONCURRENCY',
+  'AMQP_PUBLISH_CONFIRM_TIMEOUT_MS',
+]) {
+  process.env[key] = String(settings[key]);
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(InventoryModule, { bufferLogs: true });
