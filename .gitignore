@@ -38,6 +38,7 @@ lerna-debug.log*
 
 # Local agent notes
 CLAUDE.md
+.superpowers
 
 # IDE - VSCode
 .vscode/*
