@@ -228,6 +228,9 @@ function harness(): Harness {
       calls.push(`outbox:${value.type}`);
       events.push(value as PasswordResetEvent | SessionRevokedEvent);
     },
+    appendBatch: async (received, values) => {
+      for (const value of values) await outbox.append(received, value);
+    },
   };
   const unitOfWork: UnitOfWorkPort = {
     withTransaction: async <T>(

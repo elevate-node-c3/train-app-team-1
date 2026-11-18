@@ -5,6 +5,9 @@ import {
   VERIFICATION_CODE_DEFAULTS,
 } from '@app/common/config/env.defaults.js';
 import { identityEnvSchema } from './env.schema.js';
+import { randomBytes } from 'node:crypto';
+
+const nationalIdEncryptionKey = randomBytes(32).toString('base64');
 
 const validIdentityEnv = {
   NODE_ENV: 'development',
@@ -18,6 +21,9 @@ const validIdentityEnv = {
   OUTBOX_BATCH_SIZE: '20',
   VERIFICATION_CODE_TTL_SECONDS: '600',
   JWT_PRIVATE_KEY_FILE: 'config/jwt/dev-private.pem',
+  NATIONAL_ID_ACTIVE_KEY_VERSION: '1',
+  NATIONAL_ID_ENCRYPTION_KEYS: JSON.stringify({ 1: nationalIdEncryptionKey }),
+  NATIONAL_ID_BLIND_INDEX_KEY: randomBytes(32).toString('base64'),
 };
 
 function defaultOf(key: string): unknown {
@@ -77,4 +83,87 @@ describe('Identity environment schema', () => {
       validateEnvOrThrow(identityEnvSchema, withoutKey, 'identity'),
     ).toThrowError(/JWT_PRIVATE_KEY/);
   });
+
+  it('leaves hold token issuance disabled with missing or blank optional settings', () => {
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, {
+        ...validIdentityEnv,
+        BOOKING_IDENTITY_SERVICE_KEY: '',
+        HOLD_PASSENGER_TOKEN_KEYS: '',
+        HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: '',
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires complete purpose-specific National-ID storage keys', () => {
+    const { NATIONAL_ID_BLIND_INDEX_KEY: _blind, ...withoutBlind } =
+      validIdentityEnv;
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, withoutBlind, 'identity'),
+    ).toThrow(/NATIONAL_ID_BLIND_INDEX_KEY/);
+    expect(() =>
+      validateEnvOrThrow(
+        identityEnvSchema,
+        {
+          ...validIdentityEnv,
+          NATIONAL_ID_ENCRYPTION_KEYS: JSON.stringify({
+            2: nationalIdEncryptionKey,
+          }),
+        },
+        'identity',
+      ),
+    ).toThrow(/NATIONAL_ID_ENCRYPTION_KEYS/);
+  });
+
+  it('accepts a provisioned active key and Booking credential', () => {
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, {
+        ...validIdentityEnv,
+        BOOKING_IDENTITY_SERVICE_KEY: 'booking-identity-test-only-credential',
+        HOLD_PASSENGER_TOKEN_KEYS: JSON.stringify({
+          1: Buffer.alloc(32, 0x61).toString('base64'),
+          2: Buffer.alloc(32, 0x62).toString('base64'),
+        }),
+        HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: '2',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    { BOOKING_IDENTITY_SERVICE_KEY: 'private-short-key' },
+    { HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: '1' },
+    { HOLD_PASSENGER_TOKEN_KEYS: '{private-invalid-json' },
+    {
+      HOLD_PASSENGER_TOKEN_KEYS: '{"1":"private-short-key"}',
+      HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: '1',
+    },
+    {
+      HOLD_PASSENGER_TOKEN_KEYS: JSON.stringify({
+        1: Buffer.alloc(32).toString('base64'),
+      }),
+      HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: '2',
+    },
+  ])(
+    'rejects invalid hold configuration with secret redaction (%#)',
+    (settings) => {
+      expect(() =>
+        validateEnvOrThrow(identityEnvSchema, {
+          ...validIdentityEnv,
+          ...settings,
+        }),
+      ).toThrowError(/Configuration error/);
+      try {
+        validateEnvOrThrow(identityEnvSchema, {
+          ...validIdentityEnv,
+          ...settings,
+        });
+      } catch (error) {
+        expect(String(error)).not.toContain('private-short-key');
+        expect(String(error)).not.toContain('private-invalid-json');
+        expect(String(error)).not.toContain(
+          Buffer.alloc(32).toString('base64'),
+        );
+      }
+    },
+  );
 });

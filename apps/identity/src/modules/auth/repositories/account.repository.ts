@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import { AccountEntity } from '../entities/account.entity.js';
+import { nationalIdBlindIndex } from '../../../config/national-id-vault.js';
 
 /**
  * Writes and locked reads use the caller's transaction.
@@ -13,10 +14,18 @@ export class AccountRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   async save(ctx: TransactionContext, account: AccountEntity): Promise<void> {
+    account.nationalIdHash =
+      account.nationalId === null
+        ? null
+        : nationalIdBlindIndex(account.nationalId);
     await entityManagerOf(ctx).insert(AccountEntity, account);
   }
 
   async update(ctx: TransactionContext, account: AccountEntity): Promise<void> {
+    account.nationalIdHash =
+      account.nationalId === null
+        ? null
+        : nationalIdBlindIndex(account.nationalId);
     await entityManagerOf(ctx).update(
       AccountEntity,
       { id: account.id },

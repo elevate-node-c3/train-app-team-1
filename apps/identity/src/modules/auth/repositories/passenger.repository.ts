@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import { PassengerEntity } from '../entities/passenger.entity.js';
+import { nationalIdBlindIndex } from '../../../config/national-id-vault.js';
 
 @Injectable()
 export class PassengerRepository {
@@ -12,6 +13,7 @@ export class PassengerRepository {
     ctx: TransactionContext,
     passenger: PassengerEntity,
   ): Promise<void> {
+    passenger.nationalIdHash = nationalIdBlindIndex(passenger.nationalId);
     await entityManagerOf(ctx).insert(PassengerEntity, passenger);
   }
 
@@ -19,6 +21,7 @@ export class PassengerRepository {
     ctx: TransactionContext,
     passenger: PassengerEntity,
   ): Promise<void> {
+    passenger.nationalIdHash = nationalIdBlindIndex(passenger.nationalId);
     await entityManagerOf(ctx).update(
       PassengerEntity,
       { id: passenger.id },
@@ -35,7 +38,9 @@ export class PassengerRepository {
       .getRepository(PassengerEntity)
       .createQueryBuilder('passenger')
       .where('passenger.account_id = :accountId', { accountId })
-      .andWhere('passenger.national_id = :nationalId', { nationalId })
+      .andWhere('passenger.national_id_hash = :nationalIdHash', {
+        nationalIdHash: nationalIdBlindIndex(nationalId),
+      })
       .getOne();
   }
 

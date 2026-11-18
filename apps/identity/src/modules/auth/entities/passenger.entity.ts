@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { nationalIdTransformer } from '../../../config/national-id-vault.js';
 
 @Entity('passenger')
 export class PassengerEntity {
@@ -11,8 +12,15 @@ export class PassengerEntity {
   @Column({ name: 'full_name', type: 'text' })
   fullName!: string;
 
-  @Column({ name: 'national_id', type: 'text' })
+  @Column({
+    name: 'national_id',
+    type: 'text',
+    transformer: nationalIdTransformer('passenger'),
+  })
   nationalId!: string;
+
+  @Column({ name: 'national_id_hash', type: 'text', select: false })
+  nationalIdHash!: string;
 
   @Column({ name: 'profile_type', type: 'text' })
   profileType!: string;

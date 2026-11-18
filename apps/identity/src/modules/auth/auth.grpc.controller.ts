@@ -10,6 +10,8 @@ import {
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
   type PassengerDto,
+  type ResolveHoldPassengersRequest,
+  type ResolveHoldPassengersResponse,
   type RefreshTokenRequestDto,
   type ResendVerificationRequestDto,
   type ResendVerificationResponseDto,
@@ -31,12 +33,14 @@ import {
   CORRELATION_ID_KEY,
   GrpcCorrelationInterceptor,
 } from '@app/common';
+import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
 import { AuthError } from './auth-error.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
 import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
 import { PassengersService } from './services/passengers.service.js';
+import { HoldPassengersService } from './services/hold-passengers.service.js';
 
 /**
  * Status classifies the failure; details carries its business code.
@@ -48,6 +52,7 @@ const GRPC_STATUS_BY_ERROR: Partial<Record<ErrorCode, grpc.status>> = {
   [ErrorCode.UNAUTHORIZED]: grpc.status.UNAUTHENTICATED,
   [ErrorCode.FORBIDDEN]: grpc.status.PERMISSION_DENIED,
   [ErrorCode.RESOURCE_NOT_FOUND]: grpc.status.NOT_FOUND,
+  [ErrorCode.SERVICE_UNAVAILABLE]: grpc.status.UNAVAILABLE,
   [ErrorCode.EMAIL_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
   [ErrorCode.EMAIL_NOT_VERIFIED]: grpc.status.FAILED_PRECONDITION,
   [ErrorCode.VERIFICATION_REQUIRED]: grpc.status.FAILED_PRECONDITION,
@@ -177,6 +182,7 @@ export class AuthGrpcController {
     private readonly profiles: ProfileService,
     private readonly passengers: PassengersService,
     private readonly cls: ClsService,
+    private readonly holdPassengers: HoldPassengersService,
   ) {}
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignUp')
@@ -412,6 +418,34 @@ export class AuthGrpcController {
     return this.run(async () => {
       await this.passengers.deletePassenger(request);
       return { success: true };
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResolveHoldPassengers')
+  async resolveHoldPassengers(
+    request: ResolveHoldPassengersRequest,
+    metadata?: grpc.Metadata,
+  ): Promise<ResolveHoldPassengersResponse> {
+    return this.run(async () => {
+      const keys = metadata?.get('x-booking-identity-key');
+      if (
+        keys?.length !== 1 ||
+        !matchesServiceCredential(
+          keys[0],
+          process.env.BOOKING_IDENTITY_SERVICE_KEY,
+        )
+      ) {
+        throw new AuthError(ErrorCode.UNAUTHORIZED);
+      }
+      try {
+        return await this.holdPassengers.resolve(request);
+      } catch (error: unknown) {
+        throw new AuthError(
+          error instanceof AuthError
+            ? error.code
+            : ErrorCode.SERVICE_UNAVAILABLE,
+        );
+      }
     });
   }
 
