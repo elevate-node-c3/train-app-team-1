@@ -21,6 +21,10 @@ export const EVENT_TYPES = {
   holdReleased: 'inventory.hold.released',
   holdExpired: 'inventory.hold.expired',
   holdExtended: 'inventory.hold.extended',
+  bookingAwaitingPayment: 'booking.awaiting-payment',
+  bookingExpired: 'booking.expired-before-payment',
+  /** Reconciliation (Sprint 5) and the drop-off KPI read this. */
+  bookingAbandoned: 'booking.abandoned',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

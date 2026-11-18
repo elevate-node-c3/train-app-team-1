@@ -767,6 +767,47 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'اختر جنسية من قائمة الخيارات.',
     en: 'Choose a nationality from the options list.',
   },
+  // Booking draft: which leg or passenger a refusal is about (BR-57).
+  ISSUE_PASSENGER_ALREADY_BOOKED: {
+    ar: 'هذا المسافر لديه حجز بالفعل على هذا القطار.',
+    en: 'This passenger already has a booking on this train.',
+  },
+  ACTION_REMOVE_PASSENGER_OR_PICK_ANOTHER_TRAIN: {
+    ar: 'احذف هذا المسافر من الحجز أو اختر قطاراً آخر.',
+    en: 'Remove this passenger from the booking or choose another train.',
+  },
+  ISSUE_NOT_ENOUGH_SEATS_ON_TRAIN: {
+    ar: 'لا يوجد في هذا القطار عدد كافٍ من المقاعد الخالية في هذه الدرجة.',
+    en: 'This train does not have enough free seats in this class.',
+  },
+  ACTION_FEWER_PASSENGERS_OR_ANOTHER_CLASS: {
+    ar: 'قلل عدد المسافرين أو اختر درجة أخرى.',
+    en: 'Choose fewer passengers or another class.',
+  },
+  ISSUE_SEATS_JUST_TAKEN: {
+    ar: 'تم حجز المقاعد الخالية في هذا القطار للتو.',
+    en: 'The free seats on this train were just taken.',
+  },
+  ACTION_PICK_ANOTHER_TRAIN_OR_CLASS: {
+    ar: 'اختر قطاراً أو درجة أخرى.',
+    en: 'Choose another train or class.',
+  },
+  ISSUE_SALES_CLOSED_FOR_TRAIN: {
+    ar: 'لم تعد تذاكر هذا القطار متاحة للبيع.',
+    en: 'Tickets for this train are no longer on sale.',
+  },
+  ACTION_PICK_ANOTHER_TRAIN: {
+    ar: 'اختر قطاراً آخر.',
+    en: 'Choose another train.',
+  },
+  ISSUE_RETURN_DEPARTS_BEFORE_OUTBOUND_ARRIVES: {
+    ar: 'قطار العودة يغادر قبل وصول قطار الذهاب.',
+    en: 'The return train leaves before the outbound train arrives.',
+  },
+  ACTION_PICK_LATER_RETURN_TRAIN: {
+    ar: 'اختر قطار عودة يغادر بعد وصولك.',
+    en: 'Choose a return train that leaves after you arrive.',
+  },
 };
 
 export function resolveDetailText(
