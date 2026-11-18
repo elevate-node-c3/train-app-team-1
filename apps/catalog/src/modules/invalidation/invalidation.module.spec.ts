@@ -22,11 +22,15 @@ describe('catalog invalidation subscriptions', () => {
     expect(queues.sort()).toEqual([...CATALOG_INVALIDATION_QUEUES].sort());
   });
 
-  it('subscribes to the four event types CAT-5 invalidates on', () => {
+  it('subscribes to catalog changes and every MT-02 hold lifecycle event', () => {
     expect(subscriptions.map((s) => s.eventType).sort()).toEqual([
       'catalog.fare.changed',
       'catalog.station.changed',
       'catalog.timetable.published',
+      'inventory.hold.expired',
+      'inventory.hold.extended',
+      'inventory.hold.held',
+      'inventory.hold.released',
       'inventory.seat.availability-changed',
     ]);
   });

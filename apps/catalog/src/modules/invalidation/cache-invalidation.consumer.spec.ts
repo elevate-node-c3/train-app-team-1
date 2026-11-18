@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope } from '@app/contracts';
-import { EVENT_TYPES } from '@app/contracts';
+import { AllocationOutcome, EVENT_TYPES } from '@app/contracts';
+import type { CacheAsideService } from '@app/common';
 
 import { buildFareChanged } from '../operations/fare-events.factory.js';
 import type { RouteVersionService } from '../cache/route-version.service.js';
@@ -122,5 +123,105 @@ describe('CacheInvalidationConsumer', () => {
     const res = await consumer.handle(envelope);
     expect(res.status).toBe('handled');
     expect(mockStations.invalidate).toHaveBeenCalled();
+  });
+
+  it.each([
+    EVENT_TYPES.holdHeld,
+    EVENT_TYPES.holdReleased,
+    EVENT_TYPES.holdExpired,
+    EVENT_TYPES.holdExtended,
+  ])('advances each affected trip generation for %s', async (type) => {
+    const increment = vi
+      .fn()
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(8);
+    const cache = { increment } as unknown as CacheAsideService;
+    const handler = new CacheInvalidationConsumer(
+      mockRouteVersion,
+      mockStations,
+      mockTripStops,
+      cache,
+    );
+    const envelope: EventEnvelope = {
+      id: randomUUID(),
+      type,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      correlationId: randomUUID(),
+      producer: 'inventory',
+      payload: {
+        holdId: randomUUID(),
+        bookingKey: randomUUID(),
+        ownerId: randomUUID(),
+        aggregateVersion: 2,
+        state: type === EVENT_TYPES.holdExpired ? 'EXPIRED' : 'HELD',
+        allocationOutcome: AllocationOutcome.SAME_COACH,
+        expiresAt: new Date().toISOString(),
+        extensionUsed: type === EVENT_TYPES.holdExtended,
+        reason: type.split('.').at(-1),
+        legs: [
+          {
+            tripId: 'trip-a',
+            travelClassId: 'first',
+            originStationId: 'a',
+            destinationStationId: 'b',
+            originPosition: 0,
+            destinationPosition: 2,
+            outcome: AllocationOutcome.SAME_COACH,
+          },
+          {
+            tripId: 'trip-a',
+            travelClassId: 'first',
+            originStationId: 'b',
+            destinationStationId: 'c',
+            originPosition: 2,
+            destinationPosition: 3,
+            outcome: AllocationOutcome.SAME_COACH,
+          },
+          {
+            tripId: 'trip-b',
+            travelClassId: 'first',
+            originStationId: 'c',
+            destinationStationId: 'd',
+            originPosition: 0,
+            destinationPosition: 1,
+            outcome: AllocationOutcome.SAME_COACH,
+          },
+        ],
+      },
+    };
+
+    await expect(handler.handle(envelope)).resolves.toEqual({
+      status: 'handled',
+    });
+    expect(increment.mock.calls).toEqual([
+      ['catalog:availability-version:v1:trip-a'],
+      ['catalog:availability-version:v1:trip-a'],
+      ['catalog:availability-version:v1:trip-b'],
+    ]);
+  });
+
+  it('fails the event when its durable cache side effect cannot be applied', async () => {
+    const cache = {
+      increment: vi.fn().mockResolvedValue(null),
+    } as unknown as CacheAsideService;
+    const handler = new CacheInvalidationConsumer(
+      mockRouteVersion,
+      mockStations,
+      mockTripStops,
+      cache,
+    );
+    await expect(
+      handler.handle({
+        id: randomUUID(),
+        type: EVENT_TYPES.holdHeld,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        correlationId: randomUUID(),
+        producer: 'inventory',
+        payload: { legs: [{ tripId: 'trip-a' }] },
+      }),
+    ).rejects.toThrow('Seat availability invalidation failed');
   });
 });

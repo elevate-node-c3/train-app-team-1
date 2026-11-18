@@ -165,7 +165,7 @@ export class TimetablePublishService {
       throw this.refusal(ErrorCode.VALIDATION_ERROR, details);
     }
 
-    const diff = await this.computeDiff(request, train.id);
+    const diff = await this.computeDiff(request, train.id, references);
 
     // Never guess inventory usage.
     await this.refuseIfSeatsAreInUse(request, diff);
@@ -510,12 +510,16 @@ export class TimetablePublishService {
   private async computeDiff(
     request: PublishTimetableRequest,
     trainId: string,
+    references: PublishReferences,
   ): Promise<TimetableDiff> {
     const [windowStart, windowEnd] = this.publishWindow();
     const start =
       request.effectiveFrom > windowStart ? request.effectiveFrom : windowStart;
 
     const changes: TripChange[] = [];
+    const proposedComposition = this.trips.buildCompositionSnapshot(
+      this.candidateCoaches(request, references),
+    );
 
     if (start > windowEnd) {
       // Generation picks up dates beyond the window as it advances.
@@ -544,6 +548,7 @@ export class TimetablePublishService {
             kind: 'created',
             tripId: null,
             movesShape: true,
+            movesComposition: true,
             removedStationIds: [],
           });
         }
@@ -562,6 +567,7 @@ export class TimetablePublishService {
           kind: 'withdrawn',
           tripId: trip.id,
           movesShape: true,
+          movesComposition: true,
           removedStationIds: current.map((stop) => stop.stationId),
         });
         continue;
@@ -579,6 +585,12 @@ export class TimetablePublishService {
         // Treat resurrection as a shape change; refuse if inventory unexpectedly
         // reports seats on a withdrawn trip.
         movesShape: withdrawn || !sameShape(current, proposed),
+        movesComposition:
+          withdrawn ||
+          !sameCompositionPromise(
+            trip.compositionSnapshot,
+            proposedComposition,
+          ),
         removedStationIds: current
           .map((stop) => stop.stationId)
           .filter(
@@ -729,6 +741,17 @@ export class TimetablePublishService {
           rejectedValue: request.runningDays,
           issueKey: 'ISSUE_PUBLISH_WOULD_WITHDRAW_IN_USE_TRIP',
           actionKey: 'ACTION_KEEP_IN_USE_WEEKDAY_OR_PUBLISH_LATER',
+          params,
+        });
+        continue;
+      }
+
+      if (change.movesComposition) {
+        details.push({
+          field: 'coaches',
+          rejectedValue: change.serviceDate,
+          issueKey: 'ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_COMPOSITION',
+          actionKey: 'ACTION_KEEP_IN_USE_COMPOSITION_OR_PUBLISH_LATER',
           params,
         });
         continue;
@@ -1097,6 +1120,24 @@ export class TimetablePublishService {
       );
     });
   }
+}
+
+/** Compare seat promises, not localized class/layout display names. */
+function sameCompositionPromise(
+  current: DatedTripEntity['compositionSnapshot'],
+  proposed: DatedTripEntity['compositionSnapshot'],
+): boolean {
+  const promise = (items: DatedTripEntity['compositionSnapshot']) =>
+    [...items]
+      .sort((left, right) => left.position - right.position)
+      .map((coach) => ({
+        position: coach.position,
+        coachNumber: coach.coachNumber,
+        travelClassId: coach.travelClass.id,
+        coachLayoutId: coach.coachLayout.id,
+        rows: coach.coachLayout.rows,
+      }));
+  return JSON.stringify(promise(current)) === JSON.stringify(promise(proposed));
 }
 
 function shapeOfTripStop(stop: TripStopEntity): StopShape {

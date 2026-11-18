@@ -14,16 +14,23 @@ export interface SegmentAvailabilityQuery {
   classCapacity: number;
 }
 
+export function availabilityVersionCacheKey(tripId: string): string {
+  return `catalog:availability-version:v1:${tripId}`;
+}
+
 /** Keep availability in separate keys and merge it into results at read time. */
-export function segmentAvailabilityCacheKey(params: {
-  tripId: string;
-  originStationId: string;
-  destinationStationId: string;
-  travelClassId: string;
-}): string {
+export function segmentAvailabilityCacheKey(
+  params: {
+    tripId: string;
+    originStationId: string;
+    destinationStationId: string;
+    travelClassId: string;
+  },
+  version = 1,
+): string {
   return [
     'catalog:availability',
-    'v1',
+    `v${version}`,
     params.tripId,
     params.originStationId,
     params.destinationStationId,
@@ -50,6 +57,7 @@ export class SeatAvailabilityService {
 
     const result = new Map<string, number>();
     const missing: SegmentAvailabilityQuery[] = [];
+    const versions = new Map<string, number>();
 
     if (!this.cache) {
       // Without cache, use provisional class capacity until inventory is connected.
@@ -60,7 +68,18 @@ export class SeatAvailabilityService {
     }
 
     for (const segment of segments) {
-      const key = segmentAvailabilityCacheKey(segment);
+      let version = versions.get(segment.tripId);
+      if (version === undefined) {
+        const stored = await this.cache.get<number>(
+          availabilityVersionCacheKey(segment.tripId),
+        );
+        version =
+          Number.isInteger(stored) && (stored as number) > 0
+            ? (stored as number)
+            : 1;
+        versions.set(segment.tripId, version);
+      }
+      const key = segmentAvailabilityCacheKey(segment, version);
       const cached = await this.cache.get<number>(key);
 
       if (cached !== null && typeof cached === 'number') {
@@ -83,7 +102,10 @@ export class SeatAvailabilityService {
         const available = segment.classCapacity;
         result.set(segment.tripId, available);
 
-        const key = segmentAvailabilityCacheKey(segment);
+        const key = segmentAvailabilityCacheKey(
+          segment,
+          versions.get(segment.tripId) ?? 1,
+        );
         await this.cache.set(key, available, ttl);
       }
     }
