@@ -8,16 +8,36 @@ import {
 import type {
   AllocationOutcome,
   AssignedSeat,
+  BookingLeg,
   ErrorCode,
   HoldLegInput,
   HoldSnapshot,
   HoldState,
+  QuotedLeg,
   ResolvedHoldPassenger,
   SplitNoticePayload,
+  TravelClass,
 } from '@app/contracts';
 
 export type BookingDraftStatus =
   'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'FAILED';
+
+/**
+ * Where checkout has reached. Distinct from `status`, which is the draft's own
+ * lifecycle, and from `holdState`, which mirrors inventory's hold.
+ */
+export type BookingFlowState =
+  | 'quote_pending'
+  | 'price_locked'
+  | 'hold_pending'
+  | 'seats_held'
+  | 'payment_starting'
+  | 'awaiting_payment'
+  | 'expired'
+  | 'abandoned'
+  | 'failed';
+
+export type CompensationStatus = 'none' | 'pending' | 'complete' | 'late_payment';
 
 export interface BookingHoldIntent {
   legs: HoldLegInput[];
@@ -112,4 +132,99 @@ export class BookingDraftEntity {
 
   @Column({ name: 'hold_failure', type: 'jsonb', nullable: true })
   holdFailure!: BookingHoldFailure | null;
+  // ---------------------------------------------------------------------
+  // Checkout flow. Null on drafts created before the flow existed, and on
+  // drafts the hold API created directly.
+  // ---------------------------------------------------------------------
+
+  @Column({ name: 'flow_state', type: 'varchar', length: 32, nullable: true })
+  flowState!: BookingFlowState | null;
+
+  @Column({ name: 'idempotency_key', type: 'text', nullable: true })
+  idempotencyKey!: string | null;
+
+  @Column({ name: 'correlation_id', type: 'text', nullable: true })
+  correlationId!: string | null;
+
+  @Column({ name: 'travel_class', type: 'jsonb', nullable: true })
+  travelClass!: TravelClass | null;
+
+  @Column({ name: 'quoted_legs', type: 'jsonb', nullable: true })
+  quotedLegs!: QuotedLeg[] | null;
+
+  @Column({ name: 'fare_total_piastres', type: 'integer', nullable: true })
+  fareTotalPiastres!: number | null;
+
+  @Column({ name: 'booking_fee_piastres', type: 'integer', nullable: true })
+  bookingFeePiastres!: number | null;
+
+  @Column({ name: 'total_piastres', type: 'integer', nullable: true })
+  totalPiastres!: number | null;
+
+  @Column({ name: 'terms_accepted_at', type: 'timestamptz', nullable: true })
+  termsAcceptedAt!: Date | null;
+
+  @Column({ name: 'payment_reference', type: 'uuid', nullable: true })
+  paymentReference!: string | null;
+
+  @Column({ name: 'payment_attempted', type: 'boolean', default: false })
+  paymentAttempted!: boolean;
+
+  @Column({ name: 'late_payment', type: 'boolean', default: false })
+  latePayment!: boolean;
+
+  @Column({ name: 'charge_cancelled', type: 'boolean', default: false })
+  chargeCancelled!: boolean;
+
+  @Column({ name: 'hold_released', type: 'boolean', default: false })
+  holdReleased!: boolean;
+
+  @Column({
+    name: 'compensation_status',
+    type: 'varchar',
+    length: 16,
+    default: 'none',
+  })
+  compensationStatus!: CompensationStatus;
+
+  @Column({ name: 'compensation_attempts', type: 'integer', default: 0 })
+  compensationAttempts!: number;
+
+  @Column({
+    name: 'compensation_next_attempt_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  compensationNextAttemptAt!: Date | null;
+
+  @Column({ name: 'compensation_last_error', type: 'text', nullable: true })
+  compensationLastError!: string | null;
+
+  @Column({ name: 'resume_next_attempt_at', type: 'timestamptz', nullable: true })
+  resumeNextAttemptAt!: Date | null;
+
+  @Column({ name: 'lease_until', type: 'timestamptz', nullable: true })
+  leaseUntil!: Date | null;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt!: Date;
+
+  /** How many passengers the hold is for; the intent is the source. */
+  get passengerCount(): number {
+    return this.holdIntent?.passengerRefs.length ?? 0;
+  }
+
+  /** One class per booking, as submitted on every leg. */
+  get travelClassId(): string | null {
+    return this.holdIntent?.legs[0]?.travelClassId ?? null;
+  }
+
+  /** The legs as submitted; holdIntent carries the same trips for the hold. */
+  get bookingLegs(): BookingLeg[] {
+    return (this.holdIntent?.legs ?? []).map((leg) => ({
+      tripId: leg.tripId,
+      originStationId: leg.originStationId,
+      destinationStationId: leg.destinationStationId,
+    }));
+  }
 }
