@@ -18,6 +18,8 @@ service IdentityService {
   rpc AddPassenger (AddPassengerRequest) returns (PassengerResponse);
   rpc UpdatePassenger (UpdatePassengerRequest) returns (PassengerResponse);
   rpc DeletePassenger (DeletePassengerRequest) returns (DeletePassengerResponse);
+  // Private Booking-to-Identity RPC; requires x-booking-identity-key metadata.
+  rpc ResolveHoldPassengers (ResolveHoldPassengersRequest) returns (ResolveHoldPassengersResponse);
 }
 
 message TokenPair {
@@ -214,4 +216,27 @@ message DeletePassengerResponse {
 
 message PassengerResponse {
   PassengerItem passenger = 1;
+}
+
+message ResolveHoldPassengersRequest {
+  string ownerId = 1;
+  repeated string passengerRefs = 2;
+  repeated string tripIds = 3;
+}
+
+message HoldPassengerLegIdentity {
+  string tripId = 1;
+  string passengerToken = 2;
+  int32 passengerKeyVersion = 3;
+}
+
+message ResolvedHoldPassenger {
+  string passengerRef = 1;
+  string displayName = 2;
+  string maskedNationalId = 3;
+  repeated HoldPassengerLegIdentity identities = 4;
+}
+
+message ResolveHoldPassengersResponse {
+  repeated ResolvedHoldPassenger passengers = 1;
 }

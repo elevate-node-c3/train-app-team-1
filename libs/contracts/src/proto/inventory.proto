@@ -3,15 +3,17 @@ syntax = "proto3";
 package train.inventory.v1;
 
 // Inventory service managing seat holds, usage, and group allocation.
+// Holds are created only through the MT-02 lifecycle below.
 service InventoryService {
   rpc SeatUsageForTrips (SeatUsageForTripsRequest)
       returns (SeatUsageForTripsResponse);
 
-  rpc HoldSeats (HoldSeatsRequest)
-      returns (HoldSeatsResponse);
-
-  rpc ReleaseSeats (ReleaseSeatsRequest)
-      returns (ReleaseSeatsResponse);
+  // MT-02: private, booking-to-inventory hold lifecycle. These are never
+  // exposed as gateway mutation routes.
+  rpc CreateHold (CreateHoldRequest) returns (HoldView);
+  rpc GetHold (GetHoldRequest) returns (HoldView);
+  rpc ReleaseHold (ReleaseHoldRequest) returns (HoldView);
+  rpc ExtendHold (ExtendHoldRequest) returns (HoldView);
 }
 
 message SeatUsageForTripsRequest {
@@ -45,42 +47,111 @@ enum AllocationOutcome {
   SPLIT = 3;
 }
 
-message AssignedSeat {
-  string seatId = 1;
-  int32 coachNumber = 2;
-  string seatNumber = 3;
-  int32 rowNumber = 4;
-  optional string label = 5;
-}
-
 message SplitNoticePayload {
   string code = 1;
   string message = 2;
   string messageEn = 3;
 }
 
-message HoldSeatsRequest {
+// ---------------------------------------------------------------------------
+// MT-02 hold lifecycle contract.
+// No client-supplied counts, ranges, TTLs, or departure times: Inventory
+// resolves stops, classes, departures, and expiry from its own database.
+// ---------------------------------------------------------------------------
+
+enum HoldState {
+  HOLD_STATE_UNSPECIFIED = 0;
+  HELD = 1;
+  RELEASED = 2;
+  EXPIRED = 3;
+  CANCELLED = 4;
+}
+
+message HoldPassengerLegIdentity {
+  // The hold leg this token/version was pinned for.
+  string tripId = 1;
+  // Identity-issued trip-scoped HMAC token.
+  string passengerToken = 2;
+  // Immutable identity key version pinned for the trip.
+  int32 passengerKeyVersion = 3;
+}
+
+message HoldPassengerInput {
+  // Booking's submitted passenger reference, never a raw National ID.
+  string passengerRef = 1;
+  // One identity per hold leg. A round trip uses two different trip tokens.
+  repeated HoldPassengerLegIdentity identities = 2;
+}
+
+message HoldLegInput {
   string tripId = 1;
   string travelClassId = 2;
   string originStationId = 3;
   string destinationStationId = 4;
-  int32 groupSize = 5;
-  optional int32 ttlSeconds = 6;
-  optional string bookingId = 7;
 }
 
-message HoldSeatsResponse {
+message CreateHoldRequest {
+  string ownerId = 1;
+  string bookingKey = 2;
+  repeated HoldLegInput legs = 3;
+  repeated HoldPassengerInput passengers = 4;
+}
+
+message GetHoldRequest {
+  string ownerId = 1;
+  string bookingKey = 2;
+}
+
+message ReleaseHoldRequest {
+  string ownerId = 1;
+  string bookingKey = 2;
+}
+
+message ExtendHoldRequest {
+  string ownerId = 1;
+  string bookingKey = 2;
+}
+
+message HoldLegView {
+  string tripId = 1;
+  string travelClassId = 2;
+  string originStationId = 3;
+  string destinationStationId = 4;
+  int32 originPosition = 5;
+  int32 destinationPosition = 6;
+  AllocationOutcome outcome = 7;
+  optional SplitNoticePayload splitNotice = 8;
+}
+
+message HoldSeatAssignment {
+  string passengerRef = 1;
+  int32 passengerKeyVersion = 2;
+  string tripId = 3;
+  string tripSeatId = 4;
+  string travelClassId = 5;
+  int32 coachNumber = 6;
+  string seatNumber = 7;
+  int32 rowNumber = 8;
+  optional string label = 9;
+  AllocationOutcome outcome = 10;
+  string originStationId = 11;
+  string destinationStationId = 12;
+  int32 originPosition = 13;
+  int32 destinationPosition = 14;
+}
+
+message HoldView {
   string holdId = 1;
-  AllocationOutcome allocationOutcome = 2;
-  repeated AssignedSeat seats = 3;
-  string expiresAt = 4;
-  optional SplitNoticePayload splitNotice = 5;
-}
-
-message ReleaseSeatsRequest {
-  string holdId = 1;
-}
-
-message ReleaseSeatsResponse {
-  bool success = 1;
+  string bookingKey = 2;
+  string ownerId = 3;
+  HoldState state = 4;
+  int32 version = 5;
+  bool extensionUsed = 6;
+  // Empty only for a cancellation tombstone with no promised expiry.
+  string expiresAt = 7;
+  // Postgres clock_timestamp() sampled after lock waits.
+  string serverNow = 8;
+  AllocationOutcome allocationOutcome = 9;
+  repeated HoldLegView legs = 10;
+  repeated HoldSeatAssignment assignments = 11;
 }
