@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { databaseUrlFromEnv } from '../config/database-settings.js';
+import { databaseUrlFromEnv } from '@app/common/config/database-url.js';
 
 import { GovernorateEntity } from '../modules/stations/entities/governorate.entity.js';
 import { CityEntity } from '../modules/stations/entities/city.entity.js';

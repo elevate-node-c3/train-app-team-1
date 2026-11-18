@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { databaseUrlFromEnv } from '../config/database-settings.js';
+import { databaseUrlFromEnv } from '@app/common/config/database-url.js';
 import { BookingDraftEntity } from '../modules/draft/entities/booking-draft.entity.js';
 import { migrations } from './migrations/index.js';
 

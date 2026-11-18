@@ -1,4 +1,5 @@
 export * from './common.module.js';
+export * from './config/database-url.js';
 export * from './config/env.schema.js';
 export * from './config/env.defaults.js';
 export * from './config/env.validator.js';
