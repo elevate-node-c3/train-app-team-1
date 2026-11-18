@@ -5,6 +5,8 @@ import { ClsService } from 'nestjs-cls';
 import {
   CATALOG_SERVICE_NAME,
   type GetTripStopsRequest,
+  type QuoteBookingRequest,
+  type QuoteBookingResponse,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
   type SearchReturnTripsRequest,
@@ -12,6 +14,7 @@ import {
   type TripStopsResponse,
 } from '@app/contracts';
 
+import { BookingQuoteService } from './booking-quote.service.js';
 import { TripReturnSearchService } from './trip-return-search.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { TripStopsService } from './trip-stops.service.js';
@@ -24,6 +27,7 @@ export class TripsGrpcController {
     private readonly search: TripSearchService,
     private readonly returnSearch: TripReturnSearchService,
     private readonly stops: TripStopsService,
+    private readonly quotes: BookingQuoteService,
     private readonly cls: ClsService,
   ) {}
 
@@ -67,6 +71,17 @@ export class TripsGrpcController {
   async getTripStops(request: GetTripStopsRequest): Promise<TripStopsResponse> {
     try {
       return await this.stops.stops(request);
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
+  }
+
+  @GrpcMethod(CATALOG_SERVICE_NAME, 'QuoteBooking')
+  async quoteBooking(
+    request: QuoteBookingRequest,
+  ): Promise<QuoteBookingResponse> {
+    try {
+      return await this.quotes.quote(request);
     } catch (error: unknown) {
       throw toRpcException(error);
     }

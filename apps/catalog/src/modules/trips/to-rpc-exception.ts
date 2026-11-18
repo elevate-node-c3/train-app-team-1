@@ -11,6 +11,7 @@ const GRPC_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.RESOURCE_NOT_FOUND]: grpc.status.NOT_FOUND,
   [ErrorCode.CONFLICT]: grpc.status.ABORTED,
   [ErrorCode.DEPENDENCY_UNAVAILABLE]: grpc.status.UNAVAILABLE,
+  [ErrorCode.SALES_CLOSED]: grpc.status.FAILED_PRECONDITION,
 };
 
 /**

@@ -11,6 +11,7 @@ import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entit
 import { TrainEntity } from '../trains/entities/train.entity.js';
 import { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 
+import { BookingQuoteService } from './booking-quote.service.js';
 import { CatalogReferenceRepository } from './catalog-reference.repository.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
@@ -41,6 +42,7 @@ import { TripsService } from './trips.service.js';
   ],
   controllers: [TripsGrpcController],
   providers: [
+    BookingQuoteService,
     TripSearchRepository,
     TripStopsRepository,
     CatalogReferenceRepository,
