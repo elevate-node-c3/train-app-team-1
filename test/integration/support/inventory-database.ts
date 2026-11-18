@@ -6,6 +6,11 @@ import { TripStopEntity } from '../../../apps/inventory/src/modules/seats/entiti
 import { TripCoachEntity } from '../../../apps/inventory/src/modules/seats/entities/trip-coach.entity.js';
 import { TripSeatEntity } from '../../../apps/inventory/src/modules/seats/entities/trip-seat.entity.js';
 import { SeatOccupationEntity } from '../../../apps/inventory/src/modules/seats/entities/seat-occupation.entity.js';
+import { SeatHoldGroupEntity } from '../../../apps/inventory/src/modules/seat-hold/entities/seat-hold-group.entity.js';
+import { SeatHoldOwnerGuardEntity } from '../../../apps/inventory/src/modules/seat-hold/entities/seat-hold-owner-guard.entity.js';
+import { SeatHoldPassengerEntity } from '../../../apps/inventory/src/modules/seat-hold/entities/seat-hold-passenger.entity.js';
+import { SeatHoldLegEntity } from '../../../apps/inventory/src/modules/seat-hold/entities/seat-hold-leg.entity.js';
+import { SeatHoldAssignmentEntity } from '../../../apps/inventory/src/modules/seat-hold/entities/seat-hold-assignment.entity.js';
 import { assertReachable, countStatements } from './catalog-database.js';
 
 export { countStatements };
@@ -22,6 +27,11 @@ export const INVENTORY_DATABASE_URL =
 
 /** Every inventory table, children before parents, for truncation. */
 export const INVENTORY_TABLES = [
+  'seat_hold_assignment',
+  'seat_hold_leg',
+  'seat_hold_passenger',
+  'seat_hold_group',
+  'seat_hold_owner_guard',
   'seat_occupation',
   'trip_seat',
   'trip_coach',
@@ -59,6 +69,11 @@ export async function inventoryDataSource(): Promise<DataSource> {
       TripCoachEntity,
       TripSeatEntity,
       SeatOccupationEntity,
+      SeatHoldGroupEntity,
+      SeatHoldOwnerGuardEntity,
+      SeatHoldPassengerEntity,
+      SeatHoldLegEntity,
+      SeatHoldAssignmentEntity,
     ],
     extra: { connectionTimeoutMillis: 5000 },
   });

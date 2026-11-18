@@ -5,7 +5,9 @@ import { MESSAGE_CATALOGUE } from '@app/common';
 import {
   CLAIM_OUTBOX_SQL,
   INSERT_OUTBOX_SQL,
+  INSERT_OUTBOX_BATCH_SQL,
   MARK_OUTBOX_PUBLISHED_SQL,
+  MARK_OUTBOX_BATCH_PUBLISHED_SQL,
   RECORD_OUTBOX_FAILURE_SQL,
 } from '@app/messaging';
 import {
@@ -28,11 +30,20 @@ const catalogOutboxDdl = readFileSync(
   'apps/catalog/src/database/migrations/1793300000004-create-catalog-outbox.ts',
   'utf8',
 );
+const inventoryOutboxDdl = readFileSync(
+  'apps/inventory/src/database/migrations/1794600000000-create-inventory-outbox.ts',
+  'utf8',
+);
+const bookingProcessedEventDdl = readFileSync(
+  'apps/booking/src/database/migrations/1794764000000-booking-hold-intent.ts',
+  'utf8',
+);
 
 /** Every relaying service owns `outbox_event`; each copy must match the shared SQL. */
 const outboxDdls: [string, string][] = [
   ['identity', identityDdl],
   ['catalog', catalogOutboxDdl],
+  ['inventory', inventoryOutboxDdl],
 ];
 
 const catalogProcessedEventDdl = readFileSync(
@@ -47,6 +58,7 @@ const catalogProcessedEventDdl = readFileSync(
 const processedEventDdls: [string, string][] = [
   ['notification', notificationDdl],
   ['catalog', catalogProcessedEventDdl],
+  ['booking', bookingProcessedEventDdl],
 ];
 const emailDeliveryEntitySource = readFileSync(
   'apps/notification/src/modules/verification-emails/entities/email-delivery.entity.ts',
@@ -205,6 +217,8 @@ describe('Schema agreement', () => {
     const consumers = [
       'apps/catalog/src/database/migrations',
       'apps/notification/src/database/migrations',
+      'apps/booking/src/database/migrations',
+      'apps/inventory/src/database/migrations',
     ];
 
     for (const directory of consumers) {
@@ -225,8 +239,10 @@ describe('Schema agreement', () => {
       const referenced = new Set<string>();
       for (const sql of [
         INSERT_OUTBOX_SQL,
+        INSERT_OUTBOX_BATCH_SQL,
         CLAIM_OUTBOX_SQL,
         MARK_OUTBOX_PUBLISHED_SQL,
+        MARK_OUTBOX_BATCH_PUBLISHED_SQL,
         RECORD_OUTBOX_FAILURE_SQL,
       ]) {
         for (const column of referencedColumns(sql, 'outbox_event')) {
