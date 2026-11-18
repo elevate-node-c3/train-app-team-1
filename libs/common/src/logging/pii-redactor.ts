@@ -1,5 +1,5 @@
 const SENSITIVE_KEY_REGEX =
-  /password|secret|token|pin|code|verification.?code|card.?number|cvv|national.?id|phone/i;
+  /password|secret|token|pin|code|verification.?code|card.?number|cvv|national.?id|phone|service.?key|x-booking-.*-key|x-gateway-booking-key|full.?name|display.?name|passenger.?name/i;
 
 const EMAIL_REGEX =
   /\b([a-zA-Z0-9_.+-])[a-zA-Z0-9_.+-]*@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b/g;
@@ -20,7 +20,16 @@ export function redactPii<T>(
   }
 
   if (typeof data === 'string') {
-    return maskEmail(data) as unknown as T;
+    // Validation/driver errors may embed a National ID without its field name.
+    return maskEmail(data)
+      .replace(
+        /(?<![0-9\u0660-\u0669])[0-9\u0660-\u0669]{14}(?![0-9\u0660-\u0669])/g,
+        '[REDACTED]',
+      )
+      .replace(
+        /\*{10}[0-9]{4}|\b[a-f0-9]{64}\b/gi,
+        '[REDACTED]',
+      ) as unknown as T;
   }
 
   if (typeof data !== 'object') {

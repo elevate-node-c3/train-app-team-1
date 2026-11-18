@@ -89,6 +89,32 @@ describe('Correlation ID & PII Logging Redaction (§2.4)', () => {
   });
 
   describe('PII Redactor & Email Masking', () => {
+    it('redacts purpose-specific credentials and IDs embedded in driver messages', () => {
+      expect(
+        redactPii({
+          'x-booking-inventory-key': 'private-service-key',
+          BOOKING_IDENTITY_SERVICE_KEY: 'private-identity-key',
+          passengerToken: 'private-comparison-token',
+          message: 'Key already exists: 29801011234567',
+        }),
+      ).toEqual({
+        'x-booking-inventory-key': '[REDACTED]',
+        BOOKING_IDENTITY_SERVICE_KEY: '[REDACTED]',
+        passengerToken: '[REDACTED]',
+        message: 'Key already exists: [REDACTED]',
+      });
+    });
+    it('redacts passenger display fields and sensitive values embedded in refusal text', () => {
+      expect(
+        redactPii({
+          displayName: 'Private passenger',
+          message: `Passenger **********1234 conflicts with token ${'a'.repeat(64)}`,
+        }),
+      ).toEqual({
+        displayName: '[REDACTED]',
+        message: 'Passenger [REDACTED] conflicts with token [REDACTED]',
+      });
+    });
     it('masks emails into username initial + domain', () => {
       expect(maskEmail('youssef@example.com')).toBe('y***@example.com');
       expect(maskEmail('nour.dev@gmail.com')).toBe('n***@gmail.com');

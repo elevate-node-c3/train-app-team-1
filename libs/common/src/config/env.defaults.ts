@@ -6,6 +6,7 @@ export const OUTBOX_DEFAULTS = {
   enabled: true,
   pollIntervalMs: 500,
   batchSize: 20,
+  publishConcurrency: 1,
 } as const;
 
 export const VERIFICATION_CODE_DEFAULTS = {
