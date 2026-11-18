@@ -23,6 +23,10 @@ import type {
 } from '@app/common/persistence/unit-of-work.port.js';
 
 import {
+  AvailabilityPublisher,
+  WHOLE_TRIP,
+} from '../seats/availability-publisher.service.js';
+import {
   buildTripPublicationRefused,
   buildTripSeatsCreated,
 } from '../seats/inventory-events.factory.js';
@@ -41,6 +45,7 @@ export class TripLifecycleConsumer implements EventHandlerPort {
     private readonly repository: SeatPlanRepository,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(OUTBOX) private readonly outbox: OutboxPort,
+    private readonly availability: AvailabilityPublisher,
   ) {}
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {
@@ -157,6 +162,17 @@ export class TripLifecycleConsumer implements EventHandlerPort {
             ),
           },
         }),
+      );
+
+      // A republication can change the seat picture under counts catalog has
+      // already cached, and nothing else invalidates them: hold events advance
+      // catalog's per-trip generation, publication does not. Publish the new
+      // counts in the same transaction that applied the plan.
+      await this.availability.publishChange(
+        ctx,
+        plan.tripId,
+        WHOLE_TRIP,
+        correlationId,
       );
     }
     return outcome;
