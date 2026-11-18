@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
 import { OperationsModule } from './modules/operations/operations.module.js';
+import { BookingModule } from './modules/booking/booking.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /** Wires infrastructure; feature modules own business providers. */
@@ -29,6 +30,7 @@ import { ServiceInfoController } from './service-info.controller.js';
     IdentityModule,
     CatalogModule,
     OperationsModule,
+    BookingModule,
   ],
   controllers: [ServiceInfoController],
   providers: [
