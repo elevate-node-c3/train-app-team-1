@@ -74,7 +74,7 @@ describe('Migration infrastructure (§2.1)', () => {
       expect(options).toEqual({
         name: undefined,
         type: 'postgres',
-        url: process.env.DATABASE_URL || 'postgres://localhost:5432/postgres',
+        url: process.env.DATABASE_URL,
         autoLoadEntities: true,
         synchronize: false,
         manualInitialization: true,

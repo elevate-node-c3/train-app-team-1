@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { databaseUrlFromEnv } from '../config/database-settings.js';
+import { databaseUrlFromEnv } from '@app/common/config/database-url.js';
 import { migrations } from './migrations/index.js';
 
 /**

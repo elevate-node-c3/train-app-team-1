@@ -1,6 +1,8 @@
 import { TypeOrmModuleAsyncOptions } from '@nestjs/typeorm';
 import type { DataSourceOptions } from 'typeorm';
 
+import { databaseUrlFromEnv } from '../config/database-url.js';
+
 export interface TypeOrmExtraOptions {
   /**
    * Ordered hand-written migrations, applied by MigrationRunnerService.
@@ -18,7 +20,7 @@ export function createTypeOrmAsyncOptions(
     useFactory: () => ({
       name: connectionName,
       type: 'postgres',
-      url: process.env.DATABASE_URL || 'postgres://localhost:5432/postgres',
+      url: databaseUrlFromEnv(),
       autoLoadEntities: true,
       synchronize: false,
       manualInitialization: true,
