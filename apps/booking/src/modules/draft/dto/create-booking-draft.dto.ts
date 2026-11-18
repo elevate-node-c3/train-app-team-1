@@ -1,97 +1,85 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsArray,
-  IsInt,
   IsOptional,
-  IsString,
-  Max,
-  Min,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
-import type { BookingDraftLeg, BookingDraftStatus } from '../entities/booking-draft.entity.js';
-
-export class BookingPassengerInput {
-  @IsOptional()
-  @IsString()
-  id?: string;
-
-  @IsOptional()
-  @IsString()
-  fullName?: string;
-
-  @IsOptional()
-  @IsString()
-  nationalId?: string;
-
-  @IsOptional()
-  @IsString()
-  profileType?: string;
-}
+import type { HoldState } from '@app/contracts';
+import type {
+  BookingDraftLeg,
+  BookingDraftStatus,
+} from '../entities/booking-draft.entity.js';
 
 export class BookingDraftLegInput {
-  @IsString()
+  @IsUUID()
   tripId!: string;
 
-  @IsString()
+  @IsUUID()
   travelClassId!: string;
 
-  @IsString()
+  @IsUUID()
   originStationId!: string;
 
-  @IsString()
+  @IsUUID()
   destinationStationId!: string;
 }
 
 export class CreateBookingDraftDto {
-  @IsOptional()
-  @IsString()
-  userId?: string;
+  @IsUUID()
+  bookingKey!: string;
+
+  // Supplied only by the authenticated Gateway over the private ingress.
+  @IsUUID()
+  userId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(4)
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  passengerIds!: string[];
 
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2)
   @ValidateNested({ each: true })
   @Type(() => BookingDraftLegInput)
   legs?: BookingDraftLegInput[];
 
   // Direct leg fields when not nested in legs array
   @IsOptional()
-  @IsString()
+  @IsUUID()
   tripId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   travelClassId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   originStationId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   destinationStationId?: string;
-
-  @IsOptional()
-  @IsArray()
-  passengers?: BookingPassengerInput[] | string[];
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(4)
-  passengerCount?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(4)
-  groupSize?: number;
 }
 
 export interface BookingDraftResponse {
   id: string;
   userId: string;
   status: BookingDraftStatus;
-  expiresAt: Date | string;
+  expiresAt: Date | string | null;
   legs: BookingDraftLeg[];
   createdAt: Date | string;
+  holdId?: string | null;
+  holdState?: HoldState | null;
+  holdVersion?: number;
+  serverNow?: Date | string | null;
+  extensionUsed?: boolean;
+  reconciliationPending?: boolean;
 }
