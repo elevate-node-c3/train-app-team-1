@@ -1438,7 +1438,11 @@
                   "    const window = pm.response.json().data.bookingWindow;",
                   "    pm.expect(window.totalDays).to.be.above(0);",
                   "    pm.expect(window.firstBookableDate <= window.lastBookableDate).to.be.true;",
-                  "});"
+                  "});",
+                  "",
+                  "if (pm.response.json().data && pm.response.json().data.trips && pm.response.json().data.trips.length > 0) {",
+                  "    pm.environment.set(\"outboundTripId\", pm.response.json().data.trips[0].tripId);",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -4071,6 +4075,251 @@
       ]
     },
     {
+      "name": "Bookings & Group Seat Allocation (Gateway)",
+      "description": "Group seat allocation (T-69, BR-25, D2, SEAT-1, SEAT-3): The server allocates seats deterministically for 1 to 4 passengers without client selection. Strict fallback hierarchy: all side-by-side in one coach, then same coach, then minimal split with bilingual notice. Client attempts to name a seat or coach are rejected with HTTP 400 INVALID_PAYLOAD.",
+      "item": [
+        {
+          "name": "Create Booking Draft - Group Allocation (Side-by-Side Priority)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Group allocation succeeded deterministically\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data).to.have.property(\"id\");",
+                  "    pm.expect(json.data.status).to.eql(\"PENDING\");",
+                  "    pm.expect([\"SIDE_BY_SIDE\", \"SAME_COACH\", \"SPLIT\"]).to.include(json.data.allocationOutcome);",
+                  "    pm.expect(json.data.seats).to.be.an(\"array\").with.lengthOf(2);",
+                  "    pm.environment.set(\"bookingDraftId\", json.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tripId\": \"{{outboundTripId}}\",\n  \"travelClassId\": \"{{searchTravelClassId}}\",\n  \"originStationId\": \"{{searchFrom}}\",\n  \"destinationStationId\": \"{{searchTo}}\",\n  \"passengers\": [\n    {\n      \"fullName\": \"Ahmed Hassan\"\n    },\n    {\n      \"fullName\": \"Sara Hassan\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "description": "Creates a booking draft for a group of 2. The server allocates seats deterministically without client seat selection, preferring side-by-side in one coach (BR-25, D2)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Booking Draft - Round Trip Independent Allocation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Round-trip draft has independent leg allocations\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.legs).to.be.an(\"array\").with.lengthOf(2);",
+                  "    json.data.legs.forEach(leg => {",
+                  "        pm.expect([\"SIDE_BY_SIDE\", \"SAME_COACH\", \"SPLIT\"]).to.include(leg.allocationOutcome);",
+                  "        if (leg.allocationOutcome === \"SPLIT\") {",
+                  "            pm.expect(leg.splitNotice).to.be.an(\"object\");",
+                  "            pm.expect(leg.splitNotice.code).to.eql(\"SEATS_SPLIT_NOTICE\");",
+                  "            pm.expect(leg.splitNotice.message).to.be.a(\"string\");",
+                  "            pm.expect(leg.splitNotice.messageEn).to.be.a(\"string\");",
+                  "        }",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "en",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legs\": [\n    {\n      \"tripId\": \"{{outboundTripId}}\",\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"originStationId\": \"{{searchFrom}}\",\n      \"destinationStationId\": \"{{searchTo}}\"\n    },\n    {\n      \"tripId\": \"{{outboundTripId}}\",\n      \"travelClassId\": \"{{searchTravelClassId}}\",\n      \"originStationId\": \"{{searchTo}}\",\n      \"destinationStationId\": \"{{searchFrom}}\"\n    }\n  ],\n  \"passengers\": [\n    {\n      \"fullName\": \"Passenger 1\"\n    },\n    {\n      \"fullName\": \"Passenger 2\"\n    },\n    {\n      \"fullName\": \"Passenger 3\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "description": "Creates a round-trip booking draft. Outbound and return legs allocate independently; split allocations carry the stable bilingual notice (SEATS_SPLIT_NOTICE)."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Explicit Seat Selection (BR-25 / D2 Enforcement)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Rejection code is INVALID_PAYLOAD\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.error.code).to.eql(\"INVALID_PAYLOAD\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tripId\": \"{{outboundTripId}}\",\n  \"travelClassId\": \"{{searchTravelClassId}}\",\n  \"originStationId\": \"{{searchFrom}}\",\n  \"destinationStationId\": \"{{searchTo}}\",\n  \"passengers\": [\n    {\n      \"fullName\": \"Ahmed Hassan\",\n      \"seatId\": \"seat-44\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "description": "Validates that client attempts to supply a seatId inside a passenger object are rejected with HTTP 400 INVALID_PAYLOAD and never quietly ignored."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Coach Selection at Root (BR-25 / D2 Enforcement)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Rejection code is INVALID_PAYLOAD\", function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.error.code).to.eql(\"INVALID_PAYLOAD\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tripId\": \"{{outboundTripId}}\",\n  \"coachNumber\": 3,\n  \"travelClassId\": \"{{searchTravelClassId}}\",\n  \"originStationId\": \"{{searchFrom}}\",\n  \"destinationStationId\": \"{{searchTo}}\",\n  \"groupSize\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "description": "Validates that client attempts to supply a coachNumber parameter at the root level are rejected with HTTP 400 INVALID_PAYLOAD."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Standalone Microservices (Host Dev Mode)",
       "description": "Direct endpoints when running individual services locally on host (e.g. npm run start:dev identity).",
       "item": [
@@ -4325,6 +4574,87 @@
                   ]
                 }
               }
+            },
+            {
+              "name": "Create Booking Draft (Direct Service)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 201\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "});",
+                      "pm.test(\"Draft created with hold\", function () {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json.status).to.eql(\"PENDING\");",
+                      "    pm.expect(json.seats).to.be.an(\"array\");",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"userId\": \"00000000-0000-4000-8000-000000000001\",\n  \"tripId\": \"{{outboundTripId}}\",\n  \"travelClassId\": \"{{searchTravelClassId}}\",\n  \"originStationId\": \"00000001-0000-4000-8000-000000000001\",\n  \"destinationStationId\": \"00000001-0000-4000-8000-000000000004\",\n  \"groupSize\": 2\n}"
+                },
+                "url": {
+                  "raw": "http://localhost:{{bookingPort}}/drafts",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "{{bookingPort}}",
+                  "path": [
+                    "drafts"
+                  ]
+                },
+                "description": "Direct host-mode call to Booking Service to create a draft."
+              },
+              "response": []
+            },
+            {
+              "name": "Get Booking Draft (Direct Service)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test(\"Status code is 200 or 404\", function () {",
+                      "    pm.expect([200, 404]).to.include(pm.response.code);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "http://localhost:{{bookingPort}}/drafts/{{bookingDraftId}}",
+                  "protocol": "http",
+                  "host": [
+                    "localhost"
+                  ],
+                  "port": "{{bookingPort}}",
+                  "path": [
+                    "drafts",
+                    "{{bookingDraftId}}"
+                  ]
+                },
+                "description": "Direct host-mode call to Booking Service to fetch a draft by ID."
+              },
+              "response": []
             }
           ]
         },
