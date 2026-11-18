@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { ClsService } from 'nestjs-cls';
 import { BookingController } from './booking.controller.js';
+import { BookingRequestGuard } from './booking-request.guard.js';
 import {
   BOOKING_CLIENT,
   BookingHttpService,
@@ -17,14 +19,16 @@ export function bookingServiceUrl(): string {
   controllers: [BookingController],
   providers: [
     BookingService,
+    BookingRequestGuard,
     {
       provide: BOOKING_BASE_URL,
       useFactory: () => bookingServiceUrl(),
     },
     {
       provide: BOOKING_CLIENT,
-      inject: [BOOKING_BASE_URL],
-      useFactory: (baseUrl: string) => new BookingHttpService(baseUrl),
+      inject: [BOOKING_BASE_URL, ClsService],
+      useFactory: (baseUrl: string, cls: ClsService) =>
+        new BookingHttpService(baseUrl, cls),
     },
   ],
   exports: [BookingService, BOOKING_CLIENT],
