@@ -53,6 +53,8 @@ function controllerWith(
     search as TripSearchService,
     returnSearch as TripReturnSearchService,
     stops as TripStopsService,
+    // QuoteBooking has its own spec; these cases never reach it.
+    {} as never,
     { get: (key: string) => caller[key] } as never,
   );
 }

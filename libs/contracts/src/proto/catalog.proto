@@ -54,6 +54,9 @@ service CatalogService {
   rpc UpdateStation (UpdateStationRequest) returns (StationResponse);
   // HTTP DELETE aliases this command; stations are never physically deleted.
   rpc DeactivateStation (StationIdRequest) returns (StationResponse);
+
+  // Booking's catalog quote call has an 1800ms client deadline.
+  rpc QuoteBooking (QuoteBookingRequest) returns (QuoteBookingResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -581,4 +584,32 @@ message UpdateStationRequest {
   // Absent means unchanged; a present empty wrapper clears the aliases.
   StationAliases aliases = 5;
   optional bool isActive = 6;
+}
+
+message BookingLeg {
+  string tripId = 1;
+  string originStationId = 2;
+  string destinationStationId = 3;
+}
+
+message QuoteBookingRequest {
+  repeated BookingLeg legs = 1;
+  string travelClassId = 2;
+}
+
+// One leg as the passenger rides it, in TripResult's vocabulary. The fare is
+// for ONE passenger: booking multiplies, adds the fee and totals (BR-31), so
+// the arithmetic has exactly one home.
+message QuotedLeg {
+  string tripId = 1;
+  int32 trainNumber = 2;
+  LocalizedName trainType = 3;
+  TripEndpoint departure = 4;  // the passenger's origin
+  TripEndpoint arrival = 5;    // the passenger's destination
+  Money fare = 6;              // one passenger, excludes the booking fee
+}
+
+message QuoteBookingResponse {
+  TravelClass travelClass = 1;
+  repeated QuotedLeg legs = 2;  // in request order
 }

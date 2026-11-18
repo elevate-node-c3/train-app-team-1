@@ -279,6 +279,7 @@ const RPC_NAMES = [
   'ListStations',
   'SearchOneWayTrips',
   'SearchReturnTrips',
+  'QuoteBooking',
   'GetTripStops',
   'ListRecentSearches',
   'PublishTimetable',
