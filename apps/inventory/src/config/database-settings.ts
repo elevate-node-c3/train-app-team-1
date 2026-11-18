@@ -1,4 +1,4 @@
-/** Keep environment reads in config for the TypeORM CLI. */
+/** Read database URLs from the environment for the TypeORM CLI and service migrations. */
 export function databaseUrlFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): string {

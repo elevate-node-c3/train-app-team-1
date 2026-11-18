@@ -5,7 +5,10 @@ import type {
   TripPublishedPayloadV1,
   TripWithdrawnPayloadV1,
 } from '@app/contracts';
-import { TRIP_PUBLISHED_EVENT_TYPE, TRIP_WITHDRAWN_EVENT_TYPE } from '@app/contracts';
+import {
+  TRIP_PUBLISHED_EVENT_TYPE,
+  TRIP_WITHDRAWN_EVENT_TYPE,
+} from '@app/contracts';
 import {
   OUTBOX,
   PermanentEventError,
@@ -102,9 +105,11 @@ export class TripLifecycleConsumer implements EventHandlerPort {
     // two commits are not atomic (spec §6.5): a crash between them loses the
     // dead-lettering but keeps the refusal event, which is the safer loss.
     const reason =
-      outcome.reason === 'stops-changed'
-        ? 'stops changed while seats are occupied'
-        : 'occupied seats would be dropped by the new layout';
+      outcome.reason === 'hold-promise-changed'
+        ? 'an active hold expiry or travel class would change'
+        : outcome.reason === 'stops-changed'
+          ? 'stops changed while seats are occupied'
+          : 'occupied seats would be dropped by the new layout';
 
     await this.unitOfWork.withTransaction((ctx) =>
       this.outbox.append(
@@ -124,7 +129,10 @@ export class TripLifecycleConsumer implements EventHandlerPort {
       ),
     );
 
-    throw new PermanentEventError(`Trip publication refused: ${reason}`, 'invalid-payload');
+    throw new PermanentEventError(
+      `Trip publication refused: ${reason}`,
+      'invalid-payload',
+    );
   }
 
   private async applyAndPublish(

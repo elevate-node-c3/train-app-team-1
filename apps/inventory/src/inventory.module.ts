@@ -1,3 +1,4 @@
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
@@ -10,6 +11,7 @@ import { migrations } from './database/migrations/index.js';
 import { ServiceInfoController } from './service-info.controller.js';
 import { TripLifecycleModule } from './modules/trip-lifecycle/trip-lifecycle.module.js';
 import { SeatUsageModule } from './modules/seat-usage/seat-usage.module.js';
+import { SeatHoldModule } from './modules/seat-hold/seat-hold.module.js';
 
 @Module({
   imports: [
@@ -21,6 +23,7 @@ import { SeatUsageModule } from './modules/seat-usage/seat-usage.module.js';
     MigrationModule,
     TripLifecycleModule,
     SeatUsageModule,
+    SeatHoldModule,
     OutboxModule,
   ],
   controllers: [ServiceInfoController],
