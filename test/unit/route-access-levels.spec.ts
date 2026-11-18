@@ -157,6 +157,14 @@ function routes(): Route[] {
 }
 
 describe('Gateway route access metadata (BR-01, R4)', () => {
+  it('routes holds only through a bookable booking entry, never a public hold endpoint', () => {
+    expect(
+      routes().find(
+        (route) => route.method === 'POST' && route.path === '/bookings',
+      )?.level,
+    ).toBe('bookable');
+    expect(routes().filter((route) => /holds?/i.test(route.path))).toEqual([]);
+  });
   it('declares an access level or a staff role on every HTTP route', () => {
     const missing = routes()
       .filter((route) => !route.level && route.roles.length === 0)
