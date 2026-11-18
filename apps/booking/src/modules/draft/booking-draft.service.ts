@@ -1,356 +1,721 @@
-import { randomUUID } from 'node:crypto';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'node:crypto';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { ClientGrpc } from '@nestjs/microservices';
-import type { Repository } from 'typeorm';
-import { firstValueFrom, isObservable, type Observable } from 'rxjs';
+import type { CallOptions, Metadata } from '@grpc/grpc-js';
+import { ClsService } from 'nestjs-cls';
+import { firstValueFrom, from, timeout, type Observable } from 'rxjs';
+import { isUUID } from 'class-validator';
 import {
-  AllocationOutcome,
+  createGrpcMetadataWithCorrelation,
+  resolveLanguage,
+} from '@app/common';
+import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
+import {
   ErrorCode,
+  IDENTITY_SERVICE_NAME,
   INVENTORY_SERVICE_NAME,
-  SEATS_SPLIT_NOTICE,
-  type HoldSeatsRequest,
-  type HoldSeatsResponse,
-  type ReleaseSeatsRequest,
-  type ReleaseSeatsResponse,
+  type CreateHoldRequest,
+  type GetHoldRequest,
+  type HoldSnapshot,
+  type ResolveHoldPassengersRequest,
+  type ResolveHoldPassengersResponse,
+  type ResolvedHoldPassenger,
 } from '@app/contracts';
 import {
   BookingDraftEntity,
-  type BookingDraftLeg,
+  type BookingHoldIntent,
 } from './entities/booking-draft.entity.js';
 import type {
-  BookingDraftLegInput,
   BookingDraftResponse,
   CreateBookingDraftDto,
 } from './dto/create-booking-draft.dto.js';
+import {
+  BookingDraftStore,
+  projectHoldSnapshot,
+} from './booking-draft.store.js';
+import {
+  BookingDraftError,
+  extractErrorDetails,
+  isMissingHold,
+} from './booking-draft.errors.js';
+import { isHoldInstant, isHoldOutcome } from './hold-lifecycle.parser.js';
 
+export {
+  BookingDraftError,
+  extractErrorDetails,
+} from './booking-draft.errors.js';
 export const INVENTORY_GRPC_CLIENT = 'INVENTORY_GRPC_CLIENT';
+export const IDENTITY_GRPC_CLIENT = 'BOOKING_IDENTITY_GRPC_CLIENT';
+export const BOOKING_GRPC_TIMEOUT_MS = 2500;
+
+type Unary<TRequest, TResponse> = (
+  request: TRequest,
+  metadata: Metadata,
+  options: CallOptions,
+) => Observable<TResponse> | Promise<TResponse>;
 
 export interface InventoryGrpcService {
-  holdSeats(
-    request: HoldSeatsRequest,
-  ): Observable<HoldSeatsResponse> | Promise<HoldSeatsResponse>;
-  releaseSeats(
-    request: ReleaseSeatsRequest,
-  ): Observable<ReleaseSeatsResponse> | Promise<ReleaseSeatsResponse>;
+  createHold: Unary<CreateHoldRequest, HoldSnapshot>;
+  getHold: Unary<GetHoldRequest, HoldSnapshot>;
+  releaseHold: Unary<GetHoldRequest, HoldSnapshot>;
+  extendHold: Unary<GetHoldRequest, HoldSnapshot>;
 }
 
-export class BookingDraftError extends Error {
-  constructor(
-    public readonly code: ErrorCode,
-    message?: string,
-    public readonly availableCount?: number,
-  ) {
-    super(message ?? code);
-    this.name = 'BookingDraftError';
-  }
-}
-
-export function extractErrorDetails(error: unknown): {
-  code: ErrorCode;
-  message: string;
-  availableCount?: number;
-} {
-  if (error instanceof BookingDraftError) {
-    return {
-      code: error.code,
-      message: error.message,
-      availableCount: error.availableCount,
-    };
-  }
-
-  if (error && typeof error === 'object') {
-    const err = error as Record<string, any>;
-    let code: ErrorCode | undefined = err.code;
-    let availableCount: number | undefined = err.availableCount;
-    let message: string | undefined = err.message;
-
-    if (typeof err.details === 'string') {
-      try {
-        const parsed = JSON.parse(err.details);
-        if (parsed.code) code = parsed.code;
-        if (parsed.availableCount !== undefined) {
-          availableCount = parsed.availableCount;
-        }
-      } catch {
-        if (Object.values(ErrorCode).includes(err.details as ErrorCode)) {
-          code = err.details as ErrorCode;
-        }
-      }
-    } else if (err.details && typeof err.details === 'object') {
-      if (err.details.code) code = err.details.code;
-      if (err.details.availableCount !== undefined) {
-        availableCount = err.details.availableCount;
-      }
-    }
-
-    if (code && Object.values(ErrorCode).includes(code)) {
-      return {
-        code,
-        message: message ?? code,
-        availableCount,
-      };
-    }
-  }
-
-  return {
-    code: ErrorCode.INTERNAL_SERVER_ERROR,
-    message: error instanceof Error ? error.message : String(error),
-  };
-}
-
-function determinePassengerCount(dto: CreateBookingDraftDto): number {
-  if (Array.isArray(dto.passengers)) {
-    return dto.passengers.length;
-  }
-  if (typeof dto.passengerCount === 'number') {
-    return dto.passengerCount;
-  }
-  if (typeof dto.groupSize === 'number') {
-    return dto.groupSize;
-  }
-  return 0;
-}
-
-function extractPassengerNames(
-  dto: CreateBookingDraftDto,
-  count: number,
-): string[] {
-  const names: string[] = [];
-  for (let i = 0; i < count; i++) {
-    let name = 'Passenger';
-    if (Array.isArray(dto.passengers) && dto.passengers[i]) {
-      const p = dto.passengers[i];
-      if (typeof p === 'string' && p.trim().length > 0) {
-        name = p.trim();
-      } else if (
-        typeof p === 'object' &&
-        p.fullName &&
-        typeof p.fullName === 'string' &&
-        p.fullName.trim().length > 0
-      ) {
-        name = p.fullName.trim();
-      }
-    }
-    names.push(name);
-  }
-  return names;
+export interface BookingIdentityGrpcService {
+  resolveHoldPassengers: Unary<
+    ResolveHoldPassengersRequest,
+    ResolveHoldPassengersResponse
+  >;
 }
 
 @Injectable()
 export class BookingDraftService implements OnModuleInit {
   private readonly logger = new Logger(BookingDraftService.name);
-  private inventoryService!: InventoryGrpcService;
+  private inventory!: InventoryGrpcService;
+  private identity!: BookingIdentityGrpcService;
 
   constructor(
-    @InjectRepository(BookingDraftEntity)
-    private readonly draftRepository: Repository<BookingDraftEntity>,
+    private readonly store: BookingDraftStore,
     @Inject(INVENTORY_GRPC_CLIENT)
-    private readonly client: ClientGrpc | InventoryGrpcService,
+    private readonly inventoryClient: ClientGrpc | InventoryGrpcService,
+    @Inject(IDENTITY_GRPC_CLIENT)
+    private readonly identityClient: ClientGrpc | BookingIdentityGrpcService,
+    private readonly cls: ClsService,
   ) {
-    if (client) {
-      if (
-        'getService' in client &&
-        typeof (client as ClientGrpc).getService === 'function'
-      ) {
-        try {
-          this.inventoryService = (client as ClientGrpc).getService<InventoryGrpcService>(
-            INVENTORY_SERVICE_NAME,
-          );
-        } catch {
-          // May be deferred to onModuleInit
-        }
-      } else {
-        this.inventoryService = client as InventoryGrpcService;
-      }
-    }
+    if (!('getService' in inventoryClient)) this.inventory = inventoryClient;
+    if (!('getService' in identityClient)) this.identity = identityClient;
   }
 
   onModuleInit(): void {
-    if (
-      !this.inventoryService &&
-      this.client &&
-      'getService' in this.client &&
-      typeof (this.client as ClientGrpc).getService === 'function'
-    ) {
-      this.inventoryService = (this.client as ClientGrpc).getService<InventoryGrpcService>(
+    if ('getService' in this.inventoryClient) {
+      this.inventory = this.inventoryClient.getService<InventoryGrpcService>(
         INVENTORY_SERVICE_NAME,
       );
     }
-  }
-
-  private async callHoldSeats(
-    req: HoldSeatsRequest,
-  ): Promise<HoldSeatsResponse> {
-    const result = this.inventoryService.holdSeats(req);
-    if (isObservable(result)) {
-      return await firstValueFrom(result);
+    if ('getService' in this.identityClient) {
+      this.identity =
+        this.identityClient.getService<BookingIdentityGrpcService>(
+          IDENTITY_SERVICE_NAME,
+        );
     }
-    return await result;
-  }
-
-  private async callReleaseSeats(
-    req: ReleaseSeatsRequest,
-  ): Promise<ReleaseSeatsResponse> {
-    const result = this.inventoryService.releaseSeats(req);
-    if (isObservable(result)) {
-      return await firstValueFrom(result);
-    }
-    return await result;
   }
 
   async createDraft(
     dto: CreateBookingDraftDto,
+    language?: string,
   ): Promise<BookingDraftResponse> {
-    const groupSize = determinePassengerCount(dto);
-    if (
-      !groupSize ||
-      groupSize < 1 ||
-      groupSize > 4 ||
-      !Number.isInteger(groupSize)
-    ) {
-      throw new BookingDraftError(
-        ErrorCode.VALIDATION_ERROR,
-        `Invalid passenger count: ${groupSize}. Group size must be between 1 and 4.`,
-      );
+    const { id, userId, intent, fingerprint } = normalizeBookingIntent(dto);
+    let draft = await this.store.createIntent(id, userId, fingerprint, intent);
+    if (draft.releaseRequested) return this.releaseHold(userId, id, language);
+    if (draft.holdFailure) throw this.failureFor(draft.holdFailure, draft);
+
+    if (!draft.passengerSnapshot) {
+      try {
+        const resolved = await this.rpc<
+          ResolveHoldPassengersRequest,
+          ResolveHoldPassengersResponse
+        >(
+          this.identity,
+          'resolveHoldPassengers',
+          {
+            ownerId: userId,
+            passengerRefs: intent.passengerRefs,
+            tripIds: intent.legs.map((leg) => leg.tripId),
+          },
+          'identity',
+          language,
+        );
+        // Concurrent resolvers may finish differently. Only the first persisted
+        // snapshot wins; every CreateHold uses that same committed snapshot.
+        draft = await this.store.rememberPassengers(
+          id,
+          userId,
+          identitySnapshot(resolved, intent),
+        );
+      } catch (error) {
+        const details = extractErrorDetails(error);
+        if (!details.definite)
+          throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+        draft = await this.store.rejectIntent(
+          id,
+          userId,
+          { code: details.code },
+          'identity',
+        );
+        if (draft.holdFailure) throw this.failureFor(draft.holdFailure, draft);
+      }
     }
 
-    const legs: BookingDraftLegInput[] =
-      Array.isArray(dto.legs) && dto.legs.length > 0
-        ? dto.legs
-        : dto.tripId && dto.travelClassId && dto.originStationId && dto.destinationStationId
-        ? [
-            {
-              tripId: dto.tripId,
-              travelClassId: dto.travelClassId,
-              originStationId: dto.originStationId,
-              destinationStationId: dto.destinationStationId,
-            },
-          ]
-        : [];
-
-    if (legs.length === 0) {
-      throw new BookingDraftError(
-        ErrorCode.VALIDATION_ERROR,
-        'Booking draft requires at least one leg.',
-      );
-    }
-
-    const draftId = randomUUID();
-    const passengerNames = extractPassengerNames(dto, groupSize);
-    const acquiredHolds: string[] = [];
-    const completedLegs: BookingDraftLeg[] = [];
+    const requested = await this.store.requestHold(id, userId);
+    draft = requested.draft;
+    if (draft.releaseRequested) return this.releaseHold(userId, id, language);
+    if (draft.holdFailure) throw this.failureFor(draft.holdFailure, draft);
+    if (!draft.passengerSnapshot)
+      throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
 
     try {
-      for (const leg of legs) {
-        const holdReq: HoldSeatsRequest = {
-          tripId: leg.tripId,
-          travelClassId: leg.travelClassId,
-          originStationId: leg.originStationId,
-          destinationStationId: leg.destinationStationId,
-          groupSize,
-          ttlSeconds: 600,
-          bookingId: draftId,
-        };
-
-        const holdRes = await this.callHoldSeats(holdReq);
-        acquiredHolds.push(holdRes.holdId);
-
-        const legSeats = (holdRes.seats ?? []).map((seat, idx) => {
-          const pName = passengerNames[idx] ?? 'Passenger';
-          const base =
-            seat.label ?? `Coach ${seat.coachNumber} · Seat ${seat.seatNumber}`;
-          return `${pName} · ${base}`;
-        });
-
-        const isSplit =
-          holdRes.allocationOutcome === AllocationOutcome.SPLIT;
-        const splitNotice = isSplit
-          ? holdRes.splitNotice ?? SEATS_SPLIT_NOTICE
-          : undefined;
-
-        completedLegs.push({
-          holdId: holdRes.holdId,
-          tripId: leg.tripId,
-          travelClassId: leg.travelClassId,
-          originStationId: leg.originStationId,
-          destinationStationId: leg.destinationStationId,
-          allocationOutcome: holdRes.allocationOutcome,
-          seats: legSeats,
-          assignedSeats: holdRes.seats,
-          splitNotice,
-          expiresAt: holdRes.expiresAt,
-        });
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Draft ${draftId} failed during seat allocation; compensating ${acquiredHolds.length} hold(s)`,
-      );
-
-      for (const holdId of acquiredHolds) {
+      if (requested.alreadyRequested || draft.holdId !== null) {
         try {
-          await this.callReleaseSeats({ holdId });
-        } catch (releaseError) {
-          this.logger.error(
-            `Failed to release hold ${holdId} during compensation: ${String(releaseError)}`,
-          );
+          return await this.readInventory(draft, language);
+        } catch (error) {
+          if (!isMissingHold(error) || draft.holdVersion > 0) throw error;
+          // A timeout never creates a new key or a new identity snapshot.
         }
       }
-
-      try {
-        const failedDraft = this.draftRepository.create({
-          id: draftId,
-          userId: dto.userId,
-          status: 'FAILED',
-          expiresAt: new Date(),
-          legs: completedLegs,
-          createdAt: new Date(),
-        });
-        await this.draftRepository.save(failedDraft);
-      } catch (saveError) {
-        this.logger.warn(
-          `Failed to record failed draft ${draftId}: ${String(saveError)}`,
-        );
+      const snapshot = await this.rpc<CreateHoldRequest, HoldSnapshot>(
+        this.inventory,
+        'createHold',
+        {
+          ownerId: userId,
+          bookingKey: id,
+          legs: draft.holdIntent!.legs,
+          passengers: draft.passengerSnapshot.map(
+            ({ passengerRef, identities }) => ({ passengerRef, identities }),
+          ),
+        },
+        'inventory',
+        language,
+      );
+      const persisted = await this.rememberHold(draft, snapshot);
+      if (persisted.releaseRequested && persisted.holdState === 'HELD') {
+        return this.releaseHold(userId, id, language);
       }
-
-      const { code, message, availableCount } = extractErrorDetails(error);
-      throw new BookingDraftError(code, message, availableCount);
+      return responseFor(persisted);
+    } catch (error) {
+      const details = extractErrorDetails(error);
+      if (details.definite) {
+        draft = await this.store.rejectIntent(
+          id,
+          userId,
+          {
+            code: details.code,
+            availableCount: details.availableCount,
+            passengerRef: draft.passengerSnapshot.find(
+              (p) => p.passengerRef === details.passengerRef,
+            )?.passengerRef,
+          },
+          'inventory',
+        );
+        if (draft.holdFailure) throw this.failureFor(draft.holdFailure, draft);
+        // An event/other replay may already prove a committed hold.
+        return responseFor(draft);
+      }
+      try {
+        return await this.readInventory(draft, language);
+      } catch {
+        // Allocation may have committed. Keep its durable intent and never
+        // compensate a transport timeout; the same key recovers on retry/GET.
+        return { ...responseFor(draft), reconciliationPending: true };
+      }
     }
+  }
 
-    const defaultExpiry = new Date(Date.now() + 600_000);
-    const expiresAt = completedLegs.reduce<Date>((earliest, leg) => {
-      if (!leg.expiresAt) return earliest;
-      const legDate = new Date(leg.expiresAt);
-      return legDate < earliest ? legDate : earliest;
-    }, defaultExpiry);
+  async getDraft(
+    id: string,
+    userId: string,
+    language?: string,
+  ): Promise<BookingDraftResponse | null> {
+    assertOwnerKey(userId, id);
+    const draft = await this.store.findOwned(
+      id.toLowerCase(),
+      userId.toLowerCase(),
+    );
+    if (!draft) return null;
+    if (!draft.holdIntent) return responseFor(draft);
+    if (
+      draft.releaseRequested &&
+      (draft.holdState === null || draft.holdState === 'HELD')
+    ) {
+      return this.releaseHold(userId, id, language);
+    }
+    if (draft.holdFailure) return responseFor(draft);
+    if (!draft.holdRequested && !draft.holdId) return responseFor(draft);
+    if (
+      draft.holdState !== null &&
+      draft.holdState !== 'HELD' &&
+      !draft.reconciliationPending
+    ) {
+      return responseFor(draft);
+    }
+    try {
+      return await this.readInventory(draft, language);
+    } catch (error) {
+      if (isMissingHold(error) && draft.holdState === null)
+        return responseFor(draft);
+      // Never claim a stale cached HELD state when Inventory cannot reconcile it.
+      throw this.failureFor(error, draft);
+    }
+  }
 
-    const draft = this.draftRepository.create({
-      id: draftId,
-      userId: dto.userId,
-      status: 'PENDING',
-      expiresAt,
-      legs: completedLegs,
-      createdAt: new Date(),
-    });
+  /** Private owner/key adapters. No HTTP release or 3DS extension route exists. */
+  async getHold(
+    ownerId: string,
+    bookingKey: string,
+    language?: string,
+  ): Promise<BookingDraftResponse> {
+    const draft = await this.getDraft(bookingKey, ownerId, language);
+    if (!draft) throw new BookingDraftError(ErrorCode.HOLD_NOT_FOUND);
+    return draft;
+  }
 
-    await this.draftRepository.save(draft);
+  async releaseHold(
+    ownerId: string,
+    bookingKey: string,
+    language?: string,
+  ): Promise<BookingDraftResponse> {
+    assertOwnerKey(ownerId, bookingKey);
+    const draft = await this.store.requestRelease(
+      bookingKey.toLowerCase(),
+      ownerId.toLowerCase(),
+    );
+    try {
+      const snapshot = await this.rpc<GetHoldRequest, HoldSnapshot>(
+        this.inventory,
+        'releaseHold',
+        {
+          ownerId: draft.userId,
+          bookingKey: draft.id,
+        },
+        'inventory',
+        language,
+      );
+      return responseFor(await this.rememberHold(draft, snapshot));
+    } catch (error) {
+      if (extractErrorDetails(error).definite)
+        throw this.failureFor(error, draft);
+      return { ...responseFor(draft), reconciliationPending: true };
+    }
+  }
 
+  /** PAY-2 will invoke this only after an authenticated 3DS challenge begins. */
+  async extendHold(
+    ownerId: string,
+    bookingKey: string,
+    language?: string,
+  ): Promise<BookingDraftResponse> {
+    assertOwnerKey(ownerId, bookingKey);
+    const draft = await this.store.findOwned(
+      bookingKey.toLowerCase(),
+      ownerId.toLowerCase(),
+    );
+    if (!draft || !draft.holdIntent)
+      throw new BookingDraftError(ErrorCode.HOLD_NOT_FOUND);
+    if (draft.releaseRequested)
+      throw new BookingDraftError(ErrorCode.HOLD_TERMINAL);
+    try {
+      const snapshot = await this.rpc<GetHoldRequest, HoldSnapshot>(
+        this.inventory,
+        'extendHold',
+        {
+          ownerId: draft.userId,
+          bookingKey: draft.id,
+        },
+        'inventory',
+        language,
+      );
+      return responseFor(await this.rememberHold(draft, snapshot));
+    } catch (error) {
+      throw this.failureFor(error, draft);
+    }
+  }
+
+  /** Event handlers call only GET after committing their local version fence. */
+  async reconcileHold(ownerId: string, bookingKey: string): Promise<void> {
+    const draft = await this.store.findOwned(bookingKey, ownerId);
+    if (!draft || !draft.reconciliationPending) return;
+    try {
+      const response = await this.readInventory(draft, undefined, false);
+      if (response.holdState === 'HELD' && response.reconciliationPending) {
+        throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+      }
+    } catch {
+      throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+    }
+  }
+
+  private async readInventory(
+    draft: BookingDraftEntity,
+    language?: string,
+    allowDeferredSave = true,
+  ): Promise<BookingDraftResponse> {
+    const snapshot = await this.rpc<GetHoldRequest, HoldSnapshot>(
+      this.inventory,
+      'getHold',
+      {
+        ownerId: draft.userId,
+        bookingKey: draft.id,
+      },
+      'inventory',
+      language,
+    );
+    return responseFor(
+      await this.rememberHold(draft, snapshot, allowDeferredSave),
+    );
+  }
+
+  private async rememberHold(
+    draft: BookingDraftEntity,
+    value: HoldSnapshot,
+    allowDeferredSave = true,
+  ): Promise<BookingDraftEntity> {
+    const snapshot = holdSnapshot(value, draft);
+    try {
+      return await this.store.applySnapshot(snapshot);
+    } catch {
+      if (!allowDeferredSave)
+        throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+      // A durable pre-RPC intent already exists. Return the known receipt rather
+      // than a misleading 500; retries and lifecycle delivery repair the save.
+      this.logger.warn(
+        'Hold receipt save deferred; durable booking intent retained.',
+      );
+      const fallback = structuredClone(draft);
+      projectHoldSnapshot(fallback, snapshot);
+      fallback.reconciliationPending = true;
+      return fallback;
+    }
+  }
+
+  private failureFor(
+    error: unknown,
+    draft: BookingDraftEntity,
+  ): BookingDraftError {
+    const details = extractErrorDetails(error);
+    const passenger = draft.passengerSnapshot?.find(
+      (p) => p.passengerRef === details.passengerRef,
+    );
+    return new BookingDraftError(
+      details.code,
+      undefined,
+      details.availableCount,
+      passenger?.passengerRef,
+      passenger?.maskedNationalId,
+    );
+  }
+
+  private async rpc<TRequest extends { ownerId: string }, TResponse>(
+    service: object,
+    method: string,
+    request: TRequest,
+    target: 'inventory' | 'identity',
+    language?: string,
+  ): Promise<TResponse> {
+    const secret =
+      target === 'inventory'
+        ? process.env.BOOKING_INVENTORY_SERVICE_KEY
+        : process.env.BOOKING_IDENTITY_SERVICE_KEY;
+    if (!matchesServiceCredential(secret, secret))
+      throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+    const metadata = createGrpcMetadataWithCorrelation(this.cls);
+    metadata.set(`x-booking-${target}-key`, secret!);
+    metadata.set('x-caller-account-id', request.ownerId);
+    metadata.set('accept-language', resolveLanguage(language));
+    const invoke = (service as Record<string, Unary<TRequest, TResponse>>)?.[
+      method
+    ];
+    if (!invoke) throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+    return firstValueFrom(
+      from(
+        invoke.call(service, request, metadata, {
+          deadline: Date.now() + BOOKING_GRPC_TIMEOUT_MS,
+        }),
+      ).pipe(timeout({ first: BOOKING_GRPC_TIMEOUT_MS })),
+    );
+  }
+}
+
+function assertOwnerKey(ownerId: string, bookingKey: string): void {
+  if (
+    typeof ownerId !== 'string' ||
+    !isUUID(ownerId) ||
+    typeof bookingKey !== 'string' ||
+    !isUUID(bookingKey)
+  ) {
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  }
+}
+
+export function normalizeBookingIntent(dto: CreateBookingDraftDto): {
+  id: string;
+  userId: string;
+  intent: BookingHoldIntent;
+  fingerprint: string;
+} {
+  if (!dto || typeof dto !== 'object' || Array.isArray(dto))
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  assertOwnerKey(dto.userId, dto.bookingKey);
+  const allowed = new Set([
+    'bookingKey',
+    'userId',
+    'passengerIds',
+    'legs',
+    'tripId',
+    'travelClassId',
+    'originStationId',
+    'destinationStationId',
+  ]);
+  if (
+    Object.keys(dto).some((key) => !allowed.has(key)) ||
+    !Array.isArray(dto.passengerIds) ||
+    dto.passengerIds.length < 1 ||
+    dto.passengerIds.length > 4 ||
+    dto.passengerIds.some((id) => typeof id !== 'string' || !isUUID(id))
+  ) {
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  }
+  const passengerRefs = dto.passengerIds.map((id) => id.toLowerCase());
+  const direct = [
+    'tripId',
+    'travelClassId',
+    'originStationId',
+    'destinationStationId',
+  ] as const;
+  if (dto.legs !== undefined && direct.some((key) => dto[key] !== undefined)) {
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  }
+  const input = dto.legs ?? [
+    {
+      tripId: dto.tripId,
+      travelClassId: dto.travelClassId,
+      originStationId: dto.originStationId,
+      destinationStationId: dto.destinationStationId,
+    },
+  ];
+  if (
+    !Array.isArray(input) ||
+    input.length < 1 ||
+    input.length > 2 ||
+    new Set(passengerRefs).size !== passengerRefs.length
+  )
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  const legs = input.map((leg) => {
+    if (
+      !leg ||
+      typeof leg !== 'object' ||
+      Object.keys(leg).some(
+        (key) => !direct.includes(key as (typeof direct)[number]),
+      ) ||
+      direct.some((key) => typeof leg[key] !== 'string' || !isUUID(leg[key]!))
+    ) {
+      throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+    }
     return {
-      id: draft.id,
-      userId: draft.userId,
-      status: draft.status,
-      expiresAt: draft.expiresAt,
-      legs: draft.legs,
-      createdAt: draft.createdAt,
+      tripId: leg.tripId!.toLowerCase(),
+      travelClassId: leg.travelClassId!.toLowerCase(),
+      originStationId: leg.originStationId!.toLowerCase(),
+      destinationStationId: leg.destinationStationId!.toLowerCase(),
+    };
+  });
+  if (new Set(legs.map((leg) => leg.tripId)).size !== legs.length)
+    throw new BookingDraftError(ErrorCode.VALIDATION_ERROR);
+  const intent = { legs, passengerRefs };
+  const userId = dto.userId.toLowerCase();
+  return {
+    id: dto.bookingKey.toLowerCase(),
+    userId,
+    intent,
+    fingerprint: createHash('sha256')
+      .update(JSON.stringify({ userId, ...intent }))
+      .digest('hex'),
+  };
+}
+
+function identitySnapshot(
+  value: ResolveHoldPassengersResponse,
+  intent: BookingHoldIntent,
+): ResolvedHoldPassenger[] {
+  const invalid = (): never => {
+    throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+  };
+  if (
+    !value ||
+    !Array.isArray(value.passengers) ||
+    value.passengers.length !== intent.passengerRefs.length
+  )
+    invalid();
+  return intent.passengerRefs.map((ref) => {
+    const matches = value.passengers.filter(
+      (passenger) => passenger.passengerRef === ref,
+    );
+    if (matches.length !== 1) invalid();
+    const passenger = matches[0];
+    if (
+      typeof passenger.displayName !== 'string' ||
+      !passenger.displayName.trim() ||
+      passenger.displayName.length > 50 ||
+      typeof passenger.maskedNationalId !== 'string' ||
+      !/^\*{10}[0-9]{4}$/.test(passenger.maskedNationalId) ||
+      !Array.isArray(passenger.identities) ||
+      passenger.identities.length !== intent.legs.length
+    )
+      invalid();
+    return {
+      passengerRef: ref,
+      displayName: passenger.displayName,
+      maskedNationalId: passenger.maskedNationalId,
+      identities: intent.legs.map((leg) => {
+        const identities = passenger.identities.filter(
+          (identity) => identity.tripId === leg.tripId,
+        );
+        if (identities.length !== 1) invalid();
+        const identity = identities[0];
+        if (
+          typeof identity.passengerToken !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(identity.passengerToken) ||
+          !Number.isSafeInteger(identity.passengerKeyVersion) ||
+          identity.passengerKeyVersion < 1
+        )
+          invalid();
+        return {
+          tripId: leg.tripId,
+          passengerToken: identity.passengerToken,
+          passengerKeyVersion: identity.passengerKeyVersion,
+        };
+      }),
+    };
+  });
+}
+
+function holdSnapshot(
+  value: HoldSnapshot,
+  draft: BookingDraftEntity,
+): HoldSnapshot {
+  const invalid = (): never => {
+    throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
+  };
+  if (
+    !value ||
+    value.bookingKey !== draft.id ||
+    value.ownerId !== draft.userId ||
+    typeof value.holdId !== 'string' ||
+    !isUUID(value.holdId) ||
+    !['HELD', 'RELEASED', 'EXPIRED', 'CANCELLED'].includes(value.state) ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 1 ||
+    typeof value.extensionUsed !== 'boolean' ||
+    !isHoldInstant(value.serverNow) ||
+    !Array.isArray(value.legs) ||
+    !Array.isArray(value.assignments)
+  )
+    invalid();
+  const expiresAt = value.expiresAt === '' ? null : value.expiresAt;
+  if (value.state === 'CANCELLED') {
+    if (expiresAt !== null || value.legs.length || value.assignments.length)
+      invalid();
+    return {
+      holdId: value.holdId,
+      bookingKey: draft.id,
+      ownerId: draft.userId,
+      state: value.state,
+      version: value.version,
+      extensionUsed: value.extensionUsed,
+      expiresAt: null,
+      serverNow: value.serverNow,
+      allocationOutcome: null,
+      legs: [],
+      assignments: [],
     };
   }
+  if (
+    !isHoldInstant(expiresAt) ||
+    !isHoldOutcome(value.allocationOutcome) ||
+    !draft.holdIntent ||
+    !draft.passengerSnapshot ||
+    value.legs.length !== draft.holdIntent.legs.length ||
+    value.assignments.length !==
+      draft.holdIntent.legs.length * draft.passengerSnapshot.length
+  )
+    invalid();
+  const legs = draft.holdIntent!.legs.map((input) => {
+    const matches = value.legs.filter((leg) => leg.tripId === input.tripId);
+    if (matches.length !== 1) invalid();
+    const leg = matches[0];
+    if (
+      leg.travelClassId !== input.travelClassId ||
+      leg.originStationId !== input.originStationId ||
+      leg.destinationStationId !== input.destinationStationId ||
+      !isHoldOutcome(leg.outcome) ||
+      !Number.isSafeInteger(leg.originPosition) ||
+      !Number.isSafeInteger(leg.destinationPosition) ||
+      leg.originPosition < 0 ||
+      leg.destinationPosition <= leg.originPosition
+    )
+      invalid();
+    return {
+      ...input,
+      originPosition: leg.originPosition,
+      destinationPosition: leg.destinationPosition,
+      outcome: leg.outcome,
+    };
+  });
+  const assignments = legs.flatMap((leg) =>
+    draft.passengerSnapshot!.map((passenger) => {
+      const matches = value.assignments.filter(
+        (assignment) =>
+          assignment.tripId === leg.tripId &&
+          assignment.passengerRef === passenger.passengerRef,
+      );
+      if (matches.length !== 1) invalid();
+      const seat = matches[0];
+      const identity = passenger.identities.find(
+        (candidate) => candidate.tripId === leg.tripId,
+      )!;
+      if (
+        seat.passengerKeyVersion !== identity.passengerKeyVersion ||
+        !isUUID(seat.tripSeatId) ||
+        seat.travelClassId !== leg.travelClassId ||
+        seat.originStationId !== leg.originStationId ||
+        seat.destinationStationId !== leg.destinationStationId ||
+        seat.originPosition !== leg.originPosition ||
+        seat.destinationPosition !== leg.destinationPosition ||
+        seat.outcome !== leg.outcome ||
+        !Number.isSafeInteger(seat.coachNumber) ||
+        !Number.isSafeInteger(seat.rowNumber) ||
+        typeof seat.seatNumber !== 'string' ||
+        !seat.seatNumber ||
+        (seat.label !== undefined && typeof seat.label !== 'string')
+      )
+        invalid();
+      return {
+        ...leg,
+        passengerRef: passenger.passengerRef,
+        passengerKeyVersion: identity.passengerKeyVersion,
+        tripSeatId: seat.tripSeatId,
+        coachNumber: seat.coachNumber,
+        seatNumber: seat.seatNumber,
+        rowNumber: seat.rowNumber,
+        ...(seat.label ? { label: seat.label } : {}),
+      };
+    }),
+  );
+  return {
+    holdId: value.holdId,
+    bookingKey: draft.id,
+    ownerId: draft.userId,
+    state: value.state,
+    version: value.version,
+    extensionUsed: value.extensionUsed,
+    expiresAt,
+    serverNow: value.serverNow,
+    allocationOutcome: value.allocationOutcome,
+    legs,
+    assignments,
+  };
+}
 
-  async getDraft(id: string): Promise<BookingDraftEntity | null> {
-    return await this.draftRepository.findOne({ where: { id } });
-  }
+function responseFor(draft: BookingDraftEntity): BookingDraftResponse {
+  return {
+    id: draft.id,
+    userId: draft.userId,
+    status: draft.status,
+    expiresAt: draft.expiresAt,
+    legs: draft.legs,
+    createdAt: draft.createdAt,
+    holdId: draft.holdId,
+    holdState: draft.holdState,
+    holdVersion: draft.holdVersion,
+    serverNow: draft.holdServerNow,
+    extensionUsed: draft.extensionUsed,
+    reconciliationPending: draft.reconciliationPending,
+  };
 }

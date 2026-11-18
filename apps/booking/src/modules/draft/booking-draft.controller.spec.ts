@@ -1,138 +1,227 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HttpStatus, NotFoundException, HttpException } from '@nestjs/common';
-import { AllocationOutcome, ErrorCode } from '@app/contracts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+  UnauthorizedException,
+  type ExecutionContext,
+} from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants.js';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { ErrorCode } from '@app/contracts';
 import { BookingDraftController } from './booking-draft.controller.js';
 import {
-  BookingDraftService,
   BookingDraftError,
+  BookingDraftService,
 } from './booking-draft.service.js';
-import type {
-  CreateBookingDraftDto,
-  BookingDraftResponse,
-} from './dto/create-booking-draft.dto.js';
+import { BookingIngressGuard } from './booking-ingress.guard.js';
+import { CreateBookingDraftDto } from './dto/create-booking-draft.dto.js';
+import {
+  OWNER_ID,
+  PASSENGER_IDS,
+  draftInput,
+} from './testing/hold-fixtures.js';
 
 describe('BookingDraftController', () => {
   let controller: BookingDraftController;
-  let mockService: any;
+  let service: {
+    createDraft: ReturnType<typeof vi.fn>;
+    getDraft: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
-    mockService = {
-      createDraft: vi.fn(),
-      getDraft: vi.fn(),
+    service = { createDraft: vi.fn(), getDraft: vi.fn() };
+    controller = new BookingDraftController(
+      service as unknown as BookingDraftService,
+    );
+  });
+
+  it('delegates the immutable request and language and returns its safe response', async () => {
+    const dto = draftInput();
+    const response = {
+      id: dto.bookingKey,
+      userId: OWNER_ID,
+      status: 'PENDING',
+      legs: [],
     };
-    controller = new BookingDraftController(mockService as BookingDraftService);
+    service.createDraft.mockResolvedValue(response);
+    expect(await controller.createDraft(dto, 'en')).toBe(response);
+    expect(service.createDraft).toHaveBeenCalledWith(dto, 'en');
   });
 
-  describe('createDraft', () => {
-    it('delegates to BookingDraftService and returns the draft response on success', async () => {
-      const response: BookingDraftResponse = {
-        id: 'draft-123',
-        userId: 'user-abc',
-        status: 'PENDING',
-        expiresAt: new Date().toISOString(),
-        legs: [
-          {
-            holdId: 'hold-1',
-            tripId: 'trip-1',
-            travelClassId: 'class-1',
-            allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-            seats: ['Passenger · Coach 1 · Seat 1'],
-          },
-        ],
-        createdAt: new Date().toISOString(),
-      };
-
-      mockService.createDraft.mockResolvedValueOnce(response);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-abc',
-        legs: [
-          {
-            tripId: 'trip-1',
-            travelClassId: 'class-1',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-alex',
-          },
-        ],
-        passengerCount: 1,
-      };
-
-      const result = await controller.createDraft(dto);
-      expect(result).toEqual(response);
-      expect(mockService.createDraft).toHaveBeenCalledWith(dto);
-    });
-
-    it('translates INSUFFICIENT_SEATS BookingDraftError to HttpException 409 carrying availableCount', async () => {
-      const error = new BookingDraftError(
-        ErrorCode.INSUFFICIENT_SEATS,
-        'INSUFFICIENT_SEATS',
-        2,
-      );
-      mockService.createDraft.mockRejectedValueOnce(error);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-insufficient',
-        passengerCount: 3,
-      };
-
-      try {
-        await controller.createDraft(dto);
-        expect.unreachable('Should have thrown');
-      } catch (err) {
-        expect(err).toBeInstanceOf(HttpException);
-        const httpErr = err as HttpException;
-        expect(httpErr.getStatus()).toBe(HttpStatus.CONFLICT);
-        const responseBody = httpErr.getResponse() as Record<string, any>;
-        expect(responseBody.code).toBe(ErrorCode.INSUFFICIENT_SEATS);
-        expect(responseBody.availableCount).toBe(2);
-      }
-    });
-
-    it('translates VALIDATION_ERROR BookingDraftError to HttpException 400', async () => {
-      const error = new BookingDraftError(
-        ErrorCode.VALIDATION_ERROR,
-        'Invalid passenger count: 5',
-      );
-      mockService.createDraft.mockRejectedValueOnce(error);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-val',
-        passengerCount: 5,
-      };
-
-      try {
-        await controller.createDraft(dto);
-        expect.unreachable('Should have thrown');
-      } catch (err) {
-        expect(err).toBeInstanceOf(HttpException);
-        const httpErr = err as HttpException;
-        expect(httpErr.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-        const responseBody = httpErr.getResponse() as Record<string, any>;
-        expect(responseBody.code).toBe(ErrorCode.VALIDATION_ERROR);
-      }
+  it('translates insufficient seats into HTTP 409 with availableCount', async () => {
+    service.createDraft.mockRejectedValue(
+      new BookingDraftError(ErrorCode.INSUFFICIENT_SEATS, undefined, 2),
+    );
+    const error = await controller
+      .createDraft(draftInput())
+      .catch((error: HttpException) => error);
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      code: ErrorCode.INSUFFICIENT_SEATS,
+      availableCount: 2,
+      details: [{ field: 'legs', rejectedValue: { availableCount: 2 } }],
     });
   });
 
-  describe('getDraft', () => {
-    it('returns draft if found', async () => {
-      const draft = {
-        id: 'draft-found',
-        userId: 'user-1',
-        status: 'PENDING',
-      };
-      mockService.getDraft.mockResolvedValueOnce(draft);
-
-      const result = await controller.getDraft('draft-found');
-      expect(result).toEqual(draft);
-      expect(mockService.getDraft).toHaveBeenCalledWith('draft-found');
-    });
-
-    it('throws NotFoundException if draft not found', async () => {
-      mockService.getDraft.mockResolvedValueOnce(null);
-
-      await expect(controller.getDraft('non-existent')).rejects.toBeInstanceOf(
-        NotFoundException,
+  it.each([
+    [ErrorCode.VALIDATION_ERROR, 400],
+    [ErrorCode.BOOKING_KEY_CONFLICT, 409],
+    [ErrorCode.DEPENDENCY_UNAVAILABLE, 503],
+    [ErrorCode.INTERNAL_SERVER_ERROR, 500],
+  ])(
+    'maps %s using the error catalogue, not a default 400',
+    async (code, expectedStatus) => {
+      service.createDraft.mockRejectedValue(
+        new BookingDraftError(code as ErrorCode),
       );
+      const error = await controller
+        .createDraft(draftInput())
+        .catch((error: HttpException) => error);
+      expect((error as HttpException).getStatus()).toBe(expectedStatus);
+    },
+  );
+
+  it('carries only the safe submitted passenger ref and mask in overlap details', async () => {
+    service.createDraft.mockRejectedValue(
+      new BookingDraftError(
+        ErrorCode.PASSENGER_OVERLAP,
+        undefined,
+        undefined,
+        PASSENGER_IDS[0],
+        '**********1000',
+      ),
+    );
+    const error = await controller
+      .createDraft(draftInput())
+      .catch((error: HttpException) => error);
+    expect((error as HttpException).getStatus()).toBe(409);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      code: ErrorCode.PASSENGER_OVERLAP,
+      details: [
+        {
+          field: 'passengerIds',
+          rejectedValue: {
+            passengerRef: PASSENGER_IDS[0],
+            maskedNationalId: '**********1000',
+          },
+          issueKey: 'ISSUE_PASSENGER_ALREADY_TRAVELLING',
+          actionKey: 'ACTION_CHANGE_PASSENGER_OR_TRIP',
+        },
+      ],
     });
+  });
+
+  it('passes the trusted owner to GET', async () => {
+    const dto = draftInput();
+    const draft = { id: dto.bookingKey, userId: OWNER_ID, status: 'PENDING' };
+    service.getDraft.mockResolvedValue(draft);
+    expect(await controller.getDraft(dto.bookingKey, OWNER_ID)).toBe(draft);
+    expect(service.getDraft).toHaveBeenCalledWith(
+      dto.bookingKey,
+      OWNER_ID,
+      undefined,
+    );
+  });
+
+  it('returns 404 for absent or foreign drafts', async () => {
+    service.getDraft.mockResolvedValue(null);
+    await expect(
+      controller.getDraft(draftInput().bookingKey, OWNER_ID),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('guards every ingress route and exposes no release/extension HTTP methods', () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, BookingDraftController),
+    ).toContain(BookingIngressGuard);
+    expect(BookingDraftController.prototype).not.toHaveProperty('extendHold');
+    expect(BookingDraftController.prototype).not.toHaveProperty('releaseHold');
+  });
+});
+
+describe('Booking private ingress and DTO', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([undefined, '', 'bad-key', ['x'.repeat(40), 'x'.repeat(40)]])(
+    'rejects missing, mismatched or repeated credentials before work',
+    (actual) => {
+      vi.stubEnv('GATEWAY_BOOKING_SERVICE_KEY', 'x'.repeat(40));
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: { 'x-gateway-booking-key': actual } }),
+        }),
+      } as unknown as ExecutionContext;
+      expect(() => new BookingIngressGuard().canActivate(context)).toThrow(
+        UnauthorizedException,
+      );
+    },
+  );
+
+  it('rejects disabled or too-short configuration even if the header matches', () => {
+    vi.stubEnv('GATEWAY_BOOKING_SERVICE_KEY', 'short');
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ headers: { 'x-gateway-booking-key': 'short' } }),
+      }),
+    } as unknown as ExecutionContext;
+    expect(() => new BookingIngressGuard().canActivate(context)).toThrow(
+      UnauthorizedException,
+    );
+  });
+
+  it('accepts the configured key without duplicating Gateway bookable checks', () => {
+    vi.stubEnv('GATEWAY_BOOKING_SERVICE_KEY', 'x'.repeat(40));
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: { 'x-gateway-booking-key': 'x'.repeat(40) },
+        }),
+      }),
+    } as unknown as ExecutionContext;
+    expect(new BookingIngressGuard().canActivate(context)).toBe(true);
+  });
+
+  it('validates UUID booking key, trusted owner and nested leg/passenger refs', async () => {
+    expect(
+      await validate(plainToInstance(CreateBookingDraftDto, draftInput()), {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    ).toEqual([]);
+    const invalid = plainToInstance(CreateBookingDraftDto, {
+      ...draftInput(),
+      bookingKey: 'not-uuid',
+      userId: undefined,
+      passengerIds: ['not-uuid'],
+      legs: [{ tripId: 'not-uuid' }],
+    });
+    const errors = await validate(invalid, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['bookingKey', 'userId', 'passengerIds', 'legs']),
+    );
+  });
+
+  it('rejects raw nationalId, passenger objects and count-only fields at validation', async () => {
+    const dto = plainToInstance(CreateBookingDraftDto, {
+      ...draftInput(),
+      passengerCount: 2,
+      groupSize: 2,
+      passengers: [
+        { passengerId: PASSENGER_IDS[0], nationalId: '29001010112345' },
+      ],
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['passengerCount', 'groupSize', 'passengers']),
+    );
   });
 });

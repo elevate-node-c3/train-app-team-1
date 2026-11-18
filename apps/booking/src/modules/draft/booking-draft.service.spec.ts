@@ -1,462 +1,632 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NEVER } from 'rxjs';
+import { status } from '@grpc/grpc-js';
+import type { ClsService } from 'nestjs-cls';
 import {
   AllocationOutcome,
   ErrorCode,
+  HOLD_EXPIRED_EVENT_TYPE,
   SEATS_SPLIT_NOTICE,
-  type HoldSeatsResponse,
-  type ReleaseSeatsResponse,
+  type CreateHoldRequest,
 } from '@app/contracts';
 import {
+  BOOKING_GRPC_TIMEOUT_MS,
   BookingDraftService,
+  type BookingIdentityGrpcService,
   type InventoryGrpcService,
 } from './booking-draft.service.js';
 import type { CreateBookingDraftDto } from './dto/create-booking-draft.dto.js';
+import {
+  EXPIRES_AT,
+  HOLD_ID,
+  OTHER_OWNER_ID,
+  OWNER_ID,
+  PASSENGER_IDS,
+  SERVER_NOW,
+  createRequest,
+  draftInput,
+  holdEvent,
+  inventorySnapshot,
+  memoryDraftStore,
+  resolvedPassengers,
+} from './testing/hold-fixtures.js';
 
-describe('BookingDraftService', () => {
+const missing = () => ({
+  code: status.NOT_FOUND,
+  details: JSON.stringify({ code: ErrorCode.HOLD_NOT_FOUND }),
+});
+
+describe('BookingDraftService atomic holds', () => {
+  let memory: ReturnType<typeof memoryDraftStore>;
   let service: BookingDraftService;
-  let mockRepository: any;
-  let mockInventoryService: InventoryGrpcService;
+  let inventory: InventoryGrpcService;
+  let identity: BookingIdentityGrpcService;
+  const cls = { get: () => 'booking-correlation' } as unknown as ClsService;
 
   beforeEach(() => {
-    mockRepository = {
-      create: vi.fn((entity: any) => ({ ...entity })),
-      save: vi.fn((entity: any) => Promise.resolve({ ...entity })),
-      findOne: vi.fn(),
+    vi.stubEnv(
+      'BOOKING_INVENTORY_SERVICE_KEY',
+      'inventory-booking-test-key'.padEnd(40, '-'),
+    );
+    vi.stubEnv(
+      'BOOKING_IDENTITY_SERVICE_KEY',
+      'identity-booking-test-key'.padEnd(40, '-'),
+    );
+    memory = memoryDraftStore();
+    inventory = {
+      createHold: vi.fn(async (request) => inventorySnapshot(request)),
+      getHold: vi.fn().mockRejectedValue(missing()),
+      releaseHold: vi.fn(),
+      extendHold: vi.fn(),
     };
-
-    mockInventoryService = {
-      holdSeats: vi.fn(),
-      releaseSeats: vi.fn(),
-    } as unknown as InventoryGrpcService;
-
-    service = new BookingDraftService(mockRepository, mockInventoryService);
+    identity = {
+      resolveHoldPassengers: vi.fn(async (request) =>
+        resolvedPassengers(request),
+      ),
+    };
+    service = new BookingDraftService(memory.store, inventory, identity, cls);
   });
 
-  describe('Single-Leg Draft', () => {
-    it('creates a single-leg draft with outcome SIDE_BY_SIDE and ttlSeconds = 600', async () => {
-      const holdRes: HoldSeatsResponse = {
-        holdId: 'hold-single-1',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 5,
-            seatNumber: '44',
-            rowNumber: 10,
-            label: 'Coach 5 · Seat 44',
-          },
-          {
-            seatId: 'seat-2',
-            coachNumber: 5,
-            seatNumber: '45',
-            rowNumber: 10,
-            label: 'Coach 5 · Seat 45',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-      };
-
-      vi.mocked(mockInventoryService.holdSeats).mockResolvedValueOnce(holdRes as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-123',
-        legs: [
-          {
-            tripId: 'trip-1',
-            travelClassId: 'class-first',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-alex',
-          },
-        ],
-        passengerCount: 2,
-      };
-
-      const result = await service.createDraft(dto);
-
-      expect(mockInventoryService.holdSeats).toHaveBeenCalledTimes(1);
-      expect(mockInventoryService.holdSeats).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tripId: 'trip-1',
-          travelClassId: 'class-first',
-          originStationId: 'st-cairo',
-          destinationStationId: 'st-alex',
-          groupSize: 2,
-          ttlSeconds: 600,
-        }),
-      );
-
-      expect(result.status).toBe('PENDING');
-      expect(result.legs).toHaveLength(1);
-      expect(result.legs[0].holdId).toBe('hold-single-1');
-      expect(result.legs[0].allocationOutcome).toBe(AllocationOutcome.SIDE_BY_SIDE);
-      expect(result.legs[0].seats).toEqual([
-        'Passenger · Coach 5 · Seat 44',
-        'Passenger · Coach 5 · Seat 45',
-      ]);
-      expect(result.legs[0].splitNotice).toBeUndefined();
-
-      expect(mockRepository.save).toHaveBeenCalledTimes(1);
-      expect(mockRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'user-123',
-          status: 'PENDING',
-        }),
-      );
-    });
-
-    it('creates a single-leg draft with outcome SPLIT carrying bilingual splitNotice', async () => {
-      const holdRes: HoldSeatsResponse = {
-        holdId: 'hold-split-1',
-        allocationOutcome: AllocationOutcome.SPLIT,
-        seats: [
-          {
-            seatId: 'seat-10',
-            coachNumber: 1,
-            seatNumber: '1A',
-            rowNumber: 1,
-            label: 'Coach 1 · Seat 1A',
-          },
-          {
-            seatId: 'seat-20',
-            coachNumber: 2,
-            seatNumber: '2B',
-            rowNumber: 2,
-            label: 'Coach 2 · Seat 2B',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-        splitNotice: SEATS_SPLIT_NOTICE,
-      };
-
-      vi.mocked(mockInventoryService.holdSeats).mockResolvedValueOnce(holdRes as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-456',
-        legs: [
-          {
-            tripId: 'trip-2',
-            travelClassId: 'class-economy',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-aswan',
-          },
-        ],
-        passengers: [{ fullName: 'Passenger' }, { fullName: 'Passenger' }],
-      };
-
-      const result = await service.createDraft(dto);
-
-      expect(result.status).toBe('PENDING');
-      expect(result.legs[0].allocationOutcome).toBe(AllocationOutcome.SPLIT);
-      expect(result.legs[0].splitNotice).toEqual(SEATS_SPLIT_NOTICE);
-      expect(result.legs[0].splitNotice?.code).toBe('SEATS_SPLIT_NOTICE');
-      expect(result.legs[0].splitNotice?.message).toBe(
-        'تم توزيع المقاعد عبر أكثر من عربة لعدم توفر مقاعد متجاورة كافية',
-      );
-      expect(result.legs[0].splitNotice?.messageEn).toBe(
-        'Seats have been split across coaches because consecutive seats were unavailable',
-      );
-    });
-
-    it('formats assigned seats with custom passenger names when provided', async () => {
-      const holdRes: HoldSeatsResponse = {
-        holdId: 'hold-custom-names',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 3,
-            seatNumber: '12',
-            rowNumber: 3,
-            label: 'Coach 3 · Seat 12',
-          },
-          {
-            seatId: 'seat-2',
-            coachNumber: 3,
-            seatNumber: '13',
-            rowNumber: 3,
-            label: 'Coach 3 · Seat 13',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-      };
-
-      vi.mocked(mockInventoryService.holdSeats).mockResolvedValueOnce(holdRes as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-789',
-        legs: [
-          {
-            tripId: 'trip-3',
-            travelClassId: 'class-first',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-alex',
-          },
-        ],
-        passengers: [
-          { fullName: 'Ahmed Hassan' },
-          { fullName: 'Mona Mahmoud' },
-        ],
-      };
-
-      const result = await service.createDraft(dto);
-
-      expect(result.legs[0].seats).toEqual([
-        'Ahmed Hassan · Coach 3 · Seat 12',
-        'Mona Mahmoud · Coach 3 · Seat 13',
-      ]);
-    });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  describe('Multi-Leg (Round Trip) Draft', () => {
-    it('succeeds with independent outcomes on both legs (Leg 1 SIDE_BY_SIDE, Leg 2 SPLIT)', async () => {
-      const leg1HoldRes: HoldSeatsResponse = {
-        holdId: 'hold-outbound',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 5,
-            seatNumber: '44',
-            rowNumber: 10,
-            label: 'Coach 5 · Seat 44',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-      };
-
-      const leg2HoldRes: HoldSeatsResponse = {
-        holdId: 'hold-return',
-        allocationOutcome: AllocationOutcome.SPLIT,
-        seats: [
-          {
-            seatId: 'seat-99',
-            coachNumber: 2,
-            seatNumber: '8',
-            rowNumber: 2,
-            label: 'Coach 2 · Seat 8',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-        splitNotice: SEATS_SPLIT_NOTICE,
-      };
-
-      vi.mocked(mockInventoryService.holdSeats)
-        .mockResolvedValueOnce(leg1HoldRes as any)
-        .mockResolvedValueOnce(leg2HoldRes as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-roundtrip',
-        legs: [
-          {
-            tripId: 'trip-outbound',
-            travelClassId: 'class-first',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-alex',
-          },
-          {
-            tripId: 'trip-return',
-            travelClassId: 'class-first',
-            originStationId: 'st-alex',
-            destinationStationId: 'st-cairo',
-          },
-        ],
-        passengerCount: 1,
-      };
-
-      const result = await service.createDraft(dto);
-
-      expect(mockInventoryService.holdSeats).toHaveBeenCalledTimes(2);
-      expect(mockInventoryService.releaseSeats).not.toHaveBeenCalled();
-
-      expect(result.status).toBe('PENDING');
-      expect(result.legs).toHaveLength(2);
-
-      // Leg 1: SIDE_BY_SIDE, no split notice
-      expect(result.legs[0].holdId).toBe('hold-outbound');
-      expect(result.legs[0].allocationOutcome).toBe(AllocationOutcome.SIDE_BY_SIDE);
-      expect(result.legs[0].seats).toEqual(['Passenger · Coach 5 · Seat 44']);
-      expect(result.legs[0].splitNotice).toBeUndefined();
-
-      // Leg 2: SPLIT, with bilingual split notice
-      expect(result.legs[1].holdId).toBe('hold-return');
-      expect(result.legs[1].allocationOutcome).toBe(AllocationOutcome.SPLIT);
-      expect(result.legs[1].seats).toEqual(['Passenger · Coach 2 · Seat 8']);
-      expect(result.legs[1].splitNotice).toEqual(SEATS_SPLIT_NOTICE);
+  it('persists intent and identity before one single-leg call, uses DB expiry and preserves SIDE_BY_SIDE seats', async () => {
+    const dto = draftInput();
+    vi.mocked(inventory.createHold).mockImplementation(
+      async (request, metadata, options) => {
+        const row = memory.rows.get(dto.bookingKey)!;
+        expect(memory.isLocked()).toBe(false);
+        expect(row).toMatchObject({
+          id: dto.bookingKey,
+          userId: OWNER_ID,
+          holdRequested: true,
+          expiresAt: null,
+        });
+        expect(row.passengerSnapshot).toHaveLength(2);
+        expect(request).toEqual(createRequest(dto));
+        expect(request).not.toHaveProperty('ttlSeconds');
+        expect(metadata.get('x-booking-inventory-key')).toEqual([
+          process.env.BOOKING_INVENTORY_SERVICE_KEY,
+        ]);
+        expect(metadata.get('x-correlation-id')).toEqual([
+          'booking-correlation',
+        ]);
+        expect(metadata.get('x-caller-account-id')).toEqual([OWNER_ID]);
+        expect(metadata.get('accept-language')).toEqual(['en']);
+        expect(Number(options.deadline)).toBeGreaterThan(Date.now());
+        expect(Number(options.deadline)).toBeLessThanOrEqual(
+          Date.now() + BOOKING_GRPC_TIMEOUT_MS,
+        );
+        return inventorySnapshot(request);
+      },
+    );
+    const result = await service.createDraft(dto, 'en');
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+    expect(identity.resolveHoldPassengers).toHaveBeenCalledWith(
+      {
+        ownerId: OWNER_ID,
+        passengerRefs: dto.passengerIds,
+        tripIds: dto.legs!.map((leg) => leg.tripId),
+      },
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(
+      vi
+        .mocked(identity.resolveHoldPassengers)
+        .mock.calls[0][1].get('x-booking-identity-key'),
+    ).toEqual([process.env.BOOKING_IDENTITY_SERVICE_KEY]);
+    expect(result).toMatchObject({
+      id: dto.bookingKey,
+      status: 'PENDING',
+      holdState: 'HELD',
+      holdVersion: 1,
+      reconciliationPending: false,
     });
+    expect(result.expiresAt).toEqual(new Date(EXPIRES_AT));
+    expect(result.serverNow).toEqual(new Date(SERVER_NOW));
+    expect(result.legs[0].seats).toEqual([
+      'Ahmed Hassan \u00b7 Coach 5 \u00b7 Seat 44',
+      'Mona Mahmoud \u00b7 Coach 5 \u00b7 Seat 45',
+    ]);
+    expect(result.legs[0].assignedSeats?.[0]).toMatchObject({
+      seatId: expect.any(String),
+      coachNumber: 5,
+      rowNumber: 10,
+    });
+    expect(result.legs[0].splitNotice).toBeUndefined();
+    expect(JSON.stringify(result)).not.toMatch(
+      /passengerToken|passengerKeyVersion|maskedNationalId|nationalId|passengerSnapshot/,
+    );
+  });
 
-    it('compensates via releaseSeats when return leg fails with INSUFFICIENT_SEATS and rejects draft', async () => {
-      const leg1HoldRes: HoldSeatsResponse = {
-        holdId: 'hold-leg1-ok',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [
-          {
-            seatId: 'seat-1',
-            coachNumber: 1,
-            seatNumber: '1',
-            rowNumber: 1,
-            label: 'Coach 1 · Seat 1',
-          },
-        ],
-        expiresAt: new Date(Date.now() + 600_000).toISOString(),
-      };
+  it('retains bilingual SPLIT notice and uses Identity display names, not caller names', async () => {
+    const dto = draftInput();
+    vi.mocked(inventory.createHold).mockImplementation(async (request) =>
+      inventorySnapshot(request, [AllocationOutcome.SPLIT]),
+    );
+    const result = await service.createDraft(dto);
+    expect(result.legs[0]).toMatchObject({
+      allocationOutcome: AllocationOutcome.SPLIT,
+      splitNotice: SEATS_SPLIT_NOTICE,
+    });
+    expect(result.legs[0].splitNotice?.message).toBe(
+      SEATS_SPLIT_NOTICE.message,
+    );
+    expect(result.legs[0].splitNotice?.messageEn).toBe(
+      'Seats have been split across coaches because consecutive seats were unavailable',
+    );
+    expect(result.legs[0].seats).toEqual([
+      'Ahmed Hassan \u00b7 Coach 1 \u00b7 Seat 44',
+      'Mona Mahmoud \u00b7 Coach 2 \u00b7 Seat 45',
+    ]);
+    await expect(
+      service.createDraft({
+        ...dto,
+        fullName: 'Caller Forgery',
+      } as CreateBookingDraftDto),
+    ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+  });
 
-      const leg2Error = Object.assign(new Error('INSUFFICIENT_SEATS'), {
+  it('preserves independent per-leg outcomes using ONE atomic request and ONE hold id', async () => {
+    const dto = draftInput(2);
+    vi.mocked(inventory.createHold).mockImplementation(async (request) =>
+      inventorySnapshot(request, [
+        AllocationOutcome.SIDE_BY_SIDE,
+        AllocationOutcome.SPLIT,
+      ]),
+    );
+    const result = await service.createDraft(dto);
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(inventory.createHold).mock.calls[0][0].legs).toHaveLength(
+      2,
+    );
+    expect(
+      vi.mocked(inventory.createHold).mock.calls[0][0].passengers[0].identities,
+    ).toHaveLength(2);
+    expect(result.legs.map((leg) => leg.holdId)).toEqual([HOLD_ID, HOLD_ID]);
+    expect(result.legs[0]).toMatchObject({
+      allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
+    });
+    expect(result.legs[0].splitNotice).toBeUndefined();
+    expect(result.legs[1]).toMatchObject({
+      allocationOutcome: AllocationOutcome.SPLIT,
+      splitNotice: SEATS_SPLIT_NOTICE,
+    });
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+  });
+
+  it('fails the entire round trip on return-leg rejection without saga compensation or partial ownership', async () => {
+    const dto = draftInput(2);
+    const old = await service.createDraft(draftInput());
+    vi.mocked(inventory.createHold).mockRejectedValue({
+      code: status.FAILED_PRECONDITION,
+      details: JSON.stringify({
         code: ErrorCode.INSUFFICIENT_SEATS,
         availableCount: 0,
-      });
-
-      vi.mocked(mockInventoryService.holdSeats)
-        .mockResolvedValueOnce(leg1HoldRes as any)
-        .mockRejectedValueOnce(leg2Error);
-
-      const releaseRes: ReleaseSeatsResponse = { success: true };
-      vi.mocked(mockInventoryService.releaseSeats).mockResolvedValueOnce(releaseRes as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-partial-fail',
-        legs: [
-          {
-            tripId: 'trip-leg1',
-            travelClassId: 'class-first',
-            originStationId: 'st-cairo',
-            destinationStationId: 'st-alex',
-          },
-          {
-            tripId: 'trip-leg2',
-            travelClassId: 'class-first',
-            originStationId: 'st-alex',
-            destinationStationId: 'st-cairo',
-          },
-        ],
-        passengerCount: 1,
-      };
-
-      await expect(service.createDraft(dto)).rejects.toMatchObject({
-        code: ErrorCode.INSUFFICIENT_SEATS,
-        availableCount: 0,
-      });
-
-      // Saga compensation invoked for Leg 1
-      expect(mockInventoryService.releaseSeats).toHaveBeenCalledTimes(1);
-      expect(mockInventoryService.releaseSeats).toHaveBeenCalledWith({
-        holdId: 'hold-leg1-ok',
-      });
-
-      // Failed draft record is saved with status FAILED
-      expect(mockRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'user-partial-fail',
-          status: 'FAILED',
-        }),
-      );
+      }),
     });
+    await expect(service.createDraft(dto)).rejects.toMatchObject({
+      code: ErrorCode.INSUFFICIENT_SEATS,
+      availableCount: 0,
+    });
+    expect(memory.rows.get(dto.bookingKey)).toMatchObject({
+      status: 'FAILED',
+      holdId: null,
+      legs: [],
+    });
+    expect(memory.rows.get(old.id)).toMatchObject({
+      status: 'PENDING',
+      holdState: 'HELD',
+    });
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+    await expect(service.createDraft(dto)).rejects.toMatchObject({
+      code: ErrorCode.INSUFFICIENT_SEATS,
+    });
+    expect(inventory.createHold).toHaveBeenCalledTimes(2);
+  });
 
-    it('compensates multiple previously held legs when a subsequent leg fails', async () => {
-      const leg1Hold: HoldSeatsResponse = {
-        holdId: 'hold-1',
-        allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-        seats: [],
-        expiresAt: new Date().toISOString(),
+  it.each([0, 5])(
+    'rejects %i passengers before intent or RPC',
+    async (count) => {
+      const dto = {
+        ...draftInput(),
+        passengerIds: Array.from({ length: count }, () => randomUUID()),
       };
-      const leg2Hold: HoldSeatsResponse = {
-        holdId: 'hold-2',
-        allocationOutcome: AllocationOutcome.SAME_COACH,
-        seats: [],
-        expiresAt: new Date().toISOString(),
-      };
-
-      const leg3Error = Object.assign(new Error('SEAT_ALREADY_TAKEN'), {
-        code: ErrorCode.SEAT_ALREADY_TAKEN,
-      });
-
-      vi.mocked(mockInventoryService.holdSeats)
-        .mockResolvedValueOnce(leg1Hold as any)
-        .mockResolvedValueOnce(leg2Hold as any)
-        .mockRejectedValueOnce(leg3Error);
-
-      vi.mocked(mockInventoryService.releaseSeats).mockResolvedValue({ success: true } as any);
-
-      const dto: CreateBookingDraftDto = {
-        userId: 'user-multi-leg',
-        legs: [
-          { tripId: 't1', travelClassId: 'c1', originStationId: 's1', destinationStationId: 's2' },
-          { tripId: 't2', travelClassId: 'c1', originStationId: 's2', destinationStationId: 's3' },
-          { tripId: 't3', travelClassId: 'c1', originStationId: 's3', destinationStationId: 's4' },
-        ],
-        passengerCount: 2,
-      };
-
       await expect(service.createDraft(dto)).rejects.toMatchObject({
-        code: ErrorCode.SEAT_ALREADY_TAKEN,
+        code: ErrorCode.VALIDATION_ERROR,
       });
+      expect(memory.rows.size).toBe(0);
+      expect(identity.resolveHoldPassengers).not.toHaveBeenCalled();
+      expect(inventory.createHold).not.toHaveBeenCalled();
+    },
+  );
 
-      expect(mockInventoryService.releaseSeats).toHaveBeenCalledTimes(2);
-      expect(mockInventoryService.releaseSeats).toHaveBeenCalledWith({ holdId: 'hold-1' });
-      expect(mockInventoryService.releaseSeats).toHaveBeenCalledWith({ holdId: 'hold-2' });
+  it.each([
+    { passengerIds: undefined, passengerCount: 2 },
+    { passengerIds: undefined, groupSize: 2 },
+    { passengerIds: undefined, passengers: [{ nationalId: '29001010112345' }] },
+    { passengerIds: [PASSENGER_IDS[0], PASSENGER_IDS[0]] },
+    { passengerToken: 'forged-token' },
+  ])(
+    'rejects legacy count/raw identity or duplicate/token bypass: %j',
+    async (extra) => {
+      await expect(
+        service.createDraft({
+          ...draftInput(),
+          ...extra,
+        } as CreateBookingDraftDto),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+      expect(inventory.createHold).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a third leg before making any partial reservation', async () => {
+    const dto = draftInput(2);
+    dto.legs!.push({ ...dto.legs![0], tripId: randomUUID() });
+    await expect(service.createDraft(dto)).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION_ERROR,
+    });
+    expect(identity.resolveHoldPassengers).not.toHaveBeenCalled();
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+  });
+
+  it('supports existing direct single-leg fields without count-only fallback', async () => {
+    const { legs, ...dto } = draftInput();
+    const result = await service.createDraft({ ...dto, ...legs![0] });
+    expect(result.legs).toHaveLength(1);
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays immutable IDs, tokens and expiry without resolving Identity again', async () => {
+    const dto = draftInput(2);
+    const first = await service.createDraft(dto);
+    const receipt = memory.rows.get(dto.bookingKey)!.holdSnapshot!;
+    vi.mocked(inventory.getHold).mockResolvedValue(receipt);
+    vi.mocked(identity.resolveHoldPassengers).mockImplementation(
+      async (request) => resolvedPassengers(request, 2),
+    );
+    const result = await service.createDraft(dto);
+    expect(result).toEqual(first);
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+    expect(identity.resolveHoldPassengers).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['owner', 'passengers', 'leg', 'order'])(
+    'refuses changed %s for an existing immutable key',
+    async (change) => {
+      const dto = draftInput(2);
+      await service.createDraft(dto);
+      const modified = structuredClone(dto);
+      if (change === 'owner') modified.userId = OTHER_OWNER_ID;
+      if (change === 'passengers') modified.passengerIds = [PASSENGER_IDS[2]];
+      if (change === 'leg') modified.legs![0].travelClassId = randomUUID();
+      if (change === 'order') modified.legs!.reverse();
+      await expect(service.createDraft(modified)).rejects.toMatchObject({
+        code: ErrorCode.BOOKING_KEY_CONFLICT,
+      });
+      expect(inventory.createHold).toHaveBeenCalledTimes(1);
+      expect(inventory.getHold).not.toHaveBeenCalled();
+      expect(identity.resolveHoldPassengers).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('concurrent instances choose one saved identity snapshot before any allocation', async () => {
+    const dto = draftInput(2);
+    let release!: () => void;
+    let entered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(identity.resolveHoldPassengers).mockImplementationOnce(
+      async (request) => {
+        entered();
+        await barrier;
+        return resolvedPassengers(request, 1);
+      },
+    );
+    const first = service.createDraft(dto);
+    await firstEntered;
+    const secondIdentity = {
+      resolveHoldPassengers: vi.fn(async (request) =>
+        resolvedPassengers(request, 2),
+      ),
+    } as BookingIdentityGrpcService;
+    const second = new BookingDraftService(
+      memory.store,
+      inventory,
+      secondIdentity,
+      cls,
+    );
+    await second.createDraft(dto);
+    release();
+    await first;
+    const saved = memory.rows.get(dto.bookingKey)!.passengerSnapshot!;
+    expect(saved[0].identities[0].passengerKeyVersion).toBe(2);
+    for (const [request] of vi.mocked(inventory.createHold).mock.calls) {
+      expect(request.passengers).toEqual(
+        saved.map(({ passengerRef, identities }) => ({
+          passengerRef,
+          identities,
+        })),
+      );
+    }
+    expect(memory.rows.size).toBe(1);
+  });
+
+  it('keeps PENDING intent on a create timeout and recovers by key without reallocating', async () => {
+    const dto = draftInput();
+    vi.mocked(inventory.createHold).mockRejectedValue({
+      code: status.DEADLINE_EXCEEDED,
+      message: 'unsafe secret sql',
+    });
+    const pending = await service.createDraft(dto);
+    expect(pending).toMatchObject({
+      status: 'PENDING',
+      holdState: null,
+      reconciliationPending: true,
+    });
+    expect(memory.rows.get(dto.bookingKey)).toMatchObject({
+      holdRequested: true,
+      holdFailure: null,
+    });
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+    vi.mocked(inventory.getHold).mockResolvedValue(
+      inventorySnapshot(createRequest(dto)),
+    );
+    const recovered = await service.createDraft(dto);
+    expect(recovered.holdState).toBe('HELD');
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+    expect(identity.resolveHoldPassengers).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds a stalled Observable and preserves its unknown outcome', async () => {
+    vi.useFakeTimers();
+    let entered!: () => void;
+    const invoked = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    vi.mocked(inventory.createHold).mockImplementation(() => {
+      entered();
+      return NEVER;
+    });
+    const pending = service.createDraft(draftInput());
+    await invoked;
+    await vi.advanceTimersByTimeAsync(BOOKING_GRPC_TIMEOUT_MS + 1);
+    expect(await pending).toMatchObject({
+      status: 'PENDING',
+      reconciliationPending: true,
+    });
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+  });
+
+  it('returns a known committed receipt after save failure; retry reuses durable intent', async () => {
+    const dto = draftInput();
+    vi.spyOn(memory.store, 'applySnapshot').mockRejectedValueOnce(
+      new Error('unsafe database detail'),
+    );
+    const result = await service.createDraft(dto);
+    expect(result).toMatchObject({
+      holdState: 'HELD',
+      reconciliationPending: true,
+    });
+    expect(memory.rows.get(dto.bookingKey)).toMatchObject({
+      holdRequested: true,
+      holdSnapshot: null,
+    });
+    vi.mocked(inventory.getHold).mockResolvedValue(
+      inventorySnapshot(createRequest(dto)),
+    );
+    expect(await service.createDraft(dto)).toMatchObject({
+      holdState: 'HELD',
+      reconciliationPending: false,
+    });
+    expect(identity.resolveHoldPassengers).toHaveBeenCalledTimes(1);
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not allocate if the identity snapshot cannot be durably saved', async () => {
+    vi.spyOn(memory.repository, 'save').mockRejectedValueOnce(
+      new Error('unsafe token in SQL parameters'),
+    );
+    await expect(service.createDraft(draftInput())).rejects.toMatchObject({
+      code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+      message: ErrorCode.DEPENDENCY_UNAVAILABLE,
+    });
+    expect(inventory.createHold).not.toHaveBeenCalled();
+    expect([...memory.rows.values()][0].passengerSnapshot).toBeNull();
+  });
+
+  it('maps passenger conflicts to only a submitted ref and persisted mask, not upstream secrets', async () => {
+    vi.mocked(inventory.createHold).mockRejectedValue({
+      code: status.ABORTED,
+      details: JSON.stringify({
+        code: ErrorCode.PASSENGER_OVERLAP,
+        passengerRef: PASSENGER_IDS[0],
+        nationalId: '29001010112345',
+        passengerToken: 'secret',
+      }),
+      message: 'secret sql',
+    });
+    try {
+      await service.createDraft(draftInput());
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: ErrorCode.PASSENGER_OVERLAP,
+        passengerRef: PASSENGER_IDS[0],
+        maskedNationalId: '**********1000',
+        message: ErrorCode.PASSENGER_OVERLAP,
+      });
+      expect(JSON.stringify(error)).not.toContain('secret');
+      expect(JSON.stringify(error)).not.toContain('29001010112345');
+    }
+  });
+
+  it('does not disclose foreign passenger refs from upstream errors', async () => {
+    vi.mocked(inventory.createHold).mockRejectedValue({
+      details: JSON.stringify({
+        code: ErrorCode.PASSENGER_OVERLAP,
+        passengerRef: randomUUID(),
+      }),
+    });
+    await expect(service.createDraft(draftInput())).rejects.toMatchObject({
+      code: ErrorCode.PASSENGER_OVERLAP,
+      passengerRef: undefined,
+      maskedNationalId: undefined,
     });
   });
 
-  describe('Passenger Count Validation', () => {
-    it('rejects when passenger count is < 1', async () => {
-      const dtoZero: CreateBookingDraftDto = {
-        userId: 'user-val-0',
-        legs: [
-          { tripId: 't1', travelClassId: 'c1', originStationId: 's1', destinationStationId: 's2' },
-        ],
-        passengerCount: 0,
-      };
+  it('owner-scopes GET, release and extension before any Inventory work', async () => {
+    const dto = draftInput();
+    await service.createDraft(dto);
+    expect(await service.getDraft(dto.bookingKey, OTHER_OWNER_ID)).toBeNull();
+    await expect(
+      service.releaseHold(OTHER_OWNER_ID, dto.bookingKey),
+    ).rejects.toMatchObject({ code: ErrorCode.HOLD_NOT_FOUND });
+    await expect(
+      service.extendHold(OTHER_OWNER_ID, dto.bookingKey),
+    ).rejects.toMatchObject({ code: ErrorCode.HOLD_NOT_FOUND });
+    expect(inventory.getHold).not.toHaveBeenCalled();
+    expect(inventory.releaseHold).not.toHaveBeenCalled();
+    expect(inventory.extendHold).not.toHaveBeenCalled();
+  });
 
-      await expect(service.createDraft(dtoZero)).rejects.toMatchObject({
-        code: ErrorCode.VALIDATION_ERROR,
-      });
-
-      const dtoEmptyPassengers: CreateBookingDraftDto = {
-        userId: 'user-val-empty',
-        legs: [
-          { tripId: 't1', travelClassId: 'c1', originStationId: 's1', destinationStationId: 's2' },
-        ],
-        passengers: [],
-      };
-
-      await expect(service.createDraft(dtoEmptyPassengers)).rejects.toMatchObject({
-        code: ErrorCode.VALIDATION_ERROR,
-      });
-
-      expect(mockInventoryService.holdSeats).not.toHaveBeenCalled();
+  it('reconciles expiry on GET using Inventory, never a new local TTL', async () => {
+    const dto = draftInput();
+    await service.createDraft(dto);
+    vi.mocked(inventory.getHold).mockResolvedValue({
+      ...inventorySnapshot(createRequest(dto)),
+      state: 'EXPIRED',
+      version: 2,
     });
-
-    it('rejects when passenger count is > 4', async () => {
-      const dtoFive: CreateBookingDraftDto = {
-        userId: 'user-val-5',
-        legs: [
-          { tripId: 't1', travelClassId: 'c1', originStationId: 's1', destinationStationId: 's2' },
-        ],
-        passengerCount: 5,
-      };
-
-      await expect(service.createDraft(dtoFive)).rejects.toMatchObject({
-        code: ErrorCode.VALIDATION_ERROR,
-      });
-
-      const dtoFivePassengers: CreateBookingDraftDto = {
-        userId: 'user-val-five-passengers',
-        legs: [
-          { tripId: 't1', travelClassId: 'c1', originStationId: 's1', destinationStationId: 's2' },
-        ],
-        passengers: [
-          { fullName: 'P1' },
-          { fullName: 'P2' },
-          { fullName: 'P3' },
-          { fullName: 'P4' },
-          { fullName: 'P5' },
-        ],
-      };
-
-      await expect(service.createDraft(dtoFivePassengers)).rejects.toMatchObject({
-        code: ErrorCode.VALIDATION_ERROR,
-      });
-
-      expect(mockInventoryService.holdSeats).not.toHaveBeenCalled();
+    expect(await service.getDraft(dto.bookingKey, OWNER_ID)).toMatchObject({
+      status: 'CANCELLED',
+      holdState: 'EXPIRED',
+      holdVersion: 2,
+      expiresAt: new Date(EXPIRES_AT),
     });
+  });
+
+  it('returns dependency failure instead of claiming a stale cached live hold on GET', async () => {
+    const dto = draftInput();
+    await service.createDraft(dto);
+    vi.mocked(inventory.getHold).mockRejectedValue({
+      code: status.UNAVAILABLE,
+      message: 'unsafe',
+    });
+    await expect(
+      service.getDraft(dto.bookingKey, OWNER_ID),
+    ).rejects.toMatchObject({ code: ErrorCode.DEPENDENCY_UNAVAILABLE });
+  });
+
+  it('durably cancels an unknown create outcome and never retries CreateHold afterward', async () => {
+    const dto = draftInput();
+    vi.mocked(inventory.createHold).mockRejectedValue({
+      code: status.DEADLINE_EXCEEDED,
+    });
+    await service.createDraft(dto);
+    vi.mocked(inventory.releaseHold).mockResolvedValue({
+      ...inventorySnapshot(createRequest(dto)),
+      state: 'CANCELLED',
+      expiresAt: null,
+      allocationOutcome: null,
+      legs: [],
+      assignments: [],
+    });
+    expect(await service.releaseHold(OWNER_ID, dto.bookingKey)).toMatchObject({
+      status: 'CANCELLED',
+      holdState: 'CANCELLED',
+      expiresAt: null,
+    });
+    await service.createDraft(dto);
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+    expect(memory.rows.get(dto.bookingKey)!.releaseRequested).toBe(true);
+  });
+
+  it('keeps a timed-out release durable and retries release, not allocation', async () => {
+    const dto = draftInput();
+    await service.createDraft(dto);
+    vi.mocked(inventory.releaseHold).mockRejectedValueOnce({
+      code: status.DEADLINE_EXCEEDED,
+    });
+    expect(await service.releaseHold(OWNER_ID, dto.bookingKey)).toMatchObject({
+      reconciliationPending: true,
+    });
+    vi.mocked(inventory.releaseHold).mockResolvedValue({
+      ...inventorySnapshot(createRequest(dto)),
+      state: 'RELEASED',
+      version: 2,
+    });
+    expect(await service.getDraft(dto.bookingKey, OWNER_ID)).toMatchObject({
+      status: 'CANCELLED',
+      holdState: 'RELEASED',
+    });
+    expect(inventory.createHold).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes only an internal owner/key extension with authoritative expiry', async () => {
+    const dto = draftInput();
+    await service.createDraft(dto);
+    const extended = {
+      ...inventorySnapshot(createRequest(dto)),
+      extensionUsed: true,
+      version: 2,
+      expiresAt: '2026-11-15T17:11:00.000Z',
+    };
+    vi.mocked(inventory.extendHold).mockResolvedValue(extended);
+    expect(await service.extendHold(OWNER_ID, dto.bookingKey)).toMatchObject({
+      extensionUsed: true,
+      holdVersion: 2,
+      expiresAt: new Date(extended.expiresAt),
+    });
+    expect(inventory.extendHold).toHaveBeenCalledWith(
+      { ownerId: OWNER_ID, bookingKey: dto.bookingKey },
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('does not resurrect an expiry event that arrives before the create response is saved', async () => {
+    const dto = draftInput();
+    vi.mocked(inventory.createHold).mockImplementation(
+      async (request: CreateHoldRequest) => {
+        const held = inventorySnapshot(request);
+        await memory.store.applyEvent(
+          holdEvent(
+            { ...held, state: 'EXPIRED', version: 2 },
+            HOLD_EXPIRED_EVENT_TYPE,
+            'expired',
+          ).payload,
+        );
+        return held;
+      },
+    );
+    const result = await service.createDraft(dto);
+    expect(result).toMatchObject({
+      status: 'CANCELLED',
+      holdState: 'EXPIRED',
+      holdVersion: 2,
+    });
+    expect(memory.rows.get(dto.bookingKey)).toMatchObject({
+      holdVersion: 2,
+      holdSnapshot: null,
+    });
+  });
+
+  it('fails closed when a private credential is absent', async () => {
+    vi.stubEnv('BOOKING_IDENTITY_SERVICE_KEY', '');
+    await expect(service.createDraft(draftInput())).rejects.toMatchObject({
+      code: ErrorCode.DEPENDENCY_UNAVAILABLE,
+    });
+    expect(identity.resolveHoldPassengers).not.toHaveBeenCalled();
+    expect(inventory.createHold).not.toHaveBeenCalled();
   });
 });
