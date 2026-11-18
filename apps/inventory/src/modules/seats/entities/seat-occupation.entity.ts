@@ -12,6 +12,9 @@ import { TripSeatEntity } from './trip-seat.entity.js';
  */
 @Entity('seat_occupation')
 @Index('idx_seat_occupation_trip', ['tripId'], { where: '"released_at" IS NULL' })
+@Index('idx_seat_occupation_hold', ['holdId'], {
+  where: '"hold_id" IS NOT NULL',
+})
 @Check('chk_seat_occupation_state', `"state" IN ('held', 'sold')`)
 @Check('chk_seat_occupation_segment', `NOT isempty("segment") AND lower("segment") >= 0`)
 @Check(
@@ -57,6 +60,23 @@ export class SeatOccupationEntity {
 
   @Column({ name: 'reference_id', type: 'uuid', nullable: true })
   referenceId!: string | null;
+
+  /** New MT-02 rows carry the owning hold; legacy rows remain nullable. */
+  @Column({ name: 'hold_id', type: 'uuid', nullable: true })
+  holdId!: string | null;
+
+  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
+  ownerId!: string | null;
+
+  @Column({ name: 'passenger_ref', type: 'text', nullable: true })
+  passengerRef!: string | null;
+
+  /** Trip-scoped HMAC; used by the passenger-overlap exclusion constraint. */
+  @Column({ name: 'passenger_token', type: 'text', nullable: true })
+  passengerToken!: string | null;
+
+  @Column({ name: 'passenger_key_version', type: 'integer', nullable: true })
+  passengerKeyVersion!: number | null;
 
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
