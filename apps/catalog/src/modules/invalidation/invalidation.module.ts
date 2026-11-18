@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import {
   FARE_CHANGED_EVENT_TYPE,
   FARE_CHANGED_VERSION,
+  HOLD_EVENT_VERSION,
+  HOLD_EXPIRED_EVENT_TYPE,
+  HOLD_EXTENDED_EVENT_TYPE,
+  HOLD_HELD_EVENT_TYPE,
+  HOLD_RELEASED_EVENT_TYPE,
   SEAT_AVAILABILITY_CHANGED_EVENT_TYPE,
   SEAT_AVAILABILITY_CHANGED_VERSION,
   STATION_CHANGED_EVENT_TYPE,
@@ -37,12 +42,20 @@ export const CATALOG_STATION_CHANGED_QUEUE =
   'catalog.invalidation.station-changed';
 export const CATALOG_SEAT_AVAILABILITY_QUEUE =
   'catalog.invalidation.seat-availability-changed';
+export const CATALOG_HOLD_HELD_QUEUE = 'catalog.invalidation.hold-held';
+export const CATALOG_HOLD_RELEASED_QUEUE = 'catalog.invalidation.hold-released';
+export const CATALOG_HOLD_EXPIRED_QUEUE = 'catalog.invalidation.hold-expired';
+export const CATALOG_HOLD_EXTENDED_QUEUE = 'catalog.invalidation.hold-extended';
 
 export const CATALOG_INVALIDATION_QUEUES = [
   CATALOG_FARE_CHANGED_QUEUE,
   CATALOG_TIMETABLE_PUBLISHED_QUEUE,
   CATALOG_STATION_CHANGED_QUEUE,
   CATALOG_SEAT_AVAILABILITY_QUEUE,
+  CATALOG_HOLD_HELD_QUEUE,
+  CATALOG_HOLD_RELEASED_QUEUE,
+  CATALOG_HOLD_EXPIRED_QUEUE,
+  CATALOG_HOLD_EXTENDED_QUEUE,
 ] as const;
 
 export function createCatalogInvalidationSubscriptions(
@@ -73,6 +86,17 @@ export function createCatalogInvalidationSubscriptions(
       queueName: CATALOG_SEAT_AVAILABILITY_QUEUE,
       handler,
     },
+    ...[
+      [HOLD_HELD_EVENT_TYPE, CATALOG_HOLD_HELD_QUEUE],
+      [HOLD_RELEASED_EVENT_TYPE, CATALOG_HOLD_RELEASED_QUEUE],
+      [HOLD_EXPIRED_EVENT_TYPE, CATALOG_HOLD_EXPIRED_QUEUE],
+      [HOLD_EXTENDED_EVENT_TYPE, CATALOG_HOLD_EXTENDED_QUEUE],
+    ].map(([eventType, queueName]) => ({
+      eventType,
+      version: HOLD_EVENT_VERSION,
+      queueName,
+      handler,
+    })),
   ];
 }
 

@@ -4,6 +4,7 @@ import {
   EVENT_TYPES,
   type EventEnvelope,
   type FareChangedPayloadV1,
+  type HoldLifecyclePayloadV1,
   type SeatAvailabilityChangedPayloadV1,
   type TimetablePublishedPayloadV1,
 } from '@app/contracts';
@@ -14,7 +15,10 @@ import type {
 
 import { RouteVersionService } from '../cache/route-version.service.js';
 import { StationsService } from '../stations/stations.service.js';
-import { segmentAvailabilityCacheKey } from '../trips/seat-availability.service.js';
+import {
+  availabilityVersionCacheKey,
+  segmentAvailabilityCacheKey,
+} from '../trips/seat-availability.service.js';
 import { TripStopsService } from '../trips/trip-stops.service.js';
 
 /** Invalidate only affected cache entries, leaving unrelated routes untouched. */
@@ -90,9 +94,51 @@ export class CacheInvalidationConsumer implements EventHandlerPort {
       case EVENT_TYPES.seatAvailabilityChanged: {
         if (this.cache) {
           const payload = envelope.payload as SeatAvailabilityChangedPayloadV1;
-          const key = segmentAvailabilityCacheKey(payload);
+          const rawVersion = await this.cache.get<number>(
+            availabilityVersionCacheKey(payload.tripId),
+          );
+          const version =
+            Number.isInteger(rawVersion) && (rawVersion as number) > 0
+              ? (rawVersion as number)
+              : 1;
+          const key = segmentAvailabilityCacheKey(payload, version);
           await this.cache.del(key);
           this.logger.log(`Invalidated seat availability key: ${key}`);
+        }
+        return { status: 'handled' };
+      }
+
+      case EVENT_TYPES.holdHeld:
+      case EVENT_TYPES.holdReleased:
+      case EVENT_TYPES.holdExpired:
+      case EVENT_TYPES.holdExtended: {
+        if (!this.cache)
+          throw new Error('Seat availability cache is unavailable');
+        const payload = envelope.payload as Partial<HoldLifecyclePayloadV1>;
+        if (!Array.isArray(payload.legs) || payload.legs.length === 0) {
+          throw new Error('Invalid hold lifecycle payload');
+        }
+        const tripIds = new Set<string>();
+        for (const leg of payload.legs) {
+          if (
+            !leg ||
+            typeof leg.tripId !== 'string' ||
+            leg.tripId.length === 0
+          ) {
+            throw new Error('Invalid hold lifecycle payload');
+          }
+          tripIds.add(leg.tripId);
+        }
+        for (const tripId of tripIds) {
+          const key = availabilityVersionCacheKey(tripId);
+          let version = await this.cache.increment(key);
+          // Missing counters start at one; first invalidation must move v1 to v2.
+          if (version === 1) version = await this.cache.increment(key);
+          if (version === null)
+            throw new Error('Seat availability invalidation failed');
+          this.logger.log(
+            `Advanced seat availability generation for trip ${tripId}`,
+          );
         }
         return { status: 'handled' };
       }

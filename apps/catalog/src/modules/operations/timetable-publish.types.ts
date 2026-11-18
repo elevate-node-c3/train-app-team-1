@@ -30,6 +30,8 @@ export interface TripChange {
   tripId: string | null;
   /** True when the new version moves this trip's times or its stop set. */
   movesShape: boolean;
+  /** True when coach, class, layout, or seat geometry would change. */
+  movesComposition: boolean;
   /** Stations the trip stops at today and would not after the publish. */
   removedStationIds: string[];
 }

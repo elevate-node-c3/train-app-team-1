@@ -3,6 +3,7 @@ import { CacheAsideService } from '@app/common';
 
 import {
   SeatAvailabilityService,
+  availabilityVersionCacheKey,
   segmentAvailabilityCacheKey,
   type SegmentAvailabilityQuery,
 } from './seat-availability.service.js';
@@ -99,6 +100,31 @@ describe('seat availability', () => {
       expect(result.get('trip-a')).toBe(15);
       expect(result.get('trip-b')).toBe(50);
       expect(mockCache.set).toHaveBeenCalledWith(keyB, 50, expect.any(Number));
+    });
+
+    it('makes every old segment key unreachable after a trip generation change', async () => {
+      const query = segment('trip-a', 40);
+      const oldKey = segmentAvailabilityCacheKey(query, 1);
+      const newKey = segmentAvailabilityCacheKey(query, 2);
+      const store = new Map<string, number | string>([
+        [availabilityVersionCacheKey(query.tripId), 2],
+        [oldKey, 0],
+      ]);
+      const cache = {
+        get: vi.fn(async (key: string) => store.get(key) ?? null),
+        set: vi.fn(async (key: string, value: number) => {
+          store.set(key, value);
+        }),
+        getMetrics: () => ({ recordHit: vi.fn(), recordMiss: vi.fn() }),
+      } as unknown as CacheAsideService;
+
+      const result = await new SeatAvailabilityService(cache).availabilityFor([
+        query,
+      ]);
+      expect(result.get(query.tripId)).toBe(40);
+      expect(cache.get).toHaveBeenCalledWith(newKey);
+      expect(cache.set).toHaveBeenCalledWith(newKey, 40, expect.any(Number));
+      expect(store.get(oldKey)).toBe(0);
     });
   });
 });

@@ -188,6 +188,40 @@ describe('TimetablePublishService refusals', () => {
     expect((await harness.tripOn(D_PLUS_3)).timetableVersion).toBe(1);
   });
 
+  it('refuses an in-use trip composition change before Catalog commits', async () => {
+    harness = makeHarness({ withExistingVersion: true });
+    const held = await harness.tripOn(D_PLUS_3);
+    // Simulate the trip's immutable old promise after the live train composition changed.
+    held.compositionSnapshot = held.compositionSnapshot.map((coach) => ({
+      ...coach,
+      coachLayout: { ...coach.coachLayout, id: 'old-layout-promise' },
+    }));
+    harness.answerSeatUsage(held.id, {
+      soldCount: 0,
+      heldCount: 1,
+      stationIdsInUse: [CAIRO, GIZA],
+    });
+
+    await expect(
+      harness.service.publish(validRequest(), 'composition-promise', OPERATOR),
+    ).rejects.toMatchObject({
+      code: ErrorCode.CONFLICT,
+      details: [
+        expect.objectContaining({
+          field: 'coaches',
+          issueKey: 'ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_COMPOSITION',
+          actionKey: 'ACTION_KEEP_IN_USE_COMPOSITION_OR_PUBLISH_LATER',
+          params: expect.objectContaining({
+            tripId: held.id,
+            heldCount: '1',
+          }),
+        }),
+      ],
+    });
+    expect(await harness.auditCount()).toBe(0);
+    expect(await harness.outboxCount()).toBe(0);
+  });
+
   it('refuses a time change to a held trip (that is the Sprint 5 delay)', async () => {
     harness = makeHarness({ withExistingVersion: true });
     const held = await harness.tripOn(D_PLUS_3);
