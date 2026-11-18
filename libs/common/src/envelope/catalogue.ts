@@ -302,6 +302,26 @@ export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
     ar: 'لا يوجد حجز بهذا المفتاح',
     en: 'No hold exists for this booking key',
   },
+  [ErrorCode.PASSENGERS_REQUIRED]: {
+    ar: 'اختر مسافراً واحداً على الأقل',
+    en: 'Choose at least one passenger',
+  },
+  [ErrorCode.TOO_MANY_PASSENGERS]: {
+    ar: 'يمكن الحجز لأربعة مسافرين كحد أقصى',
+    en: 'A booking can include at most four passengers',
+  },
+  [ErrorCode.DUPLICATE_PASSENGER]: {
+    ar: 'تم اختيار نفس المسافر أكثر من مرة',
+    en: 'The same passenger was chosen more than once',
+  },
+  [ErrorCode.PASSENGER_ALREADY_BOOKED]: {
+    ar: 'هذا المسافر محجوز بالفعل على هذا القطار',
+    en: 'This passenger is already booked on this train',
+  },
+  [ErrorCode.TERMS_REQUIRED]: {
+    ar: 'يجب الموافقة على الشروط والأحكام وسياسة الخصوصية قبل الدفع',
+    en: 'Accept the Terms and Conditions and Privacy Policy before paying',
+  },
 };
 
 /** Defaults to Arabic for missing, unsupported or wildcard Accept-Language. */

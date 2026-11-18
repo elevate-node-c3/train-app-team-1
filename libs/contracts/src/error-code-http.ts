@@ -60,4 +60,11 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.EXTENSION_NOT_ALLOWED]: 409,
   [ErrorCode.BOOKING_KEY_CONFLICT]: 409,
   [ErrorCode.HOLD_NOT_FOUND]: 404,
+
+  // Booking draft: a bad passenger set is unprocessable, a clash is a conflict.
+  [ErrorCode.PASSENGERS_REQUIRED]: 422,
+  [ErrorCode.TOO_MANY_PASSENGERS]: 422,
+  [ErrorCode.DUPLICATE_PASSENGER]: 422,
+  [ErrorCode.TERMS_REQUIRED]: 422,
+  [ErrorCode.PASSENGER_ALREADY_BOOKED]: 409,
 };
