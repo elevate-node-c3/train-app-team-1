@@ -1,8 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as grpc from '@grpc/grpc-js';
+import { loadSync } from '@grpc/proto-loader';
 import { RpcException } from '@nestjs/microservices';
 import type { ClsService } from 'nestjs-cls';
-import { ErrorCode, type PassengerDto } from '@app/contracts';
+import {
+  ErrorCode,
+  getIdentityProtoPath,
+  type PassengerDto,
+} from '@app/contracts';
 import { AuthError } from './auth-error.js';
 import { AuthGrpcController } from './auth.grpc.controller.js';
 import type { AccountsService } from './services/accounts.service.js';
@@ -10,6 +15,7 @@ import type { PasswordsService } from './services/passwords.service.js';
 import type { ProfileService } from './services/profile.service.js';
 import type { SessionsService } from './services/sessions.service.js';
 import type { PassengersService } from './services/passengers.service.js';
+import type { HoldPassengersService } from './services/hold-passengers.service.js';
 
 describe('AuthGrpcController - Passengers', () => {
   let controller: AuthGrpcController;
@@ -19,6 +25,7 @@ describe('AuthGrpcController - Passengers', () => {
   let mockProfiles: Partial<ProfileService>;
   let mockPassengers: Partial<PassengersService>;
   let mockCls: Partial<ClsService>;
+  let mockHoldPassengers: Partial<HoldPassengersService>;
 
   const mockPassengerDto: PassengerDto = {
     id: 'pass-123',
@@ -44,6 +51,7 @@ describe('AuthGrpcController - Passengers', () => {
     mockCls = {
       get: vi.fn(),
     };
+    mockHoldPassengers = { resolve: vi.fn() };
 
     controller = new AuthGrpcController(
       mockAccounts as AccountsService,
@@ -52,8 +60,11 @@ describe('AuthGrpcController - Passengers', () => {
       mockProfiles as ProfileService,
       mockPassengers as PassengersService,
       mockCls as ClsService,
+      mockHoldPassengers as HoldPassengersService,
     );
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   describe('listPassengers', () => {
     it('delegates to PassengersService.listPassengers and returns { passengers }', async () => {
@@ -320,6 +331,170 @@ describe('AuthGrpcController - Passengers', () => {
       await expect(
         controller.listPassengers({ accountId: 'acc-123' }),
       ).rejects.toThrow(rawError);
+    });
+  });
+
+  describe('private ResolveHoldPassengers RPC', () => {
+    const serviceKey = 'booking-identity-test-only-private-key';
+    const request = {
+      ownerId: '11111111-1111-4111-8111-111111111111',
+      passengerRefs: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+      tripIds: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+    };
+
+    it('registers the exact private RPC wire contract without a raw National ID field', () => {
+      const definition = loadSync(getIdentityProtoPath(), { defaults: true })[
+        'train.identity.v1.IdentityService'
+      ] as grpc.ServiceDefinition;
+      const method = definition.ResolveHoldPassengers;
+      expect(method.path).toBe(
+        '/train.identity.v1.IdentityService/ResolveHoldPassengers',
+      );
+      expect(
+        method.requestDeserialize(method.requestSerialize(request)),
+      ).toEqual(request);
+      const response = {
+        passengers: [
+          {
+            passengerRef: request.passengerRefs[0],
+            displayName: 'Ahmed Hussein',
+            maskedNationalId: '**********1235',
+            identities: [
+              {
+                tripId: request.tripIds[0],
+                passengerToken: 'a'.repeat(64),
+                passengerKeyVersion: 1,
+              },
+            ],
+          },
+        ],
+      };
+      const encoded = method.responseSerialize({
+        passengers: [
+          { ...response.passengers[0], nationalId: '28505150101235' },
+        ],
+      });
+      expect(method.responseDeserialize(encoded)).toEqual(response);
+      expect(encoded.toString()).not.toContain('28505150101235');
+    });
+
+    it.each([
+      'missing-metadata',
+      'missing-key',
+      'wrong-key',
+      'duplicate-key',
+      'unconfigured',
+      'short-configuration',
+    ])('authenticates before resolver/repository work (%s)', async (mode) => {
+      vi.stubEnv(
+        'BOOKING_IDENTITY_SERVICE_KEY',
+        mode === 'unconfigured'
+          ? undefined
+          : mode === 'short-configuration'
+            ? 'short'
+            : serviceKey,
+      );
+      const metadata = new grpc.Metadata();
+      if (mode !== 'missing-key')
+        metadata.set(
+          'x-booking-identity-key',
+          mode === 'wrong-key'
+            ? 'wrong'
+            : mode === 'short-configuration'
+              ? 'short'
+              : serviceKey,
+        );
+      if (mode === 'duplicate-key')
+        metadata.add('x-booking-identity-key', serviceKey);
+      await expect(
+        controller.resolveHoldPassengers(
+          request,
+          mode === 'missing-metadata' ? undefined : metadata,
+        ),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(RpcException);
+        expect((error as RpcException).getError()).toEqual({
+          code: grpc.status.UNAUTHENTICATED,
+          details: JSON.stringify({ code: ErrorCode.UNAUTHORIZED }),
+          message: ErrorCode.UNAUTHORIZED,
+        });
+        return true;
+      });
+      expect(mockHoldPassengers.resolve).not.toHaveBeenCalled();
+      expect(mockPassengers.listPassengers).not.toHaveBeenCalled();
+    });
+
+    it('delegates the authenticated request without adding BR-10 admission checks', async () => {
+      vi.stubEnv('BOOKING_IDENTITY_SERVICE_KEY', serviceKey);
+      const metadata = new grpc.Metadata();
+      metadata.set('x-booking-identity-key', serviceKey);
+      const response = {
+        passengers: [
+          {
+            passengerRef: request.passengerRefs[0],
+            displayName: 'Ahmed Hussein',
+            maskedNationalId: '**********1235',
+            identities: [
+              {
+                tripId: request.tripIds[0],
+                passengerToken: 'a'.repeat(64),
+                passengerKeyVersion: 1,
+              },
+            ],
+          },
+        ],
+      };
+      vi.mocked(mockHoldPassengers.resolve!).mockResolvedValue(response);
+      await expect(
+        controller.resolveHoldPassengers(request, metadata),
+      ).resolves.toEqual(response);
+      expect(mockHoldPassengers.resolve).toHaveBeenCalledWith(request);
+      expect(mockCls.get).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [ErrorCode.PASSENGER_NOT_FOUND, grpc.status.NOT_FOUND],
+      [ErrorCode.BAD_REQUEST, grpc.status.INVALID_ARGUMENT],
+      [ErrorCode.SERVICE_UNAVAILABLE, grpc.status.UNAVAILABLE],
+    ] as const)(
+      'preserves only the safe failure code (%s)',
+      async (code, status) => {
+        vi.stubEnv('BOOKING_IDENTITY_SERVICE_KEY', serviceKey);
+        const metadata = new grpc.Metadata();
+        metadata.set('x-booking-identity-key', serviceKey);
+        vi.mocked(mockHoldPassengers.resolve!).mockRejectedValue(
+          new AuthError(code, `private ${serviceKey} 28505150101235`),
+        );
+        await expect(
+          controller.resolveHoldPassengers(request, metadata),
+        ).rejects.toSatisfy((error: unknown) => {
+          expect((error as RpcException).getError()).toEqual({
+            code: status,
+            details: JSON.stringify({ code }),
+            message: code,
+          });
+          return true;
+        });
+      },
+    );
+
+    it('sanitizes unexpected private-RPC failures while preserving older RPC behavior', async () => {
+      vi.stubEnv('BOOKING_IDENTITY_SERVICE_KEY', serviceKey);
+      const metadata = new grpc.Metadata();
+      metadata.set('x-booking-identity-key', serviceKey);
+      vi.mocked(mockHoldPassengers.resolve!).mockRejectedValue(
+        new Error(`database parameters ${serviceKey} 28505150101235`),
+      );
+      await expect(
+        controller.resolveHoldPassengers(request, metadata),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect((error as RpcException).getError()).toEqual({
+          code: grpc.status.UNAVAILABLE,
+          details: JSON.stringify({ code: ErrorCode.SERVICE_UNAVAILABLE }),
+          message: ErrorCode.SERVICE_UNAVAILABLE,
+        });
+        return true;
+      });
     });
   });
 });

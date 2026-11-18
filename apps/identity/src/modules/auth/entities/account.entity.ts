@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import type { EventLanguage, StaffRole } from '@app/contracts';
+import { nationalIdTransformer } from '../../../config/national-id-vault.js';
 
 export type AccountStatus = 'pending' | 'active' | 'disabled';
 
@@ -41,8 +42,21 @@ export class AccountEntity {
   @Column({ name: 'phone_number', type: 'text', nullable: true })
   phoneNumber!: string | null;
 
-  @Column({ name: 'national_id', type: 'text', nullable: true })
+  @Column({
+    name: 'national_id',
+    type: 'text',
+    nullable: true,
+    transformer: nationalIdTransformer('account'),
+  })
   nationalId!: string | null;
+
+  @Column({
+    name: 'national_id_hash',
+    type: 'text',
+    nullable: true,
+    select: false,
+  })
+  nationalIdHash!: string | null;
 
   @Column({ name: 'profile_type', type: 'text', nullable: true })
   profileType!: string | null;

@@ -249,6 +249,9 @@ function harness(options: HarnessOptions = {}): Harness {
             : 'outbox-verification',
       );
     },
+    appendBatch: async (received, values) => {
+      for (const value of values) await outbox.append(received, value);
+    },
   };
   const unitOfWork: UnitOfWorkPort = {
     withTransaction: async <T>(

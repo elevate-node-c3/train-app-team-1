@@ -6,6 +6,7 @@ import {
   VERIFICATION_CODE_DEFAULTS,
 } from '@app/common/config/env.defaults.js';
 import { MAX_RELAY_POLL_INTERVAL_MS } from '@app/messaging/retry-budget.js';
+import { holdPassengerTokenSettingsFromEnv } from './hold-passenger-token-settings.js';
 
 /** Only identity runs the outbox relay. */
 export const identityEnvSchema = commonEnvSchema
@@ -59,5 +60,67 @@ export const identityEnvSchema = commonEnvSchema
       .default(TOKEN_DEFAULTS.refreshGraceSeconds),
     TOKEN_GRACE_SECRET: Joi.string().optional(),
     BCRYPT_COST: Joi.number().integer().min(4).max(15).default(12),
+    BOOKING_IDENTITY_SERVICE_KEY: Joi.string().empty('').min(32).optional(),
+    NATIONAL_ID_ACTIVE_KEY_VERSION: Joi.string()
+      .pattern(/^[1-9]\d*$/)
+      .required(),
+    NATIONAL_ID_BLIND_INDEX_KEY: Joi.string()
+      .base64()
+      .custom((value: string, helpers) =>
+        Buffer.from(value, 'base64').length === 32
+          ? value
+          : helpers.error('any.invalid'),
+      )
+      .required(),
+    NATIONAL_ID_ENCRYPTION_KEYS: Joi.string()
+      .required()
+      .custom((value: string, helpers) => {
+        try {
+          const keys = JSON.parse(value) as Record<string, unknown>;
+          const env = helpers.state.ancestors[0] as Record<string, unknown>;
+          const active = String(env.NATIONAL_ID_ACTIVE_KEY_VERSION ?? '');
+          if (
+            !keys ||
+            typeof keys !== 'object' ||
+            Array.isArray(keys) ||
+            !Object.prototype.hasOwnProperty.call(keys, active) ||
+            Object.entries(keys).some(
+              ([version, key]) =>
+                !/^[1-9]\d*$/.test(version) ||
+                typeof key !== 'string' ||
+                Buffer.from(key, 'base64').length !== 32,
+            )
+          )
+            return helpers.error('any.invalid');
+          return value;
+        } catch {
+          return helpers.error('any.invalid');
+        }
+      }),
+    HOLD_PASSENGER_TOKEN_ACTIVE_VERSION: Joi.string()
+      .empty('')
+      .pattern(/^[1-9]\d*$/)
+      .optional(),
+    HOLD_PASSENGER_TOKEN_KEYS: Joi.string()
+      .empty('')
+      .optional()
+      .custom((value: string, helpers) => {
+        const env = helpers.state.ancestors[0] as Record<string, unknown>;
+        try {
+          holdPassengerTokenSettingsFromEnv({
+            HOLD_PASSENGER_TOKEN_KEYS: value,
+            HOLD_PASSENGER_TOKEN_ACTIVE_VERSION:
+              env.HOLD_PASSENGER_TOKEN_ACTIVE_VERSION,
+          });
+          return value;
+        } catch {
+          return helpers.error('any.invalid');
+        }
+      })
+      .messages({
+        'any.invalid':
+          'HOLD_PASSENGER_TOKEN_KEYS must map positive integer versions to base64 secrets of at least 32 bytes and include HOLD_PASSENGER_TOKEN_ACTIVE_VERSION',
+      }),
   })
+  .and('HOLD_PASSENGER_TOKEN_KEYS', 'HOLD_PASSENGER_TOKEN_ACTIVE_VERSION')
   .or('JWT_PRIVATE_KEY', 'JWT_PRIVATE_KEY_FILE');

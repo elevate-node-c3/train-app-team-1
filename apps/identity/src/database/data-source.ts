@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { databaseUrlFromEnv } from '../config/database-settings.js';
 import { migrations } from './migrations/index.js';
+import { HoldPassengerTripKeyEntity } from '../modules/auth/entities/hold-passenger-trip-key.entity.js';
 
 /**
  * CLI and staff-seed connection:
@@ -14,5 +15,6 @@ export default new DataSource({
   type: 'postgres',
   url: databaseUrlFromEnv(),
   synchronize: false,
+  entities: [HoldPassengerTripKeyEntity],
   migrations,
 });
