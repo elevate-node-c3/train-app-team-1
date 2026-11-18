@@ -12,6 +12,7 @@ export * from './identity/profile.dto.js';
 export * from './identity/passenger.dto.js';
 export * from './identity/password-policy.js';
 export * from './inventory/inventory.grpc.js';
+export * from './inventory/seat-allocation.dto.js';
 export * from './catalog/catalog.grpc.js';
 export * from './catalog/catalog.dto.js';
 export * from './catalog/operations.dto.js';

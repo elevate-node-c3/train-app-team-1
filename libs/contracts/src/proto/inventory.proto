@@ -2,11 +2,16 @@ syntax = "proto3";
 
 package train.inventory.v1;
 
-// No seat tables yet, so every answer is zero -- a real answer, not silence.
-// That lets catalog refuse a rewrite over a trip that might already be sold.
+// Inventory service managing seat holds, usage, and group allocation.
 service InventoryService {
   rpc SeatUsageForTrips (SeatUsageForTripsRequest)
       returns (SeatUsageForTripsResponse);
+
+  rpc HoldSeats (HoldSeatsRequest)
+      returns (HoldSeatsResponse);
+
+  rpc ReleaseSeats (ReleaseSeatsRequest)
+      returns (ReleaseSeatsResponse);
 }
 
 message SeatUsageForTripsRequest {
@@ -31,4 +36,51 @@ message SeatUsageForTripsResponse {
   repeated TripSeatUsage usages = 1;
 
   reserved 2 to 9;  // evaluatedAt or a page token, if ever needed
+}
+
+enum AllocationOutcome {
+  ALLOCATION_OUTCOME_UNSPECIFIED = 0;
+  SIDE_BY_SIDE = 1;
+  SAME_COACH = 2;
+  SPLIT = 3;
+}
+
+message AssignedSeat {
+  string seatId = 1;
+  int32 coachNumber = 2;
+  string seatNumber = 3;
+  int32 rowNumber = 4;
+  optional string label = 5;
+}
+
+message SplitNoticePayload {
+  string code = 1;
+  string message = 2;
+  string messageEn = 3;
+}
+
+message HoldSeatsRequest {
+  string tripId = 1;
+  string travelClassId = 2;
+  string originStationId = 3;
+  string destinationStationId = 4;
+  int32 groupSize = 5;
+  optional int32 ttlSeconds = 6;
+  optional string bookingId = 7;
+}
+
+message HoldSeatsResponse {
+  string holdId = 1;
+  AllocationOutcome allocationOutcome = 2;
+  repeated AssignedSeat seats = 3;
+  string expiresAt = 4;
+  optional SplitNoticePayload splitNotice = 5;
+}
+
+message ReleaseSeatsRequest {
+  string holdId = 1;
+}
+
+message ReleaseSeatsResponse {
+  bool success = 1;
 }
