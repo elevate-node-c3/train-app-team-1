@@ -126,8 +126,7 @@ describe('SeatHoldGrpcController hold RPCs', () => {
     const { controller, core } = buildController('corr-abc');
     core.createHold.mockResolvedValue(snapshot);
 
-    // The boundary answers with the response DTO, not the service's object.
-    await expect(controller.createHold(request)).resolves.toEqual(snapshot);
+    await expect(controller.createHold(request)).resolves.toBe(snapshot);
     expect(core.createHold).toHaveBeenCalledWith(request, 'corr-abc');
   });
 
