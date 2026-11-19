@@ -8,7 +8,7 @@ import type {
 } from '@app/contracts';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
-import { uuidShapedOnly } from '@app/common/validation/uuid.js';
+import { isUUID } from 'class-validator';
 
 import { FareEntity } from '../fares/entities/fare.entity.js';
 import { CoachLayoutEntity } from '../trains/entities/coach-layout.entity.js';
@@ -74,7 +74,7 @@ export class TimetablePublishRepository {
      * unknown-station refusal it is. Filtering to uuid shape first turns every
      * malformed id into "not in the known set", which is the honest answer.
      */
-    const stationIds = uuidShapedOnly(params.stationIds);
+    const stationIds = params.stationIds.filter((id) => isUUID(id));
     const stations = stationIds.length
       ? await manager.getRepository(StationEntity).find({
           where: { id: In(stationIds) },
@@ -82,14 +82,14 @@ export class TimetablePublishRepository {
         })
       : [];
 
-    const layoutIds = uuidShapedOnly(params.coachLayoutIds);
+    const layoutIds = params.coachLayoutIds.filter((id) => isUUID(id));
     const layouts = layoutIds.length
       ? await manager
           .getRepository(CoachLayoutEntity)
           .find({ where: { id: In(layoutIds) } })
       : [];
 
-    const classIds = uuidShapedOnly(params.travelClassIds);
+    const classIds = params.travelClassIds.filter((id) => isUUID(id));
     const classes = classIds.length
       ? await manager
           .getRepository(TravelClassEntity)

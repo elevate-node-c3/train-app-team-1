@@ -10,7 +10,8 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
-import { CALLER_ACCOUNT_ID_KEY, RequireAccess, isUuidShape } from '@app/common';
+import { CALLER_ACCOUNT_ID_KEY, RequireAccess } from '@app/common';
+import { isUUID } from 'class-validator';
 import { ErrorCode } from '@app/contracts';
 import { BookingService } from './booking.service.js';
 import { BookingRequestGuard } from './booking-request.guard.js';
@@ -67,7 +68,7 @@ export class BookingController {
     const headerKey = req?.headers?.['idempotency-key'];
     const bookingKey = headerKey ?? dto.bookingKey;
     if (
-      !isUuidShape(bookingKey) ||
+      !isUUID(bookingKey) ||
       (headerKey && dto.bookingKey && headerKey !== dto.bookingKey)
     ) {
       throw new HttpException(
@@ -79,7 +80,7 @@ export class BookingController {
       !Array.isArray(dto.passengerIds) ||
       dto.passengerIds.length < 1 ||
       dto.passengerIds.length > 4 ||
-      !dto.passengerIds.every(isUuidShape) ||
+      !dto.passengerIds.every((id) => isUUID(id)) ||
       new Set(dto.passengerIds).size !== dto.passengerIds.length
     ) {
       throw new HttpException(

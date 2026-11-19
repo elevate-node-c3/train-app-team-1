@@ -5,7 +5,7 @@ import {
   HttpStatus,
   Injectable,
 } from '@nestjs/common';
-import { isRfcUuid } from '@app/common';
+import { isUUID } from 'class-validator';
 import { ErrorCode } from '@app/contracts';
 
 @Injectable()
@@ -35,9 +35,9 @@ export class BookingRequestGuard implements CanActivate {
     if (Object.keys(input).some((key) => !allowed.has(key))) refuse();
     const key = request.headers['idempotency-key'] ?? input.bookingKey;
     if (
-      !isRfcUuid(key) ||
+      !isUUID(key) ||
       (input.bookingKey !== undefined &&
-        (!isRfcUuid(input.bookingKey) || input.bookingKey !== key))
+        (!isUUID(input.bookingKey) || input.bookingKey !== key))
     )
       refuse();
     const passengers = input.passengerIds;
@@ -45,7 +45,7 @@ export class BookingRequestGuard implements CanActivate {
       !Array.isArray(passengers) ||
       passengers.length < 1 ||
       passengers.length > 4 ||
-      !passengers.every(isRfcUuid) ||
+      !passengers.every((ref) => isUUID(ref)) ||
       new Set(passengers.map((id: string) => id.toLowerCase())).size !==
         passengers.length
     )
@@ -82,7 +82,7 @@ export class BookingRequestGuard implements CanActivate {
       const leg = candidate as Record<string, unknown>;
       if (
         Object.keys(leg).some((field) => !legKeys.includes(field)) ||
-        !legKeys.every((field) => isRfcUuid(leg[field]))
+        !legKeys.every((field) => isUUID(leg[field]))
       )
         refuse();
       const trip = (leg.tripId as string).toLowerCase();

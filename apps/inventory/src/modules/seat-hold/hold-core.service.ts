@@ -19,7 +19,7 @@ import type {
   TransactionContext,
   UnitOfWorkPort,
 } from '@app/common/persistence/unit-of-work.port.js';
-import { isUuidShape } from '@app/common/validation/uuid.js';
+import { isUUID } from 'class-validator';
 
 import {
   calculateHoldExpiry,
@@ -37,12 +37,14 @@ import {
 import { buildHoldEvent } from './hold-events.factory.js';
 import { allocateGroupSeats } from '../seat-allocation/seat-allocator.js';
 import type { AllocationResult } from '../seat-allocation/seat-allocator.types.js';
+import {
+  MAX_BOOKING_KEY_LENGTH,
+  MAX_LEGS,
+  MAX_PASSENGER_REF_LENGTH,
+  MAX_PASSENGER_TOKEN_LENGTH,
+  MAX_PASSENGERS,
+} from './seat-hold.limits.js';
 
-const MAX_PASSENGERS = 4;
-const MAX_LEGS = 2;
-const MAX_BOOKING_KEY_LENGTH = 200;
-const MAX_PASSENGER_REF_LENGTH = 200;
-const MAX_PASSENGER_TOKEN_LENGTH = 1024;
 const MAX_ATTEMPTS = 3;
 
 type TerminationReason = 'released' | 'expired' | 'replaced';
@@ -754,7 +756,7 @@ export class HoldCoreService {
     ownerId: string;
     bookingKey: string;
   }): void {
-    if (!isUuidShape(request.ownerId)) {
+    if (!isUUID(request.ownerId)) {
       throw new HoldCoreError(
         ErrorCode.VALIDATION_ERROR,
         'ownerId must be an identity account UUID.',
@@ -780,7 +782,7 @@ export class HoldCoreService {
       leg.originStationId,
       leg.destinationStationId,
     ];
-    if (!ids.every((id) => isUuidShape(id))) {
+    if (!ids.every((id) => isUUID(id))) {
       throw new HoldCoreError(
         ErrorCode.VALIDATION_ERROR,
         'Leg ids must be UUIDs.',

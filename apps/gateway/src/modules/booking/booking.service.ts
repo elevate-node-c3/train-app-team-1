@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { ErrorCode } from '@app/contracts';
 import { ClsService } from 'nestjs-cls';
-import { CORRELATION_ID_KEY, isUuidShape } from '@app/common';
+import { CORRELATION_ID_KEY } from '@app/common';
+import { isUUID } from 'class-validator';
 import type {
   BookingDraftResponse,
   CreateBookingDto,
@@ -100,7 +101,7 @@ export class BookingHttpService implements BookingClient {
             if (!value || typeof value !== 'object') return false;
             const passenger = value as Record<string, unknown>;
             return (
-              isUuidShape(passenger.passengerRef) &&
+              isUUID(passenger.passengerRef) &&
               /^\*{10}\d{4}$/.test(String(passenger.maskedNationalId))
             );
           }) as Record<string, unknown> | undefined)
