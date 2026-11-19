@@ -1,7 +1,12 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
-import { getHealthProtoPath, HEALTH_PACKAGE_NAME } from '@app/contracts';
+import {
+  BOOKING_PACKAGE_NAME,
+  getBookingProtoPath,
+  getHealthProtoPath,
+  HEALTH_PACKAGE_NAME,
+} from '@app/contracts';
 import { BookingModule } from './booking.module.js';
 
 validateEnv(commonEnvSchema, process.env, 'booking');
@@ -13,8 +18,8 @@ async function bootstrap() {
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {
-      package: HEALTH_PACKAGE_NAME,
-      protoPath: getHealthProtoPath(),
+      package: [HEALTH_PACKAGE_NAME, BOOKING_PACKAGE_NAME],
+      protoPath: [getHealthProtoPath(), getBookingProtoPath()],
       url: `0.0.0.0:${grpcPort}`,
     },
   });
