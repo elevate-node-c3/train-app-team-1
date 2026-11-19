@@ -43,12 +43,15 @@ export class HealthGrpcController {
         details: detailsMap,
       };
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      // The reason goes to the log; a readiness answer carries no driver text.
+      this.logger.error(
+        `Health check failed: ${err instanceof Error ? err.stack : String(err)}`,
+      );
       return {
         status: 2, // NOT_SERVING
         service: data?.service || process.env.APP || 'unknown',
-        message: errMsg,
-        details: { error: errMsg },
+        message: 'not_ready',
+        details: { error: 'not_ready' },
       };
     }
   }
