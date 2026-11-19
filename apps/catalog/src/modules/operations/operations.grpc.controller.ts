@@ -1,7 +1,16 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Logger,
+  UseInterceptors,
+  UsePipes,
+} from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { Metadata } from '@grpc/grpc-js';
-import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
+import {
+  CALLER_ACCOUNT_ID_KEY,
+  createGrpcValidationPipe,
+  GrpcCorrelationInterceptor,
+} from '@app/common';
 import { ClsService } from 'nestjs-cls';
 import {
   CATALOG_SERVICE_NAME,
@@ -12,6 +21,7 @@ import {
   type ValidationIssueRef,
 } from '@app/contracts';
 
+import { ListAuditEntriesRequestDto } from './dto/audit-request.dto.js';
 import { toRpcException } from '../trips/to-rpc-exception.js';
 import { CatalogSearchError } from '../trips/catalog-search-error.js';
 import type {
@@ -154,6 +164,7 @@ function toAuditEntryRpc(entry: OperationsAuditEntity): AuditEntryRpc {
  */
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
+@UsePipes(createGrpcValidationPipe())
 export class OperationsGrpcController {
   private readonly logger = new Logger(OperationsGrpcController.name);
 
@@ -207,7 +218,7 @@ export class OperationsGrpcController {
   /** Audit reads do not require actor attribution; only writes do. */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'ListAuditEntries')
   async listAuditEntries(
-    request: ListAuditEntriesRpcRequest,
+    request: ListAuditEntriesRequestDto,
   ): Promise<ListAuditEntriesRpcResponse> {
     const filter: OperationsAuditFilter = {
       trainId: request.trainId || undefined,
