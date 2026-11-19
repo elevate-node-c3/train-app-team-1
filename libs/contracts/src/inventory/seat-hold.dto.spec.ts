@@ -194,20 +194,20 @@ describe('MT-02 hold lifecycle contracts', () => {
       passengerRef: 'p-1',
       identities: [
         {
-          tripId: '10000000-0000-0000-0000-000000000001',
+          tripId: '10000000-0000-4000-8000-000000000001',
           passengerToken: 'opaque-token',
           passengerKeyVersion: 1,
         },
       ],
     };
     const leg: HoldLegInput = {
-      tripId: '10000000-0000-0000-0000-000000000001',
-      travelClassId: '50000000-0000-0000-0000-000000000001',
-      originStationId: '20000000-0000-0000-0000-000000000000',
-      destinationStationId: '20000000-0000-0000-0000-000000000002',
+      tripId: '10000000-0000-4000-8000-000000000001',
+      travelClassId: '50000000-0000-4000-8000-000000000001',
+      originStationId: '20000000-0000-4000-8000-000000000000',
+      destinationStationId: '20000000-0000-4000-8000-000000000002',
     };
     const request: CreateHoldRequest = {
-      ownerId: '70000000-0000-0000-0000-000000000001',
+      ownerId: '70000000-0000-4000-8000-000000000001',
       bookingKey: 'booking-key-1',
       legs: [leg],
       passengers: [passenger],
@@ -221,7 +221,7 @@ describe('MT-02 hold lifecycle contracts', () => {
       passengerRef: passenger.passengerRef,
       passengerKeyVersion: passenger.identities[0].passengerKeyVersion,
       tripId: leg.tripId,
-      tripSeatId: '40000000-0000-0000-0000-000000000001',
+      tripSeatId: '40000000-0000-4000-8000-000000000001',
       travelClassId: leg.travelClassId,
       coachNumber: 1,
       seatNumber: '1A',
@@ -234,7 +234,7 @@ describe('MT-02 hold lifecycle contracts', () => {
       destinationPosition: 2,
     };
     const snapshot: HoldSnapshot = {
-      holdId: '80000000-0000-0000-0000-000000000001',
+      holdId: '80000000-0000-4000-8000-000000000001',
       bookingKey: request.bookingKey,
       ownerId: request.ownerId,
       state: 'HELD',

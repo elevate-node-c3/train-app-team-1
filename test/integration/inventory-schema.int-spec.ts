@@ -119,7 +119,7 @@ describe('the trip tables', () => {
     await expect(
       insertCoach(
         SIX_STOP_TRIP.tripId,
-        '30000000-0000-0000-0000-000000000099',
+        '30000000-0000-4000-8000-000000000099',
         1,
         SIX_STOP_TRIP.travelClassIds[0],
       ),
@@ -130,7 +130,7 @@ describe('the trip tables', () => {
     // unique (trip_coach_id, seat_number): seat 1 already exists in coach 1
     await expect(
       insertSeat(
-        '40000000-0000-0000-0000-000000000099',
+        '40000000-0000-4000-8000-000000000099',
         SIX_STOP_TRIP.tripId,
         SIX_STOP_TRIP.coachIds[0],
         1,
@@ -142,12 +142,12 @@ describe('the trip tables', () => {
   it('accepts seat 1 in two different coaches', async () => {
     // uniqueness is per coach, not per trip: seat 1 exists in coach 1 and
     // coach 2 already; a third coach can still take seat number 1.
-    const thirdCoachId = '30000000-0000-0000-0000-000000000003';
+    const thirdCoachId = '30000000-0000-4000-8000-000000000003';
     await insertCoach(SIX_STOP_TRIP.tripId, thirdCoachId, 3, SIX_STOP_TRIP.travelClassIds[0]);
 
     await expect(
       insertSeat(
-        '40000000-0000-0000-0000-000000000099',
+        '40000000-0000-4000-8000-000000000099',
         SIX_STOP_TRIP.tripId,
         thirdCoachId,
         1,
@@ -159,10 +159,10 @@ describe('the trip tables', () => {
   it('refuses a seat whose trip_id disagrees with its coach\'s real trip', async () => {
     // A second, real trip so trip_id itself is valid — isolates the failure
     // to the composite FK, not a missing inventory_trip row.
-    const otherTripId = '10000000-0000-0000-0000-000000000002';
+    const otherTripId = '10000000-0000-4000-8000-000000000002';
     await source.query(
       `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
-       VALUES ($1, 'on_sale', 1, '60000000-0000-0000-0000-000000000001', 999, '2026-01-01')`,
+       VALUES ($1, 'on_sale', 1, '60000000-0000-4000-8000-000000000001', 999, '2026-01-01')`,
       [otherTripId],
     );
 
@@ -170,7 +170,7 @@ describe('the trip tables', () => {
     // seat_number 11 is unused on this coach, so uq_trip_seat_number can't fire first.
     await expect(
       insertSeat(
-        '40000000-0000-0000-0000-000000000099',
+        '40000000-0000-4000-8000-000000000099',
         otherTripId,
         SIX_STOP_TRIP.coachIds[0],
         11,
@@ -185,8 +185,8 @@ describe('the trip tables', () => {
     await expect(
       source.query(
         `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
-         VALUES ($1, 'pending', 1, '60000000-0000-0000-0000-000000000001', 999, '2026-01-01')`,
-        ['10000000-0000-0000-0000-000000000099'],
+         VALUES ($1, 'pending', 1, '60000000-0000-4000-8000-000000000001', 999, '2026-01-01')`,
+        ['10000000-0000-4000-8000-000000000099'],
       ),
     ).rejects.toThrow(/chk_inventory_trip_status/);
   });
