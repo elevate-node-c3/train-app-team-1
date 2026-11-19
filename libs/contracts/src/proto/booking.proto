@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package train.booking.v1;
+
+message BookingLeg {
+  string tripId = 1;
+  string originStationId = 2;
+  string destinationStationId = 3;
+}
+
+service BookingService {
+  // Public booking RPCs are bounded by the gateway's 6000ms request deadline.
+  rpc SubmitBooking (SubmitBookingRequest) returns (BookingResponse);
+  // Records the traveller's acceptance of the Terms and Conditions and the
+  // Privacy Policy; ContinueToPayment refuses without it.
+  rpc AcceptTerms (ContinueBookingRequest) returns (BookingResponse);
+  rpc ContinueToPayment (ContinueBookingRequest) returns (BookingResponse);
+  rpc AbandonBooking (ContinueBookingRequest) returns (BookingResponse);
+  rpc GetBooking (ContinueBookingRequest) returns (BookingResponse);
+}
+
+message SubmitBookingRequest {
+  string idempotencyKey = 1;
+  repeated BookingLeg legs = 2;
+  string travelClassId = 3;
+  // Saved passengers by reference only (BR-09); booking reads them from identity.
+  repeated string passengerIds = 4;
+}
+
+message ContinueBookingRequest {
+  string bookingReference = 1;
+}
+
+// The next five mirror catalog's wire shapes, so the Review Tickets step reads
+// trains, stations and times exactly as search showed them.
+message CivilDateTime {
+  string localDate = 1;
+  string localTime = 2;
+  string utcOffset = 3;
+  string iso = 4;
+  string timeZone = 5;
+}
+
+message LocalizedName {
+  string en = 1;
+  string ar = 2;
+}
+
+message TravelClass {
+  string id = 1;
+  LocalizedName name = 2;
+}
+
+message TripEndpoint {
+  string stationId = 1;
+  LocalizedName name = 2;
+  CivilDateTime at = 3;
+}
+
+message SplitNotice {
+  string code = 1;
+  string message = 2;
+  string messageEn = 3;
+}
+
+// A passenger as reviewed at the hold. Never carries the National ID.
+message BookedPassenger {
+  string passengerId = 1;
+  string fullName = 2;
+  int32 coachNumber = 3;
+  string seatNumber = 4;
+  string seatLabel = 5;      // "Mona Ahmed · Coach 5 · Seat 44"
+  int32 farePiastres = 6;    // this passenger on this leg
+}
+
+message BookedLeg {
+  string tripId = 1;
+  int32 trainNumber = 2;
+  LocalizedName trainType = 3;
+  TripEndpoint departure = 4;
+  TripEndpoint arrival = 5;
+  int32 farePiastres = 6;          // one passenger, locked at the hold (BR-30)
+  string allocationOutcome = 7;    // SIDE_BY_SIDE | SAME_COACH | SPLIT
+  SplitNotice splitNotice = 8;     // present only when SPLIT
+  repeated BookedPassenger passengers = 9;
+}
+
+message BookingResponse {
+  string bookingReference = 1;
+  string state = 2;
+  int32 totalPiastres = 3;
+  string currency = 4;
+  string holdExpiresAt = 5;        // set by inventory; never reset by a read
+  string paymentReference = 6;
+  string serverTime = 7;           // fresh on every response
+  TravelClass travelClass = 8;
+  repeated BookedLeg legs = 9;
+  int32 fareTotalPiastres = 10;    // every passenger on every leg
+  int32 bookingFeePiastres = 11;
+  int32 bookingFeePercent = 12;    // 7
+  string termsAcceptedAt = 13;     // '' until accepted
+}
