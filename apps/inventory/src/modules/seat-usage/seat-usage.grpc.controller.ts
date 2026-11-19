@@ -1,6 +1,6 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { GrpcCorrelationInterceptor } from '@app/common';
+import { GrpcCorrelationInterceptor, toRpcException } from '@app/common';
 import {
   INVENTORY_SERVICE_NAME,
   type SeatUsageForTripsRequest,
@@ -19,7 +19,11 @@ export class SeatUsageGrpcController {
   async seatUsageForTrips(
     request: SeatUsageForTripsRequest,
   ): Promise<SeatUsageForTripsResponse> {
-    const usages = await this.seatUsage.seatUsageForTrips(request.tripIds);
-    return { usages };
+    try {
+      const usages = await this.seatUsage.seatUsageForTrips(request.tripIds);
+      return { usages };
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
   }
 }
