@@ -1,6 +1,7 @@
 export * from './proto-path.js';
 export * from './error-codes.enum.js';
 export * from './error-code-http.js';
+export * from './error-code-grpc.js';
 export * from './grpc-status.js';
 export * from './envelope.dto.js';
 export * from './validation-issue-ref.js';
