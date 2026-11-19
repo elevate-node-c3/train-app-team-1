@@ -28,12 +28,12 @@ export const CONSTRAINT_ISSUE_KEYS: Record<string, string> = {
 
 export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
   ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_COMPOSITION: {
-    ar: 'سيؤدي النشر إلى تغيير عربات أو درجات أو مقاعد رحلة بها حجوزات نشطة.',
-    en: 'Publishing would change coaches, classes, or seats on a trip with active reservations.',
+    ar: 'في الرحلة {{tripId}} بتاريخ {{serviceDate}}، يبلغ عدد المقاعد المباعة {{soldCount}} وعدد المقاعد المحجوزة مؤقتاً {{heldCount}}. سيؤدي النشر إلى تغيير عربات أو درجات أو مقاعد هذه الرحلة.',
+    en: 'For trip {{tripId}} on {{serviceDate}}, sold seats total {{soldCount}} and held seats total {{heldCount}}. Publishing would change the coaches, classes, or seats on that trip.',
   },
   ACTION_KEEP_IN_USE_COMPOSITION_OR_PUBLISH_LATER: {
-    ar: 'احتفظ بتكوين الرحلة الحالي أو انشر التغيير بعد انتهاء الحجوزات النشطة.',
-    en: 'Keep the current trip composition or publish after active reservations end.',
+    ar: 'احتفظ بتكوين الرحلة الحالي، أو أعد النشر بتاريخ بدء هو {{laterDate}} أو بعده.',
+    en: 'Keep the current trip composition, or republish with an effective date of {{laterDate}} or later.',
   },
   ISSUE_PASSENGER_ALREADY_TRAVELLING: {
     ar: 'الراكب صاحب الرقم القومي {{maskedNationalId}} لديه مقعد بالفعل على جزء متداخل من هذه الرحلة.',
