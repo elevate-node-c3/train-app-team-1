@@ -1,0 +1,111 @@
+import { randomUUID } from 'node:crypto';
+import {
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleInit,
+} from '@nestjs/common';
+
+import { BookingFlowRepository } from './booking-flow.repository.js';
+import { BookingFlowService } from './booking-flow.service.js';
+
+/** How often the worker looks for work. Each pass is bounded by the claim. */
+const SCAN_INTERVAL_MS = 2_000;
+
+/**
+ * Drives the flows nobody is waiting on: a step whose remote call failed, a
+ * hold that ran out, and a compensation still owed.
+ *
+ * Every deadline lives in the database, so two instances agree without talking
+ * to each other, and a restart loses nothing. The service holds no timer of
+ * its own, the way HoldExpiryWorker keeps inventory's scans out of
+ * HoldCoreService.
+ */
+@Injectable()
+export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
+  private readonly logger = new Logger(BookingFlowWorker.name);
+  private readonly workerId = randomUUID();
+  private timer: NodeJS.Timeout | undefined;
+  private scanning = false;
+
+  constructor(
+    private readonly repository: BookingFlowRepository,
+    private readonly flow: BookingFlowService,
+  ) {}
+
+  onModuleInit(): void {
+    void this.scan();
+    this.timer = setInterval(() => void this.scan(), SCAN_INTERVAL_MS);
+    // A pending scan must never hold the process open.
+    this.timer.unref();
+  }
+
+  onApplicationShutdown(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  /** One pass: expire what is due, resume what stalled, pay back what is owed. */
+  async scan(): Promise<void> {
+    if (this.scanning) return;
+    this.scanning = true;
+    try {
+      await this.expireDue();
+      await this.resumeStalled();
+      await this.runCompensations();
+    } catch (error: unknown) {
+      this.logger.error(`Booking flow scan failed: ${messageOf(error)}`);
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  private async expireDue(): Promise<void> {
+    for (const id of await this.repository.expireAllDue()) {
+      try {
+        await this.flow.compensate(id);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Booking ${id} expired but could not be settled yet: ${messageOf(error)}`,
+        );
+      }
+    }
+  }
+
+  private async resumeStalled(): Promise<void> {
+    for (const flow of await this.repository.claimResumable(this.workerId)) {
+      try {
+        if (flow.flowState === 'payment_starting') {
+          await this.flow.startPayment(flow.id);
+        } else {
+          await this.flow.advance(flow.id);
+        }
+        await this.repository.releaseLease(flow.id, this.workerId);
+      } catch (error: unknown) {
+        // The step keeps its place; the next pass tries it again.
+        await this.repository.deferResume(
+          flow.id,
+          this.workerId,
+          messageOf(error),
+        );
+        this.logger.warn(
+          `Booking ${flow.id} stays at ${flow.flowState}; the step will retry: ${messageOf(error)}`,
+        );
+      }
+    }
+  }
+
+  private async runCompensations(): Promise<void> {
+    for (const id of await this.repository.claimCompensable(this.workerId)) {
+      try {
+        await this.flow.compensate(id);
+      } finally {
+        await this.repository.releaseLease(id, this.workerId);
+      }
+    }
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
