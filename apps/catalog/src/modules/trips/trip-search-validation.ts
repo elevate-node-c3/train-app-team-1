@@ -1,4 +1,4 @@
-import { isRfcUuid } from '@app/common/validation/uuid.js';
+import { isUUID } from 'class-validator';
 import type {
   SearchOneWayTripsRequest,
   ValidationIssueRef,
@@ -19,7 +19,7 @@ const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The identifier shape the catalogue mints; shared with the filter refusals. */
 export function isUuid(value: unknown): value is string {
-  return isRfcUuid(value);
+  return isUUID(value);
 }
 
 export interface SearchReferenceFacts {

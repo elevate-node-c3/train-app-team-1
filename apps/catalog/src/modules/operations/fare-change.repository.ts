@@ -4,7 +4,7 @@ import { DataSource, In, LessThanOrEqual } from 'typeorm';
 
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
-import { uuidShapedOnly } from '@app/common/validation/uuid.js';
+import { isUUID } from 'class-validator';
 
 import { FareEntity } from '../fares/entities/fare.entity.js';
 import { StationEntity } from '../stations/entities/station.entity.js';
@@ -42,14 +42,14 @@ export class FareChangeRepository {
      * A UUID column rejects a malformed id with `22P02`, so filter to UUID shape
      * first or a typo becomes a 500 instead of an unknown-reference refusal.
      */
-    const classIds = uuidShapedOnly([params.travelClassId]);
+    const classIds = [params.travelClassId].filter((id) => isUUID(id));
     const travelClass = classIds.length
       ? await manager
           .getRepository(TravelClassEntity)
           .findOne({ where: { id: classIds[0] } })
       : null;
 
-    const stationIds = uuidShapedOnly(params.stationIds);
+    const stationIds = params.stationIds.filter((id) => isUUID(id));
     const stations = stationIds.length
       ? await manager.getRepository(StationEntity).find({
           where: { id: In(stationIds) },

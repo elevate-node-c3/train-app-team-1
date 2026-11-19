@@ -9,7 +9,7 @@ import {
   type UpdateStationRequest,
   type StationChangedPayloadV1,
 } from '@app/contracts';
-import { isUuidShape } from '@app/common/validation/uuid.js';
+import { isUUID } from 'class-validator';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import {
   UNIT_OF_WORK,
@@ -214,7 +214,7 @@ export class StationsManagementService {
   }
 
   private requireStationId(stationId: string): void {
-    if (!isUuidShape(stationId))
+    if (!isUUID(stationId))
       throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, [
         {
           field: 'stationId',
@@ -246,7 +246,7 @@ export class StationsManagementService {
     cityId: string,
   ): Promise<void> {
     if (
-      !isUuidShape(cityId) ||
+      !isUUID(cityId) ||
       !(await this.repository.cityExists(ctx, cityId))
     )
       throw new CatalogSearchError(ErrorCode.VALIDATION_ERROR, [
