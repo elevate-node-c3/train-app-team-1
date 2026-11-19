@@ -17,13 +17,13 @@ import {
   resolveLanguage,
   resolveMessage,
   SupportedLanguage,
-} from './catalogue.js';
+} from './messages.js';
 import {
   ACTION_DEFAULT_KEY,
-  DETAIL_CATALOGUE,
+  DETAIL_MESSAGE,
   ISSUE_FALLBACK_KEY,
   resolveDetailText,
-} from './detail-catalogue.js';
+} from './detail-messages.js';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -201,7 +201,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
             const issue = resolveDetailText(itemObj.issueKey, lang, params);
             const actionKey =
               typeof itemObj.actionKey === 'string' &&
-              Object.hasOwn(DETAIL_CATALOGUE, itemObj.actionKey)
+              Object.hasOwn(DETAIL_MESSAGE, itemObj.actionKey)
                 ? itemObj.actionKey
                 : ACTION_DEFAULT_KEY;
             const action = resolveDetailText(actionKey, lang, params);

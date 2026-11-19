@@ -16,7 +16,7 @@ export const CATALOG_SEARCH_DATE_OUT_OF_WINDOW =
  * event fan-out and companion roster duplication.
  */
 
-export const MESSAGE_CATALOGUE: Record<string, { ar: string; en: string }> = {
+export const MESSAGE: Record<string, { ar: string; en: string }> = {
   [ErrorCode.SUCCESS]: {
     ar: 'تمت العملية بنجاح',
     en: 'Operation completed successfully',
@@ -350,7 +350,7 @@ export function resolveLanguage(
 export function resolveMessage(
   code: string,
   lang: SupportedLanguage = 'ar',
-  catalogue = MESSAGE_CATALOGUE,
+  catalogue = MESSAGE,
 ): string {
   const entry = Object.hasOwn(catalogue, code) ? catalogue[code] : undefined;
   if (entry && entry[lang]) {
@@ -372,7 +372,7 @@ export function resolveMessageWithParams(
   code: string,
   lang: SupportedLanguage = 'ar',
   params: Record<string, string> = {},
-  catalogue = MESSAGE_CATALOGUE,
+  catalogue = MESSAGE,
 ): string {
   return resolveMessage(code, lang, catalogue).replace(
     /\{\{(\w+)\}\}/g,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DETAIL_CATALOGUE } from '@app/common/envelope/detail-catalogue.js';
+import { DETAIL_MESSAGE } from '@app/common/envelope/detail-messages.js';
 import { validateProfile } from './profile-validation.js';
 
 describe('validateProfile', () => {
@@ -49,8 +49,8 @@ describe('validateProfile', () => {
     // Every detail must name a field and the keys the gateway resolves (BR-57)
     for (const detail of result.details) {
       expect(detail.field.length).toBeGreaterThan(0);
-      expect(DETAIL_CATALOGUE).toHaveProperty(detail.issueKey);
-      expect(DETAIL_CATALOGUE).toHaveProperty(String(detail.actionKey));
+      expect(DETAIL_MESSAGE).toHaveProperty(detail.issueKey);
+      expect(DETAIL_MESSAGE).toHaveProperty(String(detail.actionKey));
     }
   });
 

@@ -3,7 +3,7 @@ import { join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
-import { DETAIL_CATALOGUE } from '../libs/common/src/envelope/detail-catalogue.js';
+import { DETAIL_MESSAGE } from '../libs/common/src/envelope/detail-messages.js';
 
 export type DetailCatalogue = Readonly<
   Record<string, { readonly ar?: string; readonly en?: string }>
@@ -295,7 +295,7 @@ export function auditSources(
       report(key, {
         code: 'missing-key',
         key: key.text,
-        message: `${key.text} is absent from DETAIL_CATALOGUE.`,
+        message: `${key.text} is absent from DETAIL_MESSAGE.`,
       });
       return false;
     }
@@ -465,8 +465,8 @@ export function loadProductionSources(
 function main(): void {
   const sources = loadProductionSources();
   const findings = [
-    ...auditCatalogue(DETAIL_CATALOGUE),
-    ...auditSources(sources, DETAIL_CATALOGUE),
+    ...auditCatalogue(DETAIL_MESSAGE),
+    ...auditSources(sources, DETAIL_MESSAGE),
   ];
   if (findings.length) {
     for (const finding of findings) {
@@ -481,7 +481,7 @@ function main(): void {
     process.exitCode = 1;
   } else {
     console.log(
-      `Detail catalogue check passed: ${Object.keys(DETAIL_CATALOGUE).length} entries, ${sources.length} production TypeScript files.`,
+      `Detail catalogue check passed: ${Object.keys(DETAIL_MESSAGE).length} entries, ${sources.length} production TypeScript files.`,
     );
   }
 }

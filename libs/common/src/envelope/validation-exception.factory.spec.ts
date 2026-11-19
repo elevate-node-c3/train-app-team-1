@@ -27,7 +27,7 @@ import {
 import type { ValidationIssueRef } from '@app/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { resolveDetailText } from './detail-catalogue.js';
+import { resolveDetailText } from './detail-messages.js';
 import {
   createValidationPipe,
   validationExceptionFactory,

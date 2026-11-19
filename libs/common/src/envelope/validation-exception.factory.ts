@@ -9,7 +9,7 @@ import type { ValidationIssueRef } from '@app/contracts';
 import {
   CONSTRAINT_ISSUE_KEYS,
   ISSUE_FALLBACK_KEY,
-} from './detail-catalogue.js';
+} from './detail-messages.js';
 
 /**
  * BR-57 requires the edge to name the offending field *and* the rejected value,

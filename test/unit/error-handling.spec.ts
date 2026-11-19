@@ -10,7 +10,7 @@ import {
   HTTP_STATUS_BY_ERROR_CODE,
   grpcStatusForErrorCode,
 } from '@app/contracts';
-import { MESSAGE_CATALOGUE } from '@app/common/envelope/catalogue.js';
+import { MESSAGE } from '@app/common/envelope/messages.js';
 import {
   decodeRefusal,
   isRefusalError,
@@ -122,10 +122,11 @@ describe('Unified error handling', () => {
     it('keeps the ErrorCode to gRPC status table out of the services', () => {
       const offenders = productionSources()
         .filter(({ path }) => path.startsWith('apps' + sep))
-        .filter(({ text }) =>
-          // The shape of a second mapping table forming inside a service.
-          /Record<\s*ErrorCode\s*,/.test(text) &&
-          /(grpc\.status\.|GRPC_STATUS\.|status\.[A-Z_]+)/.test(text),
+        .filter(
+          ({ text }) =>
+            // The shape of a second mapping table forming inside a service.
+            /Record<\s*ErrorCode\s*,/.test(text) &&
+            /(grpc\.status\.|GRPC_STATUS\.|status\.[A-Z_]+)/.test(text),
         )
         .map(({ path }) => path);
 
@@ -140,10 +141,12 @@ describe('Unified error handling', () => {
         .filter(({ path }) => path.endsWith('.grpc.controller.ts'))
         .filter(({ text }) => {
           const usesBoundary =
-            text.includes('toRpcException') || text.includes('refusalException');
+            text.includes('toRpcException') ||
+            text.includes('refusalException');
           // A controller that answers its own failures may keep doing so;
           // anything that throws, or that catches nothing at all, must not.
-          const answersItself = text.includes('catch') && !text.includes('throw');
+          const answersItself =
+            text.includes('catch') && !text.includes('throw');
           return !usesBoundary && !answersItself;
         })
         .map(({ path }) => path);
@@ -177,9 +180,7 @@ describe('Unified error handling', () => {
           http: HTTP_STATUS_BY_ERROR_CODE[code] ?? 0,
           grpc: GRPC_STATUS_BY_ERROR_CODE[code] ?? GRPC_STATUS.INTERNAL,
         }))
-        .filter(
-          ({ http, grpc }) => (http < 500) !== CALLER_STATUSES.has(grpc),
-        )
+        .filter(({ http, grpc }) => http < 500 !== CALLER_STATUSES.has(grpc))
         .map(
           ({ code, http, grpc }) =>
             `${code}: HTTP ${http} with gRPC status ${grpc}`,
@@ -192,7 +193,7 @@ describe('Unified error handling', () => {
   describe('both languages, resolved at the edge', () => {
     it('has an Arabic and an English message for every code', () => {
       const broken = Object.values(ErrorCode).filter((code) => {
-        const entry = MESSAGE_CATALOGUE[code];
+        const entry = MESSAGE[code];
         return (
           !entry ||
           typeof entry.ar !== 'string' ||
@@ -207,7 +208,7 @@ describe('Unified error handling', () => {
 
     it('does not pass an English message off as the Arabic one', () => {
       const untranslated = Object.values(ErrorCode).filter(
-        (code) => MESSAGE_CATALOGUE[code]?.ar === MESSAGE_CATALOGUE[code]?.en,
+        (code) => MESSAGE[code]?.ar === MESSAGE[code]?.en,
       );
 
       expect(untranslated).toEqual([]);
@@ -215,7 +216,7 @@ describe('Unified error handling', () => {
 
     it('leaves no placeholder unfilled in either language', () => {
       const unfilled = Object.values(ErrorCode).filter((code) => {
-        const entry = MESSAGE_CATALOGUE[code];
+        const entry = MESSAGE[code];
         // A message is resolved without params, so it cannot carry any.
         return entry?.ar.includes('{{') || entry?.en.includes('{{');
       });

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ErrorCode, HTTP_STATUS_BY_ERROR_CODE } from '@app/contracts';
-import { MESSAGE_CATALOGUE } from '@app/common';
+import { MESSAGE } from '@app/common';
 import {
   CLAIM_OUTBOX_SQL,
   INSERT_OUTBOX_SQL,
@@ -354,19 +354,19 @@ describe('Passenger error codes and messages', () => {
   });
 
   it('defines bilingual error messages in catalogue for passenger error codes', () => {
-    expect(MESSAGE_CATALOGUE[ErrorCode.PASSENGER_NOT_FOUND]).toEqual({
+    expect(MESSAGE[ErrorCode.PASSENGER_NOT_FOUND]).toEqual({
       ar: 'المسافر غير موجود',
       en: 'Passenger not found',
     });
-    expect(MESSAGE_CATALOGUE[ErrorCode.PASSENGER_LIMIT_REACHED]).toEqual({
+    expect(MESSAGE[ErrorCode.PASSENGER_LIMIT_REACHED]).toEqual({
       ar: 'تم الوصول إلى الحد الأقصى للمسافرين (10 مسافرين)',
       en: 'Passenger limit reached (maximum 10 companions)',
     });
-    expect(MESSAGE_CATALOGUE[ErrorCode.CANNOT_DELETE_SELF_PASSENGER]).toEqual({
+    expect(MESSAGE[ErrorCode.CANNOT_DELETE_SELF_PASSENGER]).toEqual({
       ar: 'لا يمكن حذف المسافر الأساسي',
       en: 'Cannot delete self passenger',
     });
-    expect(MESSAGE_CATALOGUE[ErrorCode.NATIONAL_ID_LOCKED]).toEqual({
+    expect(MESSAGE[ErrorCode.NATIONAL_ID_LOCKED]).toEqual({
       ar: 'لا يمكن تعديل الرقم القومي بعد إصدار التذكرة',
       en: 'National ID cannot be changed once a ticket has been issued',
     });
