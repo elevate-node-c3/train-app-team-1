@@ -1,11 +1,13 @@
-import { Controller, UseInterceptors } from '@nestjs/common';
+import { Controller, UseInterceptors, UsePipes } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
+import {
+  CALLER_ACCOUNT_ID_KEY,
+  createGrpcValidationPipe,
+  GrpcCorrelationInterceptor,
+} from '@app/common';
 import { ClsService } from 'nestjs-cls';
 import {
   CATALOG_SERVICE_NAME,
-  type GetTripStopsRequest,
-  type QuoteBookingRequest,
   type QuoteBookingResponse,
   type SearchOneWayTripsRequest,
   type SearchOneWayTripsResponse,
@@ -18,10 +20,15 @@ import { BookingQuoteService } from './booking-quote.service.js';
 import { TripReturnSearchService } from './trip-return-search.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { TripStopsService } from './trip-stops.service.js';
+import {
+  GetTripStopsRequestDto,
+  QuoteBookingRequestDto,
+} from './dto/trip-request.dto.js';
 import { toRpcException } from './to-rpc-exception.js';
 
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
+@UsePipes(createGrpcValidationPipe())
 export class TripsGrpcController {
   constructor(
     private readonly search: TripSearchService,
@@ -68,7 +75,9 @@ export class TripsGrpcController {
 
   /** Stops do not depend on now; the service chooses their cache TTL. */
   @GrpcMethod(CATALOG_SERVICE_NAME, 'GetTripStops')
-  async getTripStops(request: GetTripStopsRequest): Promise<TripStopsResponse> {
+  async getTripStops(
+    request: GetTripStopsRequestDto,
+  ): Promise<TripStopsResponse> {
     try {
       return await this.stops.stops(request);
     } catch (error: unknown) {
@@ -78,7 +87,7 @@ export class TripsGrpcController {
 
   @GrpcMethod(CATALOG_SERVICE_NAME, 'QuoteBooking')
   async quoteBooking(
-    request: QuoteBookingRequest,
+    request: QuoteBookingRequestDto,
   ): Promise<QuoteBookingResponse> {
     try {
       return await this.quotes.quote(request);
