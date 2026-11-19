@@ -15,8 +15,8 @@ import { HoldCoreError } from './hold-core.errors.js';
 import { SeatHoldGrpcController } from './seat-hold.grpc.controller.js';
 
 const BOOKING_KEY = 'booking-key-1';
-const OWNER_ID = '70000000-0000-0000-0000-000000000001';
-const TRIP_ID = '10000000-0000-0000-0000-000000000001';
+const OWNER_ID = '70000000-0000-4000-8000-000000000001';
+const TRIP_ID = '10000000-0000-4000-8000-000000000001';
 
 const request: CreateHoldRequest = {
   ownerId: OWNER_ID,
@@ -24,9 +24,9 @@ const request: CreateHoldRequest = {
   legs: [
     {
       tripId: TRIP_ID,
-      travelClassId: '50000000-0000-0000-0000-000000000001',
-      originStationId: '20000000-0000-0000-0000-000000000000',
-      destinationStationId: '20000000-0000-0000-0000-000000000002',
+      travelClassId: '50000000-0000-4000-8000-000000000001',
+      originStationId: '20000000-0000-4000-8000-000000000000',
+      destinationStationId: '20000000-0000-4000-8000-000000000002',
     },
   ],
   passengers: [
@@ -44,7 +44,7 @@ const request: CreateHoldRequest = {
 };
 
 const snapshot: HoldSnapshot = {
-  holdId: '80000000-0000-0000-0000-000000000001',
+  holdId: '80000000-0000-4000-8000-000000000001',
   bookingKey: BOOKING_KEY,
   ownerId: OWNER_ID,
   state: 'HELD',
@@ -126,7 +126,8 @@ describe('SeatHoldGrpcController hold RPCs', () => {
     const { controller, core } = buildController('corr-abc');
     core.createHold.mockResolvedValue(snapshot);
 
-    await expect(controller.createHold(request)).resolves.toBe(snapshot);
+    // The boundary answers with the response DTO, not the service's object.
+    await expect(controller.createHold(request)).resolves.toEqual(snapshot);
     expect(core.createHold).toHaveBeenCalledWith(request, 'corr-abc');
   });
 
