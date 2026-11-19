@@ -207,7 +207,14 @@ describe('BookingDraftService atomic holds', () => {
       code: status.FAILED_PRECONDITION,
       details: JSON.stringify({
         code: ErrorCode.INSUFFICIENT_SEATS,
-        availableCount: 0,
+        details: [
+          {
+            field: 'legs',
+            rejectedValue: { availableCount: 0 },
+            issueKey: 'ISSUE_NOT_ENOUGH_SEATS_ON_TRAIN',
+            actionKey: 'ACTION_FEWER_PASSENGERS_OR_ANOTHER_CLASS',
+          },
+        ],
       }),
     });
     await expect(service.createDraft(dto)).rejects.toMatchObject({
@@ -449,7 +456,15 @@ describe('BookingDraftService atomic holds', () => {
       code: status.ABORTED,
       details: JSON.stringify({
         code: ErrorCode.PASSENGER_OVERLAP,
-        passengerRef: PASSENGER_IDS[0],
+        details: [
+          {
+            field: 'passengerRefs',
+            rejectedValue: { passengerRef: PASSENGER_IDS[0] },
+            issueKey: 'ISSUE_PASSENGER_ALREADY_BOOKED',
+            actionKey: 'ACTION_REMOVE_PASSENGER_OR_PICK_ANOTHER_TRAIN',
+          },
+        ],
+        // Junk a well-behaved service would not send, and we must not relay.
         nationalId: '29001010112345',
         passengerToken: 'secret',
       }),
@@ -474,7 +489,14 @@ describe('BookingDraftService atomic holds', () => {
     vi.mocked(inventory.createHold).mockRejectedValue({
       details: JSON.stringify({
         code: ErrorCode.PASSENGER_OVERLAP,
-        passengerRef: randomUUID(),
+        details: [
+          {
+            field: 'passengerRefs',
+            rejectedValue: { passengerRef: randomUUID() },
+            issueKey: 'ISSUE_PASSENGER_ALREADY_BOOKED',
+            actionKey: 'ACTION_REMOVE_PASSENGER_OR_PICK_ANOTHER_TRAIN',
+          },
+        ],
       }),
     });
     await expect(service.createDraft(draftInput())).rejects.toMatchObject({

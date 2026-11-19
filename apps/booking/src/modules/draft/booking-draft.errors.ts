@@ -1,5 +1,6 @@
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { ErrorCode, type ValidationIssueRef } from '@app/contracts';
+import { decodeRefusal } from '@app/common';
 
 export class BookingDraftError extends Error {
   constructor(
@@ -78,7 +79,12 @@ const BUSINESS_CODES = new Set<ErrorCode>([
   ErrorCode.FORBIDDEN,
 ]);
 
-/** Never copy upstream messages, SQL, tokens, or arbitrary JSON into an error. */
+/**
+ * What a downstream refusal means for this draft. decodeRefusal does the
+ * parsing and the trusting; this adds only what booking needs to decide --
+ * whether the outcome is definite, and the count or passenger the refusal
+ * names, which now travel inside the detail refs like every other service's.
+ */
 export function extractErrorDetails(error: unknown): {
   code: ErrorCode;
   message: string;
@@ -86,51 +92,95 @@ export function extractErrorDetails(error: unknown): {
   passengerRef?: string;
   definite: boolean;
 } {
-  let record: Record<string, unknown> = {};
-  if (error && typeof error === 'object') {
-    const source = error as Record<string, unknown>;
-    record = source;
-    if (typeof source.details === 'string') {
-      try {
-        const parsed: unknown = JSON.parse(source.details);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          record = parsed as Record<string, unknown>;
-        }
-      } catch {
-        // Unstructured transport failures have an unknown allocation outcome.
-      }
-    } else if (
-      source.details &&
-      typeof source.details === 'object' &&
-      !Array.isArray(source.details)
-    ) {
-      record = source.details as Record<string, unknown>;
-    }
-  }
-  const knownCode =
-    typeof record.code === 'string' &&
-    Object.values(ErrorCode).includes(record.code as ErrorCode)
-      ? (record.code as ErrorCode)
-      : undefined;
+  const refusal = decodeRefusal(error);
+  // A hold failure read back from the draft row is already decoded, and keeps
+  // the count and ref as its own fields.
+  const persisted = refusal ? null : persistedFailure(error);
+  const knownCode = refusal?.code ?? persisted?.code;
   const code = knownCode ?? ErrorCode.DEPENDENCY_UNAVAILABLE;
-  const availableCount =
-    typeof record.availableCount === 'number' &&
-    Number.isSafeInteger(record.availableCount) &&
-    record.availableCount >= 0
-      ? record.availableCount
-      : undefined;
+
+  if (persisted) {
+    return {
+      code: persisted.code,
+      message: persisted.code,
+      availableCount: persisted.availableCount,
+      passengerRef: persisted.passengerRef,
+      definite: BUSINESS_CODES.has(persisted.code),
+    };
+  }
+
   return {
+    // Our own failure and a dead dependency are the same thing from here: the
+    // call may or may not have held seats, so the draft must reconcile.
     code:
       code === ErrorCode.INTERNAL_SERVER_ERROR ||
       code === ErrorCode.SERVICE_UNAVAILABLE
         ? ErrorCode.DEPENDENCY_UNAVAILABLE
         : code,
     message: code,
-    availableCount,
-    passengerRef:
-      typeof record.passengerRef === 'string' ? record.passengerRef : undefined,
+    availableCount: availableCountOf(refusal?.details ?? []),
+    passengerRef: passengerRefOf(refusal?.details ?? []),
     definite: knownCode !== undefined && BUSINESS_CODES.has(knownCode),
   };
+}
+
+/** The shape rejectIntent stored: a code we already trusted, and its facts. */
+function persistedFailure(error: unknown): {
+  code: ErrorCode;
+  availableCount?: number;
+  passengerRef?: string;
+} | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const record = error as Record<string, unknown>;
+  if (
+    typeof record.code !== 'string' ||
+    !Object.values(ErrorCode).includes(record.code as ErrorCode)
+  ) {
+    return null;
+  }
+
+  const count = record.availableCount;
+  return {
+    code: record.code as ErrorCode,
+    availableCount:
+      typeof count === 'number' && Number.isSafeInteger(count) && count >= 0
+        ? count
+        : undefined,
+    passengerRef:
+      typeof record.passengerRef === 'string' ? record.passengerRef : undefined,
+  };
+}
+
+function rejectedValues(
+  details: ValidationIssueRef[],
+): Record<string, unknown>[] {
+  return details
+    .map((detail) => detail.rejectedValue)
+    .filter(
+      (value): value is Record<string, unknown> =>
+        typeof value === 'object' && value !== null && !Array.isArray(value),
+    );
+}
+
+function availableCountOf(details: ValidationIssueRef[]): number | undefined {
+  for (const value of rejectedValues(details)) {
+    const count = value.availableCount;
+    if (
+      typeof count === 'number' &&
+      Number.isSafeInteger(count) &&
+      count >= 0
+    ) {
+      return count;
+    }
+  }
+  return undefined;
+}
+
+function passengerRefOf(details: ValidationIssueRef[]): string | undefined {
+  for (const value of rejectedValues(details)) {
+    if (typeof value.passengerRef === 'string') return value.passengerRef;
+  }
+  return undefined;
 }
 
 export function isMissingHold(error: unknown): boolean {

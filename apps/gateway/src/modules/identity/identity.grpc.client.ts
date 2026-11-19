@@ -1,6 +1,5 @@
 import {
   HttpException,
-  HttpStatus,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,10 +10,6 @@ import {
 import { ClsService } from 'nestjs-cls';
 import * as grpc from '@grpc/grpc-js';
 import {
-  ErrorCode,
-  HTTP_STATUS_BY_ERROR_CODE,
-  isValidationIssueRef,
-  type ValidationIssueRef,
   type CompleteProfileRequestDto,
   type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
@@ -30,7 +25,12 @@ import {
   type SignUpResponseDto,
   type VerifyEmailRequestDto,
 } from '@app/contracts';
-import { createGrpcMetadataWithCaller, grpcStatusException } from '@app/common';
+import {
+  createGrpcMetadataWithCaller,
+  decodeRefusal,
+  grpcStatusException,
+  refusalHttpException,
+} from '@app/common';
 import { identityGrpcUrlFromEnv } from '../../config/grpc-settings.js';
 import {
   identityGrpcServiceConstructor,
@@ -252,22 +252,8 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
   }
 
   private exceptionFor(error: grpc.ServiceError): HttpException {
-    const explicit = this.parseBusinessError(error.details);
-    if (explicit) {
-      return new HttpException(
-        {
-          code: explicit.code,
-          ...(explicit.details && explicit.details.length > 0
-            ? { details: explicit.details, message: explicit.details }
-            : {}),
-          ...(explicit.retryAfterSeconds
-            ? { retryAfterSeconds: explicit.retryAfterSeconds }
-            : {}),
-        },
-        HTTP_STATUS_BY_ERROR_CODE[explicit.code] ??
-          HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const refusal = decodeRefusal(error.details);
+    if (refusal) return refusalHttpException(refusal);
 
     if (
       error.code === grpc.status.UNAVAILABLE ||
@@ -278,39 +264,5 @@ export class IdentityGrpcClient implements OnModuleInit, OnModuleDestroy {
       );
     }
     return grpcStatusException(error.code);
-  }
-
-  private parseBusinessError(details: unknown): {
-    code: ErrorCode;
-    retryAfterSeconds?: number;
-    details?: ValidationIssueRef[];
-  } | null {
-    if (typeof details !== 'string' || details.length === 0) return null;
-    try {
-      const parsed: unknown = JSON.parse(details);
-      if (typeof parsed !== 'object' || parsed === null) return null;
-      const record = parsed as Record<string, unknown>;
-      if (
-        typeof record.code !== 'string' ||
-        !Object.values(ErrorCode).includes(record.code as ErrorCode)
-      ) {
-        return null;
-      }
-      const retry = record.retryAfterSeconds;
-      const validationDetails = Array.isArray(record.details)
-        ? record.details.filter(isValidationIssueRef)
-        : undefined;
-      return {
-        code: record.code as ErrorCode,
-        ...(typeof retry === 'number' && Number.isFinite(retry) && retry > 0
-          ? { retryAfterSeconds: Math.ceil(retry) }
-          : {}),
-        ...(validationDetails && validationDetails.length > 0
-          ? { details: validationDetails }
-          : {}),
-      };
-    } catch {
-      return null;
-    }
   }
 }
