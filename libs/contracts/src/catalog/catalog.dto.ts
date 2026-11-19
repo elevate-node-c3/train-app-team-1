@@ -1,4 +1,4 @@
-import type { EventLanguage } from '../events/event-envelope.js';
+import type { SupportedLanguage } from '../events/event-envelope.js';
 
 /**
  * Shared wire interfaces; gateway classes own HTTP validation.
@@ -74,7 +74,7 @@ export interface SearchOneWayTripsRequest {
   departureDate: string;
   travelClassId: string;
   /** Optional preference; defaults to the platform language. */
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
   /** Missing means any train. */
   trainNumber?: number;
   /**
@@ -155,7 +155,7 @@ export interface SearchReturnTripsRequest {
   /** YYYY-MM-DD in Cairo. */
   returnDate: string;
   travelClassId: string;
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
   sort?: SearchSort;
   filters?: SearchFilters;
 }
@@ -172,7 +172,7 @@ export interface GetTripStopsRequest {
   tripId: string;
   originStationId: string;
   destinationStationId: string;
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
 }
 
 export interface TripStop {
@@ -215,7 +215,7 @@ export interface RecentSearch {
 }
 
 export interface ListRecentSearchesRequest {
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
 }
 
 export interface ListRecentSearchesResponse {

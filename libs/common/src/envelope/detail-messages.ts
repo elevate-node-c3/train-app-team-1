@@ -1,7 +1,5 @@
-import {
-  resolveMessageWithParams,
-  type SupportedLanguage,
-} from './messages.js';
+import { SupportedLanguage } from '@app/contracts';
+import { resolveMessageWithParams } from './messages.js';
 
 export const ACTION_DEFAULT_KEY = 'ACTION_DEFAULT';
 export const ISSUE_FALLBACK_KEY = 'ISSUE_VALIDATION_FAILED';

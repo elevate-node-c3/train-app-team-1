@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { resolveMessageWithParams, type SupportedLanguage } from '@app/common';
+import { resolveMessageWithParams } from '@app/common';
 import type {
   EmptyResult,
+  SupportedLanguage,
   FilterOptions,
   ListRecentSearchesResponse,
   ListStationsRequest,

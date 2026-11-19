@@ -1,8 +1,8 @@
 /**
  * Share one event shape without importing common, to avoid cycles.
- * Tests keep EventLanguage compatible with the HTTP language type.
+ * Tests keep SupportedLanguage compatible with the HTTP language type.
  */
-export type EventLanguage = 'ar' | 'en';
+export type SupportedLanguage = 'ar' | 'en';
 
 export interface EventEnvelope<
   TType extends string = string,

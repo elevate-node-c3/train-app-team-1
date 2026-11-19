@@ -1,10 +1,10 @@
-import type { EventEnvelope, EventLanguage } from './event-envelope.js';
+import type { EventEnvelope, SupportedLanguage } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
 
 export interface AccountRegisteredPayloadV1 {
   accountId: string;
   email: string;
-  language: EventLanguage;
+  language: SupportedLanguage;
   registeredAt: string;
 }
 

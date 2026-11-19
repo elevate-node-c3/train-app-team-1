@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import type { EventLanguage, StaffRole } from '@app/contracts';
+import type { SupportedLanguage, StaffRole } from '@app/contracts';
 import { nationalIdTransformer } from '../../../config/national-id-vault.js';
 
 export type AccountStatus = 'pending' | 'active' | 'disabled';
@@ -13,7 +13,7 @@ export class AccountEntity {
   email!: string;
 
   @Column({ type: 'text' })
-  language!: EventLanguage;
+  language!: SupportedLanguage;
 
   @Column({ type: 'text' })
   status!: AccountStatus;

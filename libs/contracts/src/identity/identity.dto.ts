@@ -1,11 +1,11 @@
-import type { EventLanguage } from '../events/event-envelope.js';
+import type { SupportedLanguage } from '../events/event-envelope.js';
 
 export interface SignUpRequestDto {
   email: string;
   /** Plaintext only for the duration of the call; identity hashes it at once. */
   password: string;
   /** Omitted on the wire defaults the account to Arabic. */
-  language?: EventLanguage;
+  language?: SupportedLanguage;
 }
 
 export interface VerifyEmailRequestDto {

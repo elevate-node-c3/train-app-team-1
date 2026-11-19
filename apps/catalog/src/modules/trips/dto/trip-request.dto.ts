@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import type {
   BookingLeg,
-  EventLanguage,
+  SupportedLanguage,
   GetTripStopsRequest,
   QuoteBookingRequest,
 } from '@app/contracts';
@@ -19,7 +19,7 @@ import type {
 const MAX_QUOTE_LEGS = 2;
 
 /** The contract's own union: a resolved preference, or nothing. */
-const LANGUAGES: readonly (EventLanguage | '')[] = ['ar', 'en', ''];
+const LANGUAGES: readonly (SupportedLanguage | '')[] = ['ar', 'en', ''];
 
 /**
  * The stops of one trip for one passenger's journey.
@@ -44,7 +44,7 @@ export class GetTripStopsRequestDto implements GetTripStopsRequest {
    */
   @IsIn(LANGUAGES)
   @IsOptional()
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
 }
 
 export class QuoteBookingLegDto implements BookingLeg {

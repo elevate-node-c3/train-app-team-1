@@ -1,7 +1,7 @@
 import {
   VERIFICATION_CODE_ISSUED_EVENT_TYPE,
   VERIFICATION_CODE_ISSUED_VERSION,
-  type EventLanguage,
+  type SupportedLanguage,
   type VerificationCodeIssuedEvent,
   type VerificationCodePurpose,
 } from '@app/contracts';
@@ -14,7 +14,7 @@ export interface VerificationCodeIssuedFactoryProps {
   account: {
     id: string;
     email: string;
-    language: EventLanguage;
+    language: SupportedLanguage;
   };
   code: string;
   purpose: VerificationCodePurpose;

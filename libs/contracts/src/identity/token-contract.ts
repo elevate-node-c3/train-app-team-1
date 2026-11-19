@@ -1,4 +1,4 @@
-import type { EventLanguage } from '../events/event-envelope.js';
+import type { SupportedLanguage } from '../events/event-envelope.js';
 
 /**
  * Traveller access levels are ranked. Operator and conductor are separate
@@ -81,13 +81,13 @@ export interface TokenPairDto {
 export interface MaskedAccountDto {
   accountId: string;
   maskedEmail: string;
-  language: EventLanguage;
+  language: SupportedLanguage;
 }
 
 export interface SignUpResponseDto {
   accountId: string;
   maskedEmail: string;
-  language: EventLanguage;
+  language: SupportedLanguage;
   /** Seconds until another code may be requested. */
   resendAfterSeconds: number;
 }

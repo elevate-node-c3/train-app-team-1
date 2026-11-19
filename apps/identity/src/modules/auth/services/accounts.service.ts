@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ErrorCode,
   passwordPolicyViolations,
-  type EventLanguage,
+  type SupportedLanguage,
   type ResendVerificationRequestDto,
   type ResendVerificationResponseDto,
   type SignUpRequestDto,
@@ -49,7 +49,7 @@ type VerifyOutcome =
   { failed: AuthError } | { account: AccountEntity; issued: IssuedTokens };
 
 /** Unsupported languages fall back to Arabic. */
-function languageOf(language: string | undefined): EventLanguage {
+function languageOf(language: string | undefined): SupportedLanguage {
   return language === 'en' ? 'en' : 'ar';
 }
 
@@ -271,7 +271,7 @@ export class AccountsService {
     existing: AccountEntity,
     command: SignUpCommand,
     email: string,
-    language: EventLanguage,
+    language: SupportedLanguage,
     now: Date,
   ): Promise<SignUpResponseDto> {
     if (existing.status === 'disabled') {

@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsUUID, Validate } from 'class-validator';
-import type { EventLanguage } from '@app/contracts';
+import type { SupportedLanguage } from '@app/contracts';
 import {
   ValidatorConstraint,
   type ValidationArguments,
@@ -37,7 +37,7 @@ export class TripStopsQueryDto {
 
   @IsOptional()
   @IsIn(['ar', 'en'])
-  language?: EventLanguage;
+  language?: SupportedLanguage;
 }
 
 /** Validate tripId separately so UUID errors name the field. */
