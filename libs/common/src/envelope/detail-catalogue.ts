@@ -24,6 +24,8 @@ export const CONSTRAINT_ISSUE_KEYS: Record<string, string> = {
   minLength: 'ISSUE_TEXT_TOO_SHORT',
   maxLength: 'ISSUE_TEXT_TOO_LONG',
   arrayMinSize: 'ISSUE_LIST_TOO_SHORT',
+  arrayMaxSize: 'ISSUE_LIST_TOO_LONG',
+  arrayUnique: 'ISSUE_LIST_HAS_DUPLICATES',
 };
 
 export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
@@ -170,6 +172,14 @@ export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
   ISSUE_LIST_TOO_SHORT: {
     ar: 'تحتوي هذه القائمة على عناصر أقل من الحد الأدنى المسموح به.',
     en: 'This list contains fewer items than the minimum allowed.',
+  },
+  ISSUE_LIST_TOO_LONG: {
+    ar: 'تحتوي هذه القائمة على عناصر أكثر من الحد الأقصى المسموح به.',
+    en: 'This list contains more items than the maximum allowed.',
+  },
+  ISSUE_LIST_HAS_DUPLICATES: {
+    ar: 'تحتوي هذه القائمة على عنصر مكرر.',
+    en: 'This list contains a repeated item.',
   },
   ISSUE_CIVIL_DATE_FORMAT: {
     ar: 'يجب كتابة هذا التاريخ على صورة YYYY-MM-DD.',
