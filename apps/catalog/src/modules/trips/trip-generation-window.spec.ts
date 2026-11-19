@@ -5,7 +5,7 @@ import {
   TimetableEntity,
   Weekday,
 } from '../timetables/entities/timetable.entity.js';
-import { TripsService } from './trips.service.js';
+import { TripsService } from './services/trips.service.js';
 
 /** Noon Cairo on Monday 15 June 2026. Search offers 2026-06-15 .. 2026-07-14. */
 const NOON_CAIRO = new Date('2026-06-15T09:00:00.000Z');

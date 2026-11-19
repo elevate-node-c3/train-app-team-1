@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Logger,
-  UseInterceptors,
-  UsePipes,
-} from '@nestjs/common';
+import { Controller, Logger, UseInterceptors, UsePipes } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { Metadata } from '@grpc/grpc-js';
 import {
@@ -27,12 +22,12 @@ import { CatalogSearchError } from '../trips/catalog-search-error.js';
 import type {
   ChangeFareRequest,
   ChangeFareResult,
-} from './fare-change.service.js';
-import { FareChangeService } from './fare-change.service.js';
+} from './services/fare-change.service.js';
+import { FareChangeService } from './services/fare-change.service.js';
 import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
 import type { OperationsAuditFilter } from './operations-audit.types.js';
-import { OperationsAuditService } from './operations-audit.service.js';
-import { TimetablePublishService } from './timetable-publish.service.js';
+import { OperationsAuditService } from './services/operations-audit.service.js';
+import { TimetablePublishService } from './services/timetable-publish.service.js';
 
 /** The header the operator's `Idempotency-Key` travels as, lower-cased by grpc-js. */
 const IDEMPOTENCY_KEY_METADATA_KEY = 'idempotency-key';

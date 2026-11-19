@@ -24,7 +24,7 @@ import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js
 
 import { OUTBOX, type OutboxPort } from '@app/messaging';
 
-import { TripsService } from '../trips/trips.service.js';
+import { TripsService } from '../trips/services/trips.service.js';
 import { buildTimetablePublished } from './timetable-events.factory.js';
 
 @Injectable()

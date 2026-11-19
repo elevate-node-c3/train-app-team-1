@@ -6,7 +6,7 @@ import { DataSourceInitializer } from '../../libs/common/src/persistence/data-so
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 
 import { OperationsAuditEntity } from '../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
-import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/operations-audit.repository.js';
+import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-audit.repository.js';
 
 import {
   catalogDataSource,

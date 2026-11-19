@@ -12,7 +12,7 @@ import { OUTBOX, type OutboxPort } from '@app/messaging/outbox/outbox.port.js';
 
 import { CatalogModule } from '../../catalog.module.js';
 
-import { StationsService } from '../../modules/stations/stations.service.js';
+import { StationsService } from '../../modules/stations/services/stations.service.js';
 import { buildStationChanged } from '../../modules/stations/station-events.factory.js';
 import { CATALOG_STATION_IDS } from './stations.js';
 import { writeStations } from './stations.seed.js';

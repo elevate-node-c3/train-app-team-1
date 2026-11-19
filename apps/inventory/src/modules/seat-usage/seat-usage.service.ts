@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { TripSeatUsage } from '@app/contracts';
 
-import { SeatUsageRepository } from '../seats/seat-usage.repository.js';
+import { SeatUsageRepository } from '../seats/repositories/seat-usage.repository.js';
 
 /** Answers catalog's republish-safety question from the real seat tables. */
 @Injectable()

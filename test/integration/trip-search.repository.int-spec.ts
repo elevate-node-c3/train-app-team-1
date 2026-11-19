@@ -3,7 +3,7 @@ import {
   SEARCH_FIXTURE_TRAIN_NUMBERS as NUMBERS,
 } from '../../apps/catalog/src/database/seeds/search-fixture.js';
 import { seedSearchFixture } from '../../apps/catalog/src/database/seeds/search-fixture.seed.js';
-import { TripSearchRepository } from '../../apps/catalog/src/modules/trips/trip-search.repository.js';
+import { TripSearchRepository } from '../../apps/catalog/src/modules/trips/repositories/trip-search.repository.js';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 

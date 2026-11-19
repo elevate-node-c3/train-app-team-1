@@ -33,7 +33,7 @@ vi.mock('../data-source.js', () => {
 });
 
 import { CatalogModule } from '../../catalog.module.js';
-import { StationsService } from '../../modules/stations/stations.service.js';
+import { StationsService } from '../../modules/stations/services/stations.service.js';
 import { TimetablesService } from '../../modules/timetables/timetables.service.js';
 import { main as catalogMain, seedCatalog } from './catalog.seed.js';
 import { main as stationsMain, seedStations } from './stations.seed.js';

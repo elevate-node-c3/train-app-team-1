@@ -6,7 +6,7 @@ import {
 } from '../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
 import { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
-import { TripsService } from './trips.service.js';
+import { TripsService } from './services/trips.service.js';
 
 const CAIRO = '11111111-1111-4111-8111-111111111111';
 const ASSIUT = '22222222-2222-4222-8222-222222222222';

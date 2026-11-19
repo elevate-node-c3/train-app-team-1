@@ -23,15 +23,15 @@ import {
   INVENTORY_GRPC_CLIENT,
   InventorySeatUsageClient,
 } from './inventory-seat-usage.grpc.client.js';
-import { FareChangeRepository } from './fare-change.repository.js';
-import { FareChangeService } from './fare-change.service.js';
-import { OperationsAuditRepository } from './operations-audit.repository.js';
-import { OperationsAuditService } from './operations-audit.service.js';
+import { FareChangeRepository } from './repositories/fare-change.repository.js';
+import { FareChangeService } from './services/fare-change.service.js';
+import { OperationsAuditRepository } from './repositories/operations-audit.repository.js';
+import { OperationsAuditService } from './services/operations-audit.service.js';
 import { OperationsGrpcController } from './operations.grpc.controller.js';
-import { OperationsRequestRepository } from './operations-request.repository.js';
-import { TimetablePublishRepository } from './timetable-publish.repository.js';
-import { TimetablePublishService } from './timetable-publish.service.js';
-import { TimetableVersionService } from './timetable-version.service.js';
+import { OperationsRequestRepository } from './repositories/operations-request.repository.js';
+import { TimetablePublishRepository } from './repositories/timetable-publish.repository.js';
+import { TimetablePublishService } from './services/timetable-publish.service.js';
+import { TimetableVersionService } from './services/timetable-version.service.js';
 
 /**
  * Match inventory's server loader, including repeated-field shapes.

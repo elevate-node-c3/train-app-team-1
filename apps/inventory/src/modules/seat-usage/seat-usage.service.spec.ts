@@ -1,17 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TripSeatUsage } from '@app/contracts';
 
-import type { SeatUsageRepository } from '../seats/seat-usage.repository.js';
+import type { SeatUsageRepository } from '../seats/repositories/seat-usage.repository.js';
 import { SeatUsageService } from './seat-usage.service.js';
 
 function fakeRepository(usages: TripSeatUsage[]): SeatUsageRepository {
-  return { usageFor: vi.fn().mockResolvedValue(usages) } as unknown as SeatUsageRepository;
+  return {
+    usageFor: vi.fn().mockResolvedValue(usages),
+  } as unknown as SeatUsageRepository;
 }
 
 describe('SeatUsageService', () => {
   it('passes the trip ids through to the repository and returns its answer', async () => {
     const usages: TripSeatUsage[] = [
-      { tripId: 'trip-a', soldCount: 2, heldCount: 1, stationIdsInUse: ['station-1'] },
+      {
+        tripId: 'trip-a',
+        soldCount: 2,
+        heldCount: 1,
+        stationIdsInUse: ['station-1'],
+      },
       { tripId: 'trip-b', soldCount: 0, heldCount: 0, stationIdsInUse: [] },
     ];
     const repository = fakeRepository(usages);

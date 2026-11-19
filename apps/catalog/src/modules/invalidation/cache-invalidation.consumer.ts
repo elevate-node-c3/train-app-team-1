@@ -14,12 +14,12 @@ import type {
 } from '@app/messaging/consumer/event-handler.port.js';
 
 import { RouteVersionService } from '../cache/route-version.service.js';
-import { StationsService } from '../stations/stations.service.js';
+import { StationsService } from '../stations/services/stations.service.js';
 import {
   availabilityVersionCacheKey,
   segmentAvailabilityCacheKey,
-} from '../trips/seat-availability.service.js';
-import { TripStopsService } from '../trips/trip-stops.service.js';
+} from '../trips/services/seat-availability.service.js';
+import { TripStopsService } from '../trips/services/trip-stops.service.js';
 
 /** Invalidate only affected cache entries, leaving unrelated routes untouched. */
 @Injectable()
