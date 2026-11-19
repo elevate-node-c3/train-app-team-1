@@ -1,6 +1,15 @@
 import { ErrorCode } from './error-codes.enum.js';
 
 export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
+  // Transport-level codes. Without these a refusal naming one fell back to
+  // 500, so an unavailable dependency read as our own bug.
+  [ErrorCode.ROUTE_NOT_FOUND]: 404,
+  [ErrorCode.SERVICE_UNAVAILABLE]: 503,
+  [ErrorCode.SERVICE_DEGRADED]: 503,
+  [ErrorCode.GATEWAY_TIMEOUT]: 504,
+  [ErrorCode.NOT_IMPLEMENTED]: 501,
+  [ErrorCode.INTERNAL_SERVER_ERROR]: 500,
+
   [ErrorCode.VALIDATION_ERROR]: 400,
   [ErrorCode.BAD_REQUEST]: 400,
   [ErrorCode.INVALID_PAYLOAD]: 400,
