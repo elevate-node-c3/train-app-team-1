@@ -2,10 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 import { firstValueFrom, timeout, type Observable } from 'rxjs';
 import type { Metadata } from '@grpc/grpc-js';
-import {
-  CORRELATION_ID_KEY,
-  CORRELATION_ID_HEADER,
-} from '@app/common';
+import { CORRELATION_ID_KEY, CORRELATION_ID_HEADER } from '@app/common';
 import { Metadata as GrpcMetadata } from '@grpc/grpc-js';
 import type {
   CancelChargeRequest,
@@ -20,7 +17,7 @@ import {
   PAYMENT_FLOW_CLIENT,
   type CatalogFlowClient,
   type PaymentFlowClient,
-} from './flow-clients.types.js';
+} from '../flow-clients.types.js';
 
 export const FLOW_GRPC_DEADLINE_MS = 1_800;
 
@@ -36,8 +33,9 @@ export class FlowGrpcClientsService {
     request: QuoteBookingRequest,
     correlationId?: string,
   ): Promise<QuoteBookingResponse> {
-    return this.call((metadata, deadline) =>
-      this.catalog.quoteBooking(request, metadata, { deadline }),
+    return this.call(
+      (metadata, deadline) =>
+        this.catalog.quoteBooking(request, metadata, { deadline }),
       correlationId,
     );
   }
@@ -46,8 +44,9 @@ export class FlowGrpcClientsService {
     request: StartChargeRequest,
     correlationId?: string,
   ): Promise<StartChargeResponse> {
-    return this.call((metadata, deadline) =>
-      this.payment.startCharge(request, metadata, { deadline }),
+    return this.call(
+      (metadata, deadline) =>
+        this.payment.startCharge(request, metadata, { deadline }),
       correlationId,
     );
   }
@@ -56,8 +55,9 @@ export class FlowGrpcClientsService {
     request: CancelChargeRequest,
     correlationId?: string,
   ): Promise<CancelChargeResponse> {
-    return this.call((metadata, deadline) =>
-      this.payment.cancelCharge(request, metadata, { deadline }),
+    return this.call(
+      (metadata, deadline) =>
+        this.payment.cancelCharge(request, metadata, { deadline }),
       correlationId,
     );
   }

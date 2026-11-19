@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport, type ClientGrpc } from '@nestjs/microservices';
+import {
+  ClientsModule,
+  Transport,
+  type ClientGrpc,
+} from '@nestjs/microservices';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   CATALOG_PACKAGE_NAME,
@@ -15,13 +19,13 @@ import { BookingDraftModule } from '../draft/booking-draft.module.js';
 import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
 import { BookingFlowGrpcController } from './booking-flow.grpc.controller.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
-import { BookingFlowService } from './booking-flow.service.js';
+import { BookingFlowService } from './services/booking-flow.service.js';
 import { BookingFlowWorker } from './booking-flow.worker.js';
 import {
   CATALOG_FLOW_CLIENT,
   PAYMENT_FLOW_CLIENT,
 } from './flow-clients.types.js';
-import { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
+import { FlowGrpcClientsService } from './services/flow-grpc-clients.service.js';
 
 const CATALOG_GRPC_CLIENT = Symbol('CATALOG_GRPC_CLIENT');
 const PAYMENT_GRPC_CLIENT = Symbol('PAYMENT_GRPC_CLIENT');
@@ -79,12 +83,14 @@ export function paymentGrpcUrl(): string {
     {
       provide: CATALOG_FLOW_CLIENT,
       inject: [CATALOG_GRPC_CLIENT],
-      useFactory: (client: ClientGrpc) => client.getService(CATALOG_SERVICE_NAME),
+      useFactory: (client: ClientGrpc) =>
+        client.getService(CATALOG_SERVICE_NAME),
     },
     {
       provide: PAYMENT_FLOW_CLIENT,
       inject: [PAYMENT_GRPC_CLIENT],
-      useFactory: (client: ClientGrpc) => client.getService(PAYMENT_SERVICE_NAME),
+      useFactory: (client: ClientGrpc) =>
+        client.getService(PAYMENT_SERVICE_NAME),
     },
   ],
   exports: [BookingFlowService],

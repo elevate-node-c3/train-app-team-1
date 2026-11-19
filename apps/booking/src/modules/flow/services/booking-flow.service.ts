@@ -14,22 +14,22 @@ import {
   type SubmitBookingRequest,
 } from '@app/contracts';
 
-import { BookingDraftService } from '../draft/booking-draft.service.js';
-import type { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
+import { BookingDraftService } from '../../draft/booking-draft.service.js';
+import type { BookingDraftEntity } from '../../draft/entities/booking-draft.entity.js';
 import {
   BookingFlowError,
   BookingFlowFault,
   refusalOf,
-} from './booking-flow-error.js';
+} from '../booking-flow-error.js';
 import {
   buildBookingAbandoned,
   buildBookingAwaitingPayment,
   buildBookingExpired,
-} from './booking-flow-events.factory.js';
-import { BookingFlowRepository } from './booking-flow.repository.js';
-import { toBookingResponse } from './booking-flow.response.js';
-import { isSameSubmission, validateSubmit } from './booking-flow.validator.js';
-import { BOOKING_CURRENCY, priceBooking } from './booking-total.js';
+} from '../booking-flow-events.factory.js';
+import { BookingFlowRepository } from '../booking-flow.repository.js';
+import { toBookingResponse } from '../booking-flow.response.js';
+import { isSameSubmission, validateSubmit } from '../booking-flow.validator.js';
+import { BOOKING_CURRENCY, priceBooking } from '../booking-total.js';
 import { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
 
 /** Steps the flow walks on its own before the traveller is asked to pay. */
