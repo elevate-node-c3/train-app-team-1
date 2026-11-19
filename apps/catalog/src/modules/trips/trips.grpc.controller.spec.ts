@@ -152,7 +152,7 @@ describe('the search gRPC controller', () => {
   });
 
   // Unexpected failures map to 500, not client refusals, without leaking details.
-  it('leaves an unexpected error alone', async () => {
+  it('masks an unexpected error instead of describing it', async () => {
     const boom = new Error('connection reset');
     const search = vi.fn().mockRejectedValue(boom);
 
@@ -160,7 +160,10 @@ describe('the search gRPC controller', () => {
       .searchOneWayTrips(request)
       .catch((caught: unknown) => caught);
 
-    expect(error).toBe(boom);
+    expect(error).toBeInstanceOf(RpcException);
+    expect(JSON.stringify((error as RpcException).getError())).not.toContain(
+      'connection reset',
+    );
   });
 
   describe('the stops RPC', () => {

@@ -1,5 +1,5 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
-import { GrpcMethod, RpcException } from '@nestjs/microservices';
+import { GrpcMethod } from '@nestjs/microservices';
 import { ClsService } from 'nestjs-cls';
 import { randomUUID } from 'node:crypto';
 import * as grpc from '@grpc/grpc-js';
@@ -32,6 +32,7 @@ import {
   CALLER_SESSION_ID_KEY,
   CORRELATION_ID_KEY,
   GrpcCorrelationInterceptor,
+  toRpcException,
 } from '@app/common';
 import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
 import { AuthError } from './auth-error.js';
@@ -41,77 +42,6 @@ import { ProfileService } from './services/profile.service.js';
 import { SessionsService } from './services/sessions.service.js';
 import { PassengersService } from './services/passengers.service.js';
 import { HoldPassengersService } from './services/hold-passengers.service.js';
-
-/**
- * Status classifies the failure; details carries its business code.
- * The gateway validates that code against the enum before returning it.
- */
-const GRPC_STATUS_BY_ERROR: Partial<Record<ErrorCode, grpc.status>> = {
-  [ErrorCode.VALIDATION_ERROR]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.BAD_REQUEST]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.UNAUTHORIZED]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.FORBIDDEN]: grpc.status.PERMISSION_DENIED,
-  [ErrorCode.RESOURCE_NOT_FOUND]: grpc.status.NOT_FOUND,
-  [ErrorCode.SERVICE_UNAVAILABLE]: grpc.status.UNAVAILABLE,
-  [ErrorCode.EMAIL_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
-  [ErrorCode.EMAIL_NOT_VERIFIED]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.VERIFICATION_REQUIRED]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.INVALID_VERIFICATION_CODE]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.VERIFICATION_CODE_EXPIRED]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.VERIFICATION_CODE_ATTEMPTS_EXHAUSTED]:
-    grpc.status.RESOURCE_EXHAUSTED,
-  [ErrorCode.RESEND_TOO_SOON]: grpc.status.RESOURCE_EXHAUSTED,
-  [ErrorCode.INVALID_CREDENTIALS]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.ACCOUNT_LOCKED]: grpc.status.RESOURCE_EXHAUSTED,
-  [ErrorCode.ACCOUNT_DISABLED]: grpc.status.PERMISSION_DENIED,
-  [ErrorCode.TOKEN_EXPIRED]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.TOKEN_INVALID]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.TOKEN_REVOKED]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.INVALID_REFRESH_TOKEN]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.REFRESH_TOKEN_REUSE_DETECTED]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.SESSION_REVOKED]: grpc.status.UNAUTHENTICATED,
-  [ErrorCode.PASSWORD_REUSE]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.PASSWORD_RESET_INVALID]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.RATE_LIMITED]: grpc.status.RESOURCE_EXHAUSTED,
-  [ErrorCode.PROFILE_INCOMPLETE]: grpc.status.PERMISSION_DENIED,
-
-  // Profile completion
-  [ErrorCode.PROFILE_ALREADY_COMPLETE]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.INVALID_FULL_NAME]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.INVALID_NATIONAL_ID_LENGTH]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.INVALID_NATIONAL_ID_CENTURY]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.INVALID_NATIONAL_ID_BIRTH_DATE]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.INVALID_NATIONAL_ID_GOVERNORATE]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.NATIONAL_ID_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
-  [ErrorCode.INVALID_PHONE_FORMAT]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.PHONE_ALREADY_REGISTERED]: grpc.status.ALREADY_EXISTS,
-  [ErrorCode.INVALID_PROFILE_TYPE]: grpc.status.INVALID_ARGUMENT,
-  [ErrorCode.INVALID_NATIONALITY]: grpc.status.INVALID_ARGUMENT,
-
-  // Saved passengers
-  [ErrorCode.PASSENGER_NOT_FOUND]: grpc.status.NOT_FOUND,
-  [ErrorCode.PASSENGER_LIMIT_REACHED]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.CANNOT_DELETE_SELF_PASSENGER]: grpc.status.FAILED_PRECONDITION,
-  [ErrorCode.NATIONAL_ID_LOCKED]: grpc.status.FAILED_PRECONDITION,
-};
-
-function toRpcException(error: unknown): unknown {
-  if (!(error instanceof AuthError)) return error;
-
-  return new RpcException({
-    code: GRPC_STATUS_BY_ERROR[error.code] ?? grpc.status.INTERNAL,
-    details: JSON.stringify({
-      code: error.code,
-      ...(error.retryAfterSeconds
-        ? { retryAfterSeconds: error.retryAfterSeconds }
-        : {}),
-      ...(error.details && error.details.length > 0
-        ? { details: error.details }
-        : {}),
-    }),
-    message: error.message,
-  });
-}
 
 interface TokenPairWire {
   accessToken: string;

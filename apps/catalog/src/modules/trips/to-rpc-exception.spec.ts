@@ -17,10 +17,19 @@ function detailOf(exception: unknown) {
 }
 
 describe('toRpcException', () => {
-  it('leaves a non-CatalogSearchError alone', () => {
+  it('masks anything catalog did not decide', () => {
     const boom = new Error('connection reset');
 
-    expect(toRpcException(boom)).toBe(boom);
+    const exception = toRpcException(boom) as RpcException;
+
+    expect(exception).toBeInstanceOf(RpcException);
+    expect((exception.getError() as { code: number }).code).toBe(
+      grpc.status.INTERNAL,
+    );
+    expect(detailOf(exception).code).toBe(ErrorCode.INTERNAL_SERVER_ERROR);
+    expect(JSON.stringify(exception.getError())).not.toContain(
+      'connection reset',
+    );
   });
 
   it('maps VALIDATION_ERROR to INVALID_ARGUMENT', () => {

@@ -282,7 +282,7 @@ describe('OperationsGrpcController', () => {
     });
   });
 
-  it('leaves an unexpected error alone', async () => {
+  it('masks an unexpected error instead of describing it', async () => {
     const boom = new Error('connection reset');
     const publish = vi.fn().mockRejectedValue(boom);
 
@@ -292,6 +292,9 @@ describe('OperationsGrpcController', () => {
       .publishTimetable(publishRequest, metadataWith('key-1'))
       .catch((caught: unknown) => caught);
 
-    expect(error).toBe(boom);
+    expect(error).toBeInstanceOf(RpcException);
+    expect(JSON.stringify((error as RpcException).getError())).not.toContain(
+      'connection reset',
+    );
   });
 });

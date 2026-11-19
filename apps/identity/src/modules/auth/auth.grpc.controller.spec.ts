@@ -324,13 +324,18 @@ describe('AuthGrpcController - Passengers', () => {
   });
 
   describe('unexpected errors', () => {
-    it('rethrows non-AuthError unhandled error directly', async () => {
+    it('masks a non-AuthError instead of describing it', async () => {
       const rawError = new Error('Database connection failed');
       vi.mocked(mockPassengers.listPassengers!).mockRejectedValue(rawError);
 
-      await expect(
-        controller.listPassengers({ accountId: 'acc-123' }),
-      ).rejects.toThrow(rawError);
+      const error = await controller
+        .listPassengers({ accountId: 'acc-123' })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(RpcException);
+      const payload = (error as RpcException).getError() as { code: number };
+      expect(payload.code).toBe(grpc.status.INTERNAL);
+      expect(JSON.stringify(payload)).not.toContain('Database connection');
     });
   });
 

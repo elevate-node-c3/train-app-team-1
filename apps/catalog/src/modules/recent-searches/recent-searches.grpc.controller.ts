@@ -1,7 +1,11 @@
 import { Controller, UseInterceptors } from '@nestjs/common';
-import { GrpcMethod, RpcException } from '@nestjs/microservices';
-import * as grpc from '@grpc/grpc-js';
-import { CALLER_ACCOUNT_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
+import { GrpcMethod } from '@nestjs/microservices';
+import {
+  CALLER_ACCOUNT_ID_KEY,
+  GrpcCorrelationInterceptor,
+  refusalException,
+  toRpcException,
+} from '@app/common';
 import { ClsService } from 'nestjs-cls';
 import {
   CATALOG_SERVICE_NAME,
@@ -30,13 +34,13 @@ export class RecentSearchesGrpcController {
 
     // Refuse missing identity; an empty list would hide a gateway metadata failure.
     if (!accountId) {
-      throw new RpcException({
-        code: grpc.status.UNAUTHENTICATED,
-        details: JSON.stringify({ code: ErrorCode.UNAUTHORIZED, details: [] }),
-        message: 'Recent searches require a signed-in traveller',
-      });
+      throw refusalException({ code: ErrorCode.UNAUTHORIZED, details: [] });
     }
 
-    return this.recentSearches.list(accountId, new Date());
+    try {
+      return await this.recentSearches.list(accountId, new Date());
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
   }
 }
