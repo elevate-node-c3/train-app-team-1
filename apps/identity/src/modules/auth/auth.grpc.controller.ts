@@ -1,4 +1,4 @@
-import { Controller, UseInterceptors } from '@nestjs/common';
+import { Controller, UseInterceptors, UsePipes } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { ClsService } from 'nestjs-cls';
 import { randomUUID } from 'node:crypto';
@@ -6,35 +6,42 @@ import * as grpc from '@grpc/grpc-js';
 import {
   IDENTITY_SERVICE_NAME,
   ErrorCode,
-  type CompleteProfileRequestDto,
-  type ForgotPasswordRequestDto,
   type ForgotPasswordResponseDto,
   type PassengerDto,
-  type ResolveHoldPassengersRequest,
   type ResolveHoldPassengersResponse,
-  type RefreshTokenRequestDto,
-  type ResendVerificationRequestDto,
   type ResendVerificationResponseDto,
-  type ResetPasswordRequestDto,
   type ResetPasswordResponseDto,
-  type SignInRequestDto,
   type SignInResponseDto,
-  type SignOutRequestDto,
   type SignOutResponseDto,
-  type SignUpRequestDto,
   type SignUpResponseDto,
   type TokenPairDto,
-  type VerifyEmailRequestDto,
 } from '@app/contracts';
 import {
   CALLER_ACCOUNT_ID_KEY,
   CALLER_JTI_KEY,
   CALLER_SESSION_ID_KEY,
   CORRELATION_ID_KEY,
+  createGrpcValidationPipe,
   GrpcCorrelationInterceptor,
   toRpcException,
 } from '@app/common';
 import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
+import {
+  AddPassengerRequestBodyDto,
+  CompleteProfileRequestBodyDto,
+  DeletePassengerRequestBodyDto,
+  ForgotPasswordRequestBodyDto,
+  ListPassengersRequestBodyDto,
+  RefreshTokenRequestBodyDto,
+  ResendVerificationRequestBodyDto,
+  ResetPasswordRequestBodyDto,
+  ResolveHoldPassengersRequestBodyDto,
+  SignInRequestBodyDto,
+  SignOutRequestBodyDto,
+  SignUpRequestBodyDto,
+  UpdatePassengerRequestBodyDto,
+  VerifyEmailRequestBodyDto,
+} from './dto/identity-request.dto.js';
 import { AuthError } from './auth-error.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
@@ -71,39 +78,13 @@ interface ProfileWire {
   bookable: boolean;
 }
 
-interface ListPassengersRequestWire {
-  accountId: string;
-  language?: string;
-}
-
-interface AddPassengerRequestWire {
-  accountId: string;
-  fullName: string;
-  nationalId: string;
-  profileType: string;
-  language?: string;
-}
-
-interface UpdatePassengerRequestWire {
-  passengerId: string;
-  accountId: string;
-  fullName: string;
-  nationalId: string;
-  profileType: string;
-  language?: string;
-}
-
-interface DeletePassengerRequestWire {
-  passengerId: string;
-  accountId: string;
-}
-
 /**
  * Read the caller from CLS metadata and leave auth rules to the services.
  * Translate business errors into gRPC status and details.
  */
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
+@UsePipes(createGrpcValidationPipe())
 export class AuthGrpcController {
   constructor(
     private readonly accounts: AccountsService,
@@ -116,19 +97,20 @@ export class AuthGrpcController {
   ) {}
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignUp')
-  async signUp(request: SignUpRequestDto): Promise<SignUpResponseDto> {
+  async signUp(request: SignUpRequestBodyDto): Promise<SignUpResponseDto> {
     return this.run(() =>
       this.accounts.signUp({
         email: request.email,
         password: request.password,
-        language: request.language,
+        // '' means no preference, which is absent rather than a language.
+        language: request.language || undefined,
         correlationId: this.correlationId(),
       }),
     );
   }
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'VerifyEmail')
-  async verifyEmail(request: VerifyEmailRequestDto): Promise<{
+  async verifyEmail(request: VerifyEmailRequestBodyDto): Promise<{
     tokens: TokenPairWire;
     accountId: string;
     maskedEmail: string;
@@ -150,7 +132,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResendVerification')
   async resendVerification(
-    request: ResendVerificationRequestDto,
+    request: ResendVerificationRequestBodyDto,
   ): Promise<ResendVerificationResponseDto> {
     return this.run(() =>
       this.accounts.resendVerification({
@@ -161,7 +143,7 @@ export class AuthGrpcController {
   }
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignIn')
-  async signIn(request: SignInRequestDto): Promise<SignInResponseDto> {
+  async signIn(request: SignInRequestBodyDto): Promise<SignInResponseDto> {
     return this.run(async () => {
       const result = await this.sessions.signIn({
         email: request.email,
@@ -178,7 +160,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'RefreshToken')
   async refreshToken(
-    request: RefreshTokenRequestDto,
+    request: RefreshTokenRequestBodyDto,
   ): Promise<{ tokens: TokenPairWire }> {
     return this.run(async () => ({
       tokens: tokenPairWire(
@@ -191,7 +173,7 @@ export class AuthGrpcController {
   }
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'SignOut')
-  async signOut(request: SignOutRequestDto): Promise<SignOutResponseDto> {
+  async signOut(request: SignOutRequestBodyDto): Promise<SignOutResponseDto> {
     return this.run(() => {
       const accountId = this.cls.get<string>(CALLER_ACCOUNT_ID_KEY);
       const sessionId = this.cls.get<string>(CALLER_SESSION_ID_KEY);
@@ -214,7 +196,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'ForgotPassword')
   async forgotPassword(
-    request: ForgotPasswordRequestDto,
+    request: ForgotPasswordRequestBodyDto,
   ): Promise<ForgotPasswordResponseDto> {
     return this.run(() =>
       this.passwords.forgotPassword({
@@ -226,7 +208,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResetPassword')
   async resetPassword(
-    request: ResetPasswordRequestDto,
+    request: ResetPasswordRequestBodyDto,
   ): Promise<ResetPasswordResponseDto> {
     return this.run(() =>
       this.passwords.resetPassword({
@@ -239,7 +221,7 @@ export class AuthGrpcController {
   }
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'CompleteProfile')
-  async completeProfile(request: CompleteProfileRequestDto): Promise<{
+  async completeProfile(request: CompleteProfileRequestBodyDto): Promise<{
     tokens: TokenPairWire;
     profile: ProfileWire;
   }> {
@@ -310,7 +292,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'ListPassengers')
   async listPassengers(
-    request: ListPassengersRequestWire,
+    request: ListPassengersRequestBodyDto,
   ): Promise<{ passengers: PassengerDto[] }> {
     return this.run(async () => {
       const passengers = await this.passengers.listPassengers(
@@ -323,7 +305,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'AddPassenger')
   async addPassenger(
-    request: AddPassengerRequestWire,
+    request: AddPassengerRequestBodyDto,
   ): Promise<{ passenger: PassengerDto }> {
     return this.run(async () => {
       const passenger = await this.passengers.addPassenger(request);
@@ -333,7 +315,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'UpdatePassenger')
   async updatePassenger(
-    request: UpdatePassengerRequestWire,
+    request: UpdatePassengerRequestBodyDto,
   ): Promise<{ passenger: PassengerDto }> {
     return this.run(async () => {
       const passenger = await this.passengers.updatePassenger(request);
@@ -343,7 +325,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'DeletePassenger')
   async deletePassenger(
-    request: DeletePassengerRequestWire,
+    request: DeletePassengerRequestBodyDto,
   ): Promise<{ success: boolean }> {
     return this.run(async () => {
       await this.passengers.deletePassenger(request);
@@ -353,7 +335,7 @@ export class AuthGrpcController {
 
   @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResolveHoldPassengers')
   async resolveHoldPassengers(
-    request: ResolveHoldPassengersRequest,
+    request: ResolveHoldPassengersRequestBodyDto,
     metadata?: grpc.Metadata,
   ): Promise<ResolveHoldPassengersResponse> {
     return this.run(async () => {

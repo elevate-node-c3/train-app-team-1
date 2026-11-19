@@ -114,7 +114,7 @@ describe('AuthGrpcController - Passengers', () => {
       fullName: 'Ahmed Hussein',
       nationalId: '28505150101235',
       profileType: 'Regular',
-      language: 'ar',
+      language: 'ar' as const,
     };
 
     it('delegates to PassengersService.addPassenger and returns { passenger }', async () => {
@@ -199,7 +199,7 @@ describe('AuthGrpcController - Passengers', () => {
       fullName: 'Ahmed Hussein Ali',
       nationalId: '28505150101235',
       profileType: 'Regular',
-      language: 'en',
+      language: 'en' as const,
     };
 
     it('delegates to PassengersService.updatePassenger and returns { passenger }', async () => {
