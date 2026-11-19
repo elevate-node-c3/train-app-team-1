@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RpcException } from '@nestjs/microservices';
 import * as grpc from '@grpc/grpc-js';
 import { createGrpcValidationPipe, decodeRefusal } from '@app/common';
-import { resolveDetailText } from '@app/common/envelope/detail-catalogue.js';
+import { resolveDetailText } from '@app/common/envelope/detail-messages.js';
 import { ErrorCode, type ValidationIssueRef } from '@app/contracts';
 
 import { CreateHoldRequestDto, GetHoldRequestDto } from './hold-request.dto.js';
@@ -184,9 +184,7 @@ describe('hold request DTOs', () => {
     });
 
     it('refuses a field the proto does not define', async () => {
-      const { details } = await refuse(
-        createRequest({ seatNumbers: ['12A'] }),
-      );
+      const { details } = await refuse(createRequest({ seatNumbers: ['12A'] }));
 
       // BR: a traveller never picks a seat, so the field must not be honoured.
       expect(details).toEqual([
@@ -212,10 +210,12 @@ describe('hold request DTOs', () => {
         }),
       );
 
-      expect(fieldsOf(details)).toEqual(expect.arrayContaining([
-        'passengers.0.identities.0.tripId',
-        'passengers.0.identities.0.passengerKeyVersion',
-      ]));
+      expect(fieldsOf(details)).toEqual(
+        expect.arrayContaining([
+          'passengers.0.identities.0.tripId',
+          'passengers.0.identities.0.passengerKeyVersion',
+        ]),
+      );
       expect(issueKeys(details)).toContain('ISSUE_MUST_BE_UUID');
       expect(issueKeys(details)).toContain('ISSUE_BELOW_MINIMUM');
     });

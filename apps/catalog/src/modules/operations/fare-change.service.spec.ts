@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ErrorCode, type EventEnvelope } from '@app/contracts';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
-import { DETAIL_CATALOGUE } from '@app/common/envelope/detail-catalogue.js';
+import { DETAIL_MESSAGE } from '@app/common/envelope/detail-messages.js';
 
 import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
 import type { StoredOperationsRequest } from './operations-request.types.js';
@@ -448,7 +448,7 @@ describe('FareChangeService.changeFare', () => {
           }),
         ],
       });
-      const action = DETAIL_CATALOGUE.ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM;
+      const action = DETAIL_MESSAGE.ACTION_RAISE_FARE_TO_PAYMENT_MINIMUM;
       expect(`${action.en} ${action.ar}`).not.toMatch(/stripe/i);
     } finally {
       if (original === undefined)

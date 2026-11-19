@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CATALOG_SEARCH_DATE_OUT_OF_WINDOW,
-  MESSAGE_CATALOGUE,
+  MESSAGE,
   resolveMessage,
   resolveMessageWithParams,
-} from './catalogue.js';
+} from './messages.js';
 
 /** Wire reason keys also index the localized messages. */
 const EMPTY_REASON_KEYS: Exclude<
@@ -23,7 +23,7 @@ const EMPTY_REASON_KEYS: Exclude<
 describe('the search message catalogue', () => {
   it('speaks both languages for every empty-result reason', () => {
     for (const key of EMPTY_REASON_KEYS) {
-      const entry = MESSAGE_CATALOGUE[key];
+      const entry = MESSAGE[key];
 
       expect(entry, `${key} is missing from the catalogue`).toBeDefined();
       expect(entry.ar.length).toBeGreaterThan(0);

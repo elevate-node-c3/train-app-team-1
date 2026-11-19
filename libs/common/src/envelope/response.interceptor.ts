@@ -13,7 +13,7 @@ import {
   CORRELATION_ID_HEADER,
   CORRELATION_ID_KEY,
 } from '../correlation/correlation.constants.js';
-import { resolveLanguage, resolveMessage } from './catalogue.js';
+import { resolveLanguage, resolveMessage } from './messages.js';
 
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<

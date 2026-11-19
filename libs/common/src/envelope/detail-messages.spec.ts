@@ -7,7 +7,7 @@ import {
   loadProductionSources,
   type DetailCatalogue,
 } from '../../../../scripts/check-detail-catalogue.js';
-import { DETAIL_CATALOGUE, resolveDetailText } from './detail-catalogue.js';
+import { DETAIL_MESSAGE, resolveDetailText } from './detail-messages.js';
 
 describe('resolveDetailText', () => {
   it('returns the entry in the requested language', () => {
@@ -42,16 +42,16 @@ describe('resolveDetailText', () => {
     (key) => {
       for (const lang of ['ar', 'en'] as const) {
         expect(resolveDetailText(key, lang)).toBe(
-          DETAIL_CATALOGUE.ISSUE_VALIDATION_FAILED[lang],
+          DETAIL_MESSAGE.ISSUE_VALIDATION_FAILED[lang],
         );
       }
     },
   );
 });
 
-describe('DETAIL_CATALOGUE', () => {
+describe('DETAIL_MESSAGE', () => {
   it('has non-empty ar and en for every entry', () => {
-    for (const [key, entry] of Object.entries(DETAIL_CATALOGUE)) {
+    for (const [key, entry] of Object.entries(DETAIL_MESSAGE)) {
       expect(entry.ar.trim(), `${key}.ar`).not.toBe('');
       expect(entry.en.trim(), `${key}.en`).not.toBe('');
       expect(entry.ar, `${key}.ar`).not.toBe(entry.en);
@@ -59,7 +59,7 @@ describe('DETAIL_CATALOGUE', () => {
   });
 
   it('uses direct, standalone sentences in both languages', () => {
-    for (const [key, entry] of Object.entries(DETAIL_CATALOGUE)) {
+    for (const [key, entry] of Object.entries(DETAIL_MESSAGE)) {
       expect(entry.ar, `${key}.ar`).not.toMatch(/يرجى|عفوا/);
       expect(entry.en, `${key}.en`).not.toMatch(/\bplease\b/i);
       expect(entry.ar, `${key}.ar`).toMatch(/[.!?]$/);
@@ -68,7 +68,7 @@ describe('DETAIL_CATALOGUE', () => {
   });
 
   it('names no payment vendor', () => {
-    for (const [key, entry] of Object.entries(DETAIL_CATALOGUE)) {
+    for (const [key, entry] of Object.entries(DETAIL_MESSAGE)) {
       expect(`${entry.ar} ${entry.en}`.toLowerCase(), key).not.toContain(
         'stripe',
       );
@@ -553,8 +553,8 @@ describe('detail catalogue source guard', () => {
       true,
     );
     expect([
-      ...auditCatalogue(DETAIL_CATALOGUE),
-      ...auditSources(sources, DETAIL_CATALOGUE),
+      ...auditCatalogue(DETAIL_MESSAGE),
+      ...auditSources(sources, DETAIL_MESSAGE),
     ]).toEqual([]);
   });
 });

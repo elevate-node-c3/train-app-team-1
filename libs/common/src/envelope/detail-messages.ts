@@ -1,7 +1,7 @@
 import {
   resolveMessageWithParams,
   type SupportedLanguage,
-} from './catalogue.js';
+} from './messages.js';
 
 export const ACTION_DEFAULT_KEY = 'ACTION_DEFAULT';
 export const ISSUE_FALLBACK_KEY = 'ISSUE_VALIDATION_FAILED';
@@ -28,7 +28,7 @@ export const CONSTRAINT_ISSUE_KEYS: Record<string, string> = {
   arrayUnique: 'ISSUE_LIST_HAS_DUPLICATES',
 };
 
-export const DETAIL_CATALOGUE: Record<string, { ar: string; en: string }> = {
+export const DETAIL_MESSAGE: Record<string, { ar: string; en: string }> = {
   ISSUE_PUBLISH_WOULD_CHANGE_IN_USE_COMPOSITION: {
     ar: 'في الرحلة {{tripId}} بتاريخ {{serviceDate}}، يبلغ عدد المقاعد المباعة {{soldCount}} وعدد المقاعد المحجوزة مؤقتاً {{heldCount}}. سيؤدي النشر إلى تغيير عربات أو درجات أو مقاعد هذه الرحلة.',
     en: 'For trip {{tripId}} on {{serviceDate}}, sold seats total {{soldCount}} and held seats total {{heldCount}}. Publishing would change the coaches, classes, or seats on that trip.',
@@ -826,9 +826,9 @@ export function resolveDetailText(
   params?: Record<string, string>,
 ): string {
   return resolveMessageWithParams(
-    Object.hasOwn(DETAIL_CATALOGUE, key) ? key : ISSUE_FALLBACK_KEY,
+    Object.hasOwn(DETAIL_MESSAGE, key) ? key : ISSUE_FALLBACK_KEY,
     lang,
     params,
-    DETAIL_CATALOGUE,
+    DETAIL_MESSAGE,
   );
 }

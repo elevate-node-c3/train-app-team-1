@@ -19,8 +19,8 @@ import {
   HttpExceptionFilter,
   CORRELATION_ID_KEY,
 } from '@app/common';
-import { MESSAGE_CATALOGUE } from './catalogue.js';
-import { DETAIL_CATALOGUE } from './detail-catalogue.js';
+import { MESSAGE } from './messages.js';
+import { DETAIL_MESSAGE } from './detail-messages.js';
 import { parseCatalogBusinessError } from '../../../../apps/gateway/src/modules/catalog/catalog-error.js';
 import { PublishTimetableStopDto } from '../../../../apps/gateway/src/modules/operations/dto/publish-timetable.dto.js';
 import { validationExceptionFactory } from './validation-exception.factory.js';
@@ -186,13 +186,13 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
               field: 'arrivalTime',
               rejectedValue: time,
               issue,
-              action: DETAIL_CATALOGUE.ACTION_DEFAULT[language],
+              action: DETAIL_MESSAGE.ACTION_DEFAULT[language],
             },
             {
               field: 'departureTime',
               rejectedValue: time,
               issue,
-              action: DETAIL_CATALOGUE.ACTION_DEFAULT[language],
+              action: DETAIL_MESSAGE.ACTION_DEFAULT[language],
             },
           ]);
         }
@@ -225,7 +225,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         'ar',
       );
       expect(body.error?.details?.[0].action).toBe(
-        DETAIL_CATALOGUE.ACTION_DEFAULT.ar,
+        DETAIL_MESSAGE.ACTION_DEFAULT.ar,
       );
     });
 
@@ -241,7 +241,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         'en',
       );
       expect(body.error?.details?.[0].issue).toBe(
-        DETAIL_CATALOGUE.ISSUE_VALIDATION_FAILED.en,
+        DETAIL_MESSAGE.ISSUE_VALIDATION_FAILED.en,
       );
       expect(JSON.stringify(body)).not.toContain('ISSUE_');
     });
@@ -254,9 +254,9 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
           header,
         );
         expect(body.error?.details?.[0].issue).toBe(
-          DETAIL_CATALOGUE.ISSUE_REQUIRED.ar,
+          DETAIL_MESSAGE.ISSUE_REQUIRED.ar,
         );
-        expect(body.message).toBe(MESSAGE_CATALOGUE.VALIDATION_ERROR.ar);
+        expect(body.message).toBe(MESSAGE.VALIDATION_ERROR.ar);
       },
     );
 
@@ -304,7 +304,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         'en',
       );
       expect(body.error?.details?.[0].action).toBe(
-        DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+        DETAIL_MESSAGE.ACTION_DEFAULT.en,
       );
     });
 
@@ -320,7 +320,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         'en',
       );
       expect(body.error?.details?.[0].action).toBe(
-        DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+        DETAIL_MESSAGE.ACTION_DEFAULT.en,
       );
       expect(JSON.stringify(body)).not.toContain('{{');
     });
@@ -388,8 +388,8 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
       expect(body.error?.details?.[0]).toEqual({
         field: 'to',
         rejectedValue: { nested: ['٠٦:٠٠'] },
-        issue: DETAIL_CATALOGUE.ISSUE_REQUIRED.en,
-        action: DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+        issue: DETAIL_MESSAGE.ISSUE_REQUIRED.en,
+        action: DETAIL_MESSAGE.ACTION_DEFAULT.en,
       });
     });
 
@@ -402,7 +402,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         field: 'payload',
         rejectedValue: undefined,
         issue: 'A Nest validation message',
-        action: DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+        action: DETAIL_MESSAGE.ACTION_DEFAULT.en,
       });
     });
 
@@ -428,10 +428,10 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
           'en',
         );
         expect(body.error?.details?.[0].issue).toBe(
-          DETAIL_CATALOGUE.ISSUE_VALIDATION_FAILED.en,
+          DETAIL_MESSAGE.ISSUE_VALIDATION_FAILED.en,
         );
         expect(body.error?.details?.[0].action).toBe(
-          DETAIL_CATALOGUE.ACTION_DEFAULT.en,
+          DETAIL_MESSAGE.ACTION_DEFAULT.en,
         );
         expect(JSON.stringify(body)).not.toMatch(/\{\{|undefined/);
       },
@@ -456,14 +456,12 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         expect(exception?.getStatus()).toBe(HttpStatus.NOT_FOUND);
         const body = renderError(exception, language);
         expect(body.error?.code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
-        expect(body.message).toBe(
-          MESSAGE_CATALOGUE.RESOURCE_NOT_FOUND[language],
-        );
+        expect(body.message).toBe(MESSAGE.RESOURCE_NOT_FOUND[language]);
         expect(body.error?.details?.[0]).toEqual({
           field: 'outboundTripId',
           rejectedValue: 'missing-trip',
-          issue: DETAIL_CATALOGUE.ISSUE_OUTBOUND_TRIP_GONE[language],
-          action: DETAIL_CATALOGUE.ACTION_SEARCH_AGAIN_FOR_OUTBOUND[language],
+          issue: DETAIL_MESSAGE.ISSUE_OUTBOUND_TRIP_GONE[language],
+          action: DETAIL_MESSAGE.ACTION_SEARCH_AGAIN_FOR_OUTBOUND[language],
         });
       },
     );
@@ -494,7 +492,7 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         expect(exception?.getStatus()).toBe(HttpStatus.CONFLICT);
         const body = renderError(exception, language);
         expect(body.error?.code).toBe(ErrorCode.CONFLICT);
-        expect(body.message).toBe(MESSAGE_CATALOGUE.CONFLICT[language]);
+        expect(body.message).toBe(MESSAGE.CONFLICT[language]);
         const detail = body.error?.details?.[0];
         expect(detail?.issue).toBe(
           language === 'en'
@@ -530,13 +528,11 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
         const body = renderError(exception, language);
         expect(body.error?.code).toBe(ErrorCode.DEPENDENCY_UNAVAILABLE);
         expect(body.error?.retryAfterSeconds).toBe(5);
-        expect(body.message).toBe(
-          MESSAGE_CATALOGUE.DEPENDENCY_UNAVAILABLE[language],
-        );
+        expect(body.message).toBe(MESSAGE.DEPENDENCY_UNAVAILABLE[language]);
         expect(body.error?.details?.[0]).toEqual({
           field: 'trainNumber',
           rejectedValue: '900',
-          issue: DETAIL_CATALOGUE.ISSUE_SEAT_USAGE_UNAVAILABLE[language],
+          issue: DETAIL_MESSAGE.ISSUE_SEAT_USAGE_UNAVAILABLE[language],
           action:
             language === 'en'
               ? 'Retry the publish with the same idempotency key in about 5 seconds.'
