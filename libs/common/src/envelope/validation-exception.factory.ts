@@ -20,7 +20,7 @@ import {
  * Only keys and explicit template params leave this language-agnostic factory.
  * The filter resolves them and supplies a localised action when none is set.
  */
-function flatten(
+export function validationIssueRefsOf(
   errors: readonly ValidationError[],
   parent = '',
 ): ValidationIssueRef[] {
@@ -64,7 +64,7 @@ function flatten(
     }
 
     if (error.children && error.children.length > 0) {
-      details.push(...flatten(error.children, field));
+      details.push(...validationIssueRefsOf(error.children, field));
     }
   }
 
@@ -74,7 +74,7 @@ function flatten(
 export function validationExceptionFactory(
   errors: ValidationError[],
 ): BadRequestException {
-  return new BadRequestException({ message: flatten(errors) });
+  return new BadRequestException({ message: validationIssueRefsOf(errors) });
 }
 
 /** The one ValidationPipe configuration every HTTP edge uses. */
