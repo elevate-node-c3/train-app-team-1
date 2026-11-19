@@ -574,9 +574,9 @@ describe('IdentityGrpcClient (F5, ADR-0004)', () => {
     );
 
     expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    // One key carries the refs, the one HttpExceptionFilter resolves.
     expect(error.getResponse()).toEqual({
       code: ErrorCode.VALIDATION_ERROR,
-      details,
       message: details,
     });
   });
