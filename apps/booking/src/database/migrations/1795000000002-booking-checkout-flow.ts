@@ -48,7 +48,9 @@ export class BookingCheckoutFlow1795000000002 implements MigrationInterface {
         ADD COLUMN compensation_next_attempt_at timestamptz,
         ADD COLUMN compensation_last_error text,
         ADD COLUMN resume_next_attempt_at timestamptz,
+        ADD COLUMN resume_attempts integer NOT NULL DEFAULT 0,
         ADD COLUMN lease_until timestamptz,
+        ADD COLUMN lease_owner uuid,
         ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now(),
         ADD CONSTRAINT chk_booking_draft_flow_state
           CHECK (flow_state IS NULL OR flow_state IN (
@@ -104,12 +106,12 @@ export class BookingCheckoutFlow1795000000002 implements MigrationInterface {
     // after the retry budget, so a human can settle it.
     await queryRunner.query(`
       CREATE TABLE booking_compensation_dead_letter (
-        id uuid PRIMARY KEY,
-        booking_reference uuid NOT NULL,
-        reason text NOT NULL,
-        last_error text,
+        booking_reference uuid PRIMARY KEY
+          REFERENCES booking_draft (id) ON DELETE CASCADE,
         attempts integer NOT NULL,
-        recorded_at timestamptz NOT NULL DEFAULT now()
+        last_error text,
+        recorded_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
       )
     `);
   }
@@ -124,7 +126,9 @@ export class BookingCheckoutFlow1795000000002 implements MigrationInterface {
         DROP CONSTRAINT chk_booking_draft_compensation_status,
         DROP CONSTRAINT chk_booking_draft_flow_state,
         DROP COLUMN updated_at,
+        DROP COLUMN lease_owner,
         DROP COLUMN lease_until,
+        DROP COLUMN resume_attempts,
         DROP COLUMN resume_next_attempt_at,
         DROP COLUMN compensation_last_error,
         DROP COLUMN compensation_next_attempt_at,
