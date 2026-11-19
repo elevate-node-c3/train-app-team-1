@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 
 import { BookingFlowRepository } from './booking-flow.repository.js';
-import { BookingFlowService } from './booking-flow.service.js';
+import { BookingFlowService } from './services/booking-flow.service.js';
 
 /** How often the worker looks for work. Each pass is bounded by the claim. */
 const SCAN_INTERVAL_MS = 2_000;

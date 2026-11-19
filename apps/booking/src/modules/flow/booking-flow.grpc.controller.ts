@@ -4,17 +4,14 @@ import {
   createGrpcValidationPipe,
   GrpcCorrelationInterceptor,
 } from '@app/common';
-import {
-  BOOKING_SERVICE_NAME,
-  type BookingResponse,
-} from '@app/contracts';
+import { BOOKING_SERVICE_NAME, type BookingResponse } from '@app/contracts';
 
 import {
   ContinueBookingRequestDto,
   SubmitBookingRequestDto,
 } from './dto/booking-flow-request.dto.js';
 
-import { BookingFlowService } from './booking-flow.service.js';
+import { BookingFlowService } from './services/booking-flow.service.js';
 import { toRpcException } from './to-rpc-exception.js';
 
 /** Transport only: every refusal becomes a status in one place. */
