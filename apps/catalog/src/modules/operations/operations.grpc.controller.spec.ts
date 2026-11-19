@@ -6,13 +6,13 @@ import { CALLER_ACCOUNT_ID_KEY } from '@app/common';
 import { ErrorCode } from '@app/contracts';
 
 import { CatalogSearchError } from '../trips/catalog-search-error.js';
-import type { FareChangeService } from './fare-change.service.js';
-import type { OperationsAuditService } from './operations-audit.service.js';
+import type { FareChangeService } from './services/fare-change.service.js';
+import type { OperationsAuditService } from './services/operations-audit.service.js';
 import {
   OperationsGrpcController,
   type PublishTimetableRpcRequest,
 } from './operations.grpc.controller.js';
-import type { TimetablePublishService } from './timetable-publish.service.js';
+import type { TimetablePublishService } from './services/timetable-publish.service.js';
 
 /** The operator the gateway's metadata would have put in CLS. */
 const ACTOR = '66666666-6666-4666-8666-666666666666';

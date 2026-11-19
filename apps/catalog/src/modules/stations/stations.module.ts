@@ -4,13 +4,13 @@ import { OutboxModule } from '@app/messaging/outbox/outbox.module.js';
 import { CityEntity } from './entities/city.entity.js';
 import { GovernorateEntity } from './entities/governorate.entity.js';
 import { StationEntity } from './entities/station.entity.js';
-import { StationsGrpcController } from './stations.grpc.controller.js';
+import { StationsGrpcController } from './controllers/stations.grpc.controller.js';
 
 import { StationsRepository } from './stations.repository.js';
-import { StationsService } from './stations.service.js';
-import { StationsManagementService } from './stations-management.service.js';
-import { StationsManagementGrpcController } from './stations-management.grpc.controller.js';
-import { OperationsRequestRepository } from '../operations/operations-request.repository.js';
+import { StationsService } from './services/stations.service.js';
+import { StationsManagementService } from './services/stations-management.service.js';
+import { StationsManagementGrpcController } from './controllers/stations-management.grpc.controller.js';
+import { OperationsRequestRepository } from '../operations/repositories/operations-request.repository.js';
 import { OperationsRequestEntity } from '../operations/entities/operations-request.entity.js';
 
 @Module({

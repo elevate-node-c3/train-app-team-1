@@ -6,8 +6,8 @@ import type { CacheAsideService } from '@app/common';
 
 import { buildFareChanged } from '../operations/fare-events.factory.js';
 import type { RouteVersionService } from '../cache/route-version.service.js';
-import type { StationsService } from '../stations/stations.service.js';
-import type { TripStopsService } from '../trips/trip-stops.service.js';
+import type { StationsService } from '../stations/services/stations.service.js';
+import type { TripStopsService } from '../trips/services/trip-stops.service.js';
 import { CacheInvalidationConsumer } from './cache-invalidation.consumer.js';
 
 describe('CacheInvalidationConsumer', () => {

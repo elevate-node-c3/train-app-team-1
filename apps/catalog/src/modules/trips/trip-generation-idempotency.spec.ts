@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { TimetableEntity } from '../timetables/entities/timetable.entity.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
-import { TripsService } from './trips.service.js';
+import { TripsService } from './services/trips.service.js';
 
 const TRAIN = '11111111-1111-4111-8111-111111111111';
 const SERVICE_DATE = '2026-06-20';

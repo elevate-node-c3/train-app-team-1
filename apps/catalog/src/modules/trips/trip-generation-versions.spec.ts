@@ -4,7 +4,7 @@ import {
   TimetableEntity,
   Weekday,
 } from '../timetables/entities/timetable.entity.js';
-import { TripsService } from './trips.service.js';
+import { TripsService } from './services/trips.service.js';
 
 /**
  * One train, two published versions. D is 2026-06-20: v1 took effect at D-10,

@@ -13,13 +13,13 @@ import { RedisClientService } from '../../libs/common/src/cache/redis-client.ser
 import { EVENT_TYPES, type EventEnvelope } from '@app/contracts';
 import { CacheInvalidationConsumer } from '../../apps/catalog/src/modules/invalidation/cache-invalidation.consumer.js';
 import type { RouteVersionService } from '../../apps/catalog/src/modules/cache/route-version.service.js';
-import type { TripStopsService } from '../../apps/catalog/src/modules/trips/trip-stops.service.js';
+import type { TripStopsService } from '../../apps/catalog/src/modules/trips/services/trip-stops.service.js';
 import { StationsRepository } from '../../apps/catalog/src/modules/stations/stations.repository.js';
 import {
   StationsService,
   STATIONS_GENERATION_KEY,
   stationsCacheKey,
-} from '../../apps/catalog/src/modules/stations/stations.service.js';
+} from '../../apps/catalog/src/modules/stations/services/stations.service.js';
 import { GovernorateEntity } from '../../apps/catalog/src/modules/stations/entities/governorate.entity.js';
 import { CityEntity } from '../../apps/catalog/src/modules/stations/entities/city.entity.js';
 import { StationEntity } from '../../apps/catalog/src/modules/stations/entities/station.entity.js';

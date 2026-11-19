@@ -8,14 +8,14 @@ import { DataSourceInitializer } from '../../libs/common/src/persistence/data-so
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 import { TypeOrmOutboxRepository } from '../../libs/messaging/src/outbox/typeorm-outbox.repository.js';
 
-import { FareChangeRepository } from '../../apps/catalog/src/modules/operations/fare-change.repository.js';
+import { FareChangeRepository } from '../../apps/catalog/src/modules/operations/repositories/fare-change.repository.js';
 import {
   FareChangeService,
   type ChangeFareRequest,
-} from '../../apps/catalog/src/modules/operations/fare-change.service.js';
-import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/operations-audit.repository.js';
-import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/operations-audit.service.js';
-import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/operations-request.repository.js';
+} from '../../apps/catalog/src/modules/operations/services/fare-change.service.js';
+import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-audit.repository.js';
+import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/services/operations-audit.service.js';
+import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-request.repository.js';
 
 import {
   catalogDataSource,

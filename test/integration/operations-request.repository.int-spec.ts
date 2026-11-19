@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DataSourceInitializer } from '../../libs/common/src/persistence/data-source-initializer.js';
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 
-import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/operations-request.repository.js';
+import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-request.repository.js';
 
 import {
   catalogDataSource,

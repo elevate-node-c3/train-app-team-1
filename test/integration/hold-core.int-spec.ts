@@ -16,7 +16,7 @@ import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/h
 import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
 import { HoldCreationGuard } from '../../apps/inventory/src/modules/seat-hold/hold-access.guard.js';
 import { SchemaReadinessGate } from '@app/common';
-import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/seat-plan.repository.js';
+import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/repositories/seat-plan.repository.js';
 import type { SeatPlan } from '../../apps/inventory/src/modules/seats/seat-plan.js';
 import { CreateHoldCore1794600000008 } from '../../apps/inventory/src/database/migrations/1794600000008-create-hold-core.js';
 import {

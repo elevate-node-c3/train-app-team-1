@@ -5,20 +5,27 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DataSourceInitializer } from '../../libs/common/src/persistence/data-source-initializer.js';
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 
-import { segmentOf, stationsInUse } from '../../apps/inventory/src/modules/seats/segment.js';
-import { seatPlanFrom, type SeatPlan } from '../../apps/inventory/src/modules/seats/seat-plan.js';
-import { sixStopPayload, twoStopPayload } from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
-import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/seat-plan.repository.js';
 import {
-  AvailabilityRepository,
-} from '../../apps/inventory/src/modules/seats/availability.repository.js';
-import type { AvailabilityQuery } from '../../apps/inventory/src/modules/seats/availability.repository.js';
+  segmentOf,
+  stationsInUse,
+} from '../../apps/inventory/src/modules/seats/segment.js';
+import {
+  seatPlanFrom,
+  type SeatPlan,
+} from '../../apps/inventory/src/modules/seats/seat-plan.js';
+import {
+  sixStopPayload,
+  twoStopPayload,
+} from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
+import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/repositories/seat-plan.repository.js';
+import { AvailabilityRepository } from '../../apps/inventory/src/modules/seats/repositories/availability.repository.js';
+import type { AvailabilityQuery } from '../../apps/inventory/src/modules/seats/repositories/availability.repository.js';
 import {
   AvailabilityService,
   SeatSegmentOrderError,
   SeatUnknownStationError,
-} from '../../apps/inventory/src/modules/seats/availability.service.js';
-import { SeatUsageRepository } from '../../apps/inventory/src/modules/seats/seat-usage.repository.js';
+} from '../../apps/inventory/src/modules/seats/services/availability.service.js';
+import { SeatUsageRepository } from '../../apps/inventory/src/modules/seats/repositories/seat-usage.repository.js';
 
 import {
   closeInventoryDataSource,
@@ -26,7 +33,12 @@ import {
   inventoryDataSource,
   truncateInventory,
 } from './support/inventory-database.js';
-import { occupy as occupySeat, release as releaseSeat, seedSixStopTrip, SIX_STOP_TRIP } from './support/inventory-fixture.js';
+import {
+  occupy as occupySeat,
+  release as releaseSeat,
+  seedSixStopTrip,
+  SIX_STOP_TRIP,
+} from './support/inventory-fixture.js';
 
 // Ramsis 0, Banha 1, Tanta 2, Damnhour 3, Sidi Gaber 4, ElRaml 5.
 const tripId = SIX_STOP_TRIP.tripId;
@@ -69,7 +81,12 @@ async function availability(
   destinationStationId: string,
   travelClassId: string,
 ): Promise<number> {
-  return availabilityOn(tripId, originStationId, destinationStationId, travelClassId);
+  return availabilityOn(
+    tripId,
+    originStationId,
+    destinationStationId,
+    travelClassId,
+  );
 }
 
 async function availabilityOn(
@@ -101,7 +118,15 @@ function occupy(
   state: 'held' | 'sold',
   holdExpiresAt?: Date,
 ): Promise<string> {
-  if (state === 'held') return occupySeat(source, seatId, tripId, segment, 'held', holdExpiresAt as Date);
+  if (state === 'held')
+    return occupySeat(
+      source,
+      seatId,
+      tripId,
+      segment,
+      'held',
+      holdExpiresAt as Date,
+    );
   return occupySeat(source, seatId, tripId, segment, 'sold');
 }
 
@@ -169,16 +194,25 @@ describe('segment availability', () => {
     const payload = twoStopPayload();
     const plan = seatPlanFrom({ ...payload, tripId: randomUUID() });
     await apply(plan);
-    const [firstStation, secondStation] = plan.stops.map((stop) => stop.stationId);
+    const [firstStation, secondStation] = plan.stops.map(
+      (stop) => stop.stationId,
+    );
     const travelClassId = plan.coaches[0].travelClassId;
 
     expect(
-      await availabilityOn(plan.tripId, firstStation, secondStation, travelClassId),
+      await availabilityOn(
+        plan.tripId,
+        firstStation,
+        secondStation,
+        travelClassId,
+      ),
     ).toBe(10);
   });
 
   it('refuses a station the trip does not stop at, naming it', async () => {
-    await expect(availability(cairo, aswan, firstClass)).rejects.toThrow(SeatUnknownStationError);
+    await expect(availability(cairo, aswan, firstClass)).rejects.toThrow(
+      SeatUnknownStationError,
+    );
     await expect(availability(cairo, aswan, firstClass)).rejects.toThrow(
       new RegExp(aswan),
     );
@@ -194,7 +228,9 @@ describe('segment availability', () => {
   });
 
   it('refuses the same station as origin and destination', async () => {
-    await expect(availability(cairo, cairo, firstClass)).rejects.toThrow(SeatSegmentOrderError);
+    await expect(availability(cairo, cairo, firstClass)).rejects.toThrow(
+      SeatSegmentOrderError,
+    );
   });
 
   it('counts a trip with no stop timestamps exactly as the ordinary same-day fixture', async () => {
@@ -234,15 +270,35 @@ describe('segment availability', () => {
       (seat) => seat.travelClassId === travelClassId,
     )!.id;
 
-    await occupySeat(source, overnightSeat, overnightPlan.tripId, segmentOf(0, 2), 'sold');
+    await occupySeat(
+      source,
+      overnightSeat,
+      overnightPlan.tripId,
+      segmentOf(0, 2),
+      'sold',
+    );
     // The identical scenario on the ordinary same-day fixture, for direct comparison.
     await occupy(seat44, segmentOf(0, 2), 'sold');
 
-    const occupiedOnOvernight = await availabilityOn(overnightPlan.tripId, s0, s2, travelClassId);
-    const freeOnOvernight = await availabilityOn(overnightPlan.tripId, s2, s5, travelClassId);
+    const occupiedOnOvernight = await availabilityOn(
+      overnightPlan.tripId,
+      s0,
+      s2,
+      travelClassId,
+    );
+    const freeOnOvernight = await availabilityOn(
+      overnightPlan.tripId,
+      s2,
+      s5,
+      travelClassId,
+    );
 
-    expect(occupiedOnOvernight).toBe(await availability(ramsis, tanta, firstClass));
-    expect(freeOnOvernight).toBe(await availability(tanta, alexandria, firstClass));
+    expect(occupiedOnOvernight).toBe(
+      await availability(ramsis, tanta, firstClass),
+    );
+    expect(freeOnOvernight).toBe(
+      await availability(tanta, alexandria, firstClass),
+    );
     expect(occupiedOnOvernight).toBe(9);
     expect(freeOnOvernight).toBe(10);
   });
@@ -251,7 +307,10 @@ describe('segment availability', () => {
     async function queriesFor(count: number): Promise<AvailabilityQuery[]> {
       const queries: AvailabilityQuery[] = [];
       for (let i = 0; i < count; i += 1) {
-        const plan = seatPlanFrom({ ...sixStopPayload(), tripId: randomUUID() });
+        const plan = seatPlanFrom({
+          ...sixStopPayload(),
+          tripId: randomUUID(),
+        });
         await apply(plan);
         queries.push({
           tripId: plan.tripId,
@@ -264,7 +323,9 @@ describe('segment availability', () => {
     }
 
     const onePage = await queriesFor(1);
-    const one = await countStatements(source, () => service.availabilityFor(onePage));
+    const one = await countStatements(source, () =>
+      service.availabilityFor(onePage),
+    );
 
     const twentyPage = await queriesFor(19);
     const twenty = await countStatements(source, () =>
@@ -336,7 +397,10 @@ describe('seat usage for catalog', () => {
     async function tripIdsFor(count: number): Promise<string[]> {
       const ids: string[] = [];
       for (let i = 0; i < count; i += 1) {
-        const plan = seatPlanFrom({ ...sixStopPayload(), tripId: randomUUID() });
+        const plan = seatPlanFrom({
+          ...sixStopPayload(),
+          tripId: randomUUID(),
+        });
         await apply(plan);
         ids.push(plan.tripId);
       }
@@ -347,7 +411,9 @@ describe('seat usage for catalog', () => {
     const one = await countStatements(source, () => usageFor(oneId));
 
     const twentyMore = await tripIdsFor(19);
-    const twenty = await countStatements(source, () => usageFor([...oneId, ...twentyMore]));
+    const twenty = await countStatements(source, () =>
+      usageFor([...oneId, ...twentyMore]),
+    );
 
     expect(one.queries).toHaveLength(1);
     expect(twenty.queries).toHaveLength(one.queries.length);
@@ -376,6 +442,8 @@ describe('seat usage for catalog', () => {
 
     const [usage] = await usageFor([tripId]);
 
-    expect(usage.stationIdsInUse.slice().sort()).toEqual(expectedStationIds.slice().sort());
+    expect(usage.stationIdsInUse.slice().sort()).toEqual(
+      expectedStationIds.slice().sort(),
+    );
   });
 });

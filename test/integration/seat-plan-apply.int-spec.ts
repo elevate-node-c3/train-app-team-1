@@ -6,19 +6,25 @@ import { DataSourceInitializer } from '../../libs/common/src/persistence/data-so
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 
 import { segmentOf } from '../../apps/inventory/src/modules/seats/segment.js';
-import { seatPlanFrom, type SeatPlan } from '../../apps/inventory/src/modules/seats/seat-plan.js';
+import {
+  seatPlanFrom,
+  type SeatPlan,
+} from '../../apps/inventory/src/modules/seats/seat-plan.js';
 import {
   payloadWithRow,
   sixStopPayload,
 } from '../../apps/inventory/src/modules/seats/seat-plan.fixture.js';
-import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/seat-plan.repository.js';
+import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/repositories/seat-plan.repository.js';
 
 import {
   closeInventoryDataSource,
   inventoryDataSource,
   truncateInventory,
 } from './support/inventory-database.js';
-import { occupy as occupySeat, release as releaseSeat } from './support/inventory-fixture.js';
+import {
+  occupy as occupySeat,
+  release as releaseSeat,
+} from './support/inventory-fixture.js';
 
 let source: DataSource;
 let repository: SeatPlanRepository;
@@ -44,7 +50,9 @@ function close(tripId: string) {
 }
 
 async function countRows(table: string): Promise<number> {
-  const [{ count }] = await source.query(`SELECT count(*)::int AS count FROM ${table}`);
+  const [{ count }] = await source.query(
+    `SELECT count(*)::int AS count FROM ${table}`,
+  );
   return count;
 }
 
@@ -60,7 +68,10 @@ async function tripStatus(): Promise<string> {
   return row.status;
 }
 
-async function seatIdByCoachAndNumber(coachNumber: number, seatNumber: string): Promise<string> {
+async function seatIdByCoachAndNumber(
+  coachNumber: number,
+  seatNumber: string,
+): Promise<string> {
   const [row] = await source.query(
     `SELECT ts.id AS "id" FROM trip_seat ts JOIN trip_coach tc ON tc.id = ts.trip_coach_id
      WHERE tc.coach_number = $1 AND ts.seat_number = $2`,
@@ -80,7 +91,9 @@ async function stopStationIds(tripId: string): Promise<string[]> {
 
 async function tripRow(
   tripId: string,
-): Promise<{ trainId: string; trainNumber: number; serviceDate: string } | undefined> {
+): Promise<
+  { trainId: string; trainNumber: number; serviceDate: string } | undefined
+> {
   const [row] = await source.query(
     `SELECT train_id AS "trainId", train_number AS "trainNumber", service_date::text AS "serviceDate"
      FROM inventory_trip WHERE id = $1`,
@@ -114,7 +127,9 @@ describe('SeatPlanRepository.apply', () => {
   it('creates every seat of every coach, and counts them by class', async () => {
     const payload = sixStopPayload();
     const plan = seatPlanFrom(payload);
-    const [firstClass, secondClass] = payload.coaches.map((coach) => coach.travelClass.id);
+    const [firstClass, secondClass] = payload.coaches.map(
+      (coach) => coach.travelClass.id,
+    );
 
     const outcome = await apply(plan);
 
@@ -168,7 +183,10 @@ describe('SeatPlanRepository.apply', () => {
       ...collidingSeats[collidingSeats.length - 1],
       id: collidingSeats[0].id,
     };
-    const planWhoseLastSeatCollides: SeatPlan = { ...plan, seats: collidingSeats };
+    const planWhoseLastSeatCollides: SeatPlan = {
+      ...plan,
+      seats: collidingSeats,
+    };
 
     await expect(apply(planWhoseLastSeatCollides)).rejects.toThrow();
 
@@ -204,12 +222,18 @@ describe('SeatPlanRepository.apply', () => {
   it('never reopens or rewrites a closed trip', async () => {
     const payload = sixStopPayload();
     const plan = seatPlanFrom(payload);
-    const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
+    const planWithoutCoachTwo = seatPlanFrom({
+      ...payload,
+      coaches: [payload.coaches[0]],
+    });
 
     await apply({ ...plan, timetableVersion: 1 });
     await close(plan.tripId);
 
-    const outcome = await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
+    const outcome = await apply({
+      ...planWithoutCoachTwo,
+      timetableVersion: 2,
+    });
 
     // The version guard, not just the status column, must stop the write: a
     // v2 apply that ran would bump the version and drop coach two.
@@ -223,7 +247,10 @@ describe('SeatPlanRepository.apply', () => {
   it('deletes a coach the new layout drops when nothing occupies it', async () => {
     const payload = sixStopPayload();
     const plan = seatPlanFrom(payload);
-    const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
+    const planWithoutCoachTwo = seatPlanFrom({
+      ...payload,
+      coaches: [payload.coaches[0]],
+    });
 
     await apply({ ...plan, timetableVersion: 1 });
     await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
@@ -235,13 +262,26 @@ describe('SeatPlanRepository.apply', () => {
   it('refuses to drop a coach holding an active occupation', async () => {
     const payload = sixStopPayload();
     const plan = seatPlanFrom(payload);
-    const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
+    const planWithoutCoachTwo = seatPlanFrom({
+      ...payload,
+      coaches: [payload.coaches[0]],
+    });
 
     await apply({ ...plan, timetableVersion: 1 });
     const seatInCoachTwo = await seatIdByCoachAndNumber(2, '1');
-    await occupySeat(source, seatInCoachTwo, plan.tripId, segmentOf(0, 2), 'held', new Date(Date.now() + 60 * 60_000));
+    await occupySeat(
+      source,
+      seatInCoachTwo,
+      plan.tripId,
+      segmentOf(0, 2),
+      'held',
+      new Date(Date.now() + 60 * 60_000),
+    );
 
-    const outcome = await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
+    const outcome = await apply({
+      ...planWithoutCoachTwo,
+      timetableVersion: 2,
+    });
 
     expect(outcome.kind).toBe('refused');
     if (outcome.kind === 'refused') {
@@ -255,7 +295,10 @@ describe('SeatPlanRepository.apply', () => {
     // released_at IS NOT NULL does not protect the seat.
     const payload = sixStopPayload();
     const plan = seatPlanFrom(payload);
-    const planWithoutCoachTwo = seatPlanFrom({ ...payload, coaches: [payload.coaches[0]] });
+    const planWithoutCoachTwo = seatPlanFrom({
+      ...payload,
+      coaches: [payload.coaches[0]],
+    });
 
     await apply({ ...plan, timetableVersion: 1 });
     const seatInCoachTwo = await seatIdByCoachAndNumber(2, '1');
@@ -269,7 +312,10 @@ describe('SeatPlanRepository.apply', () => {
     );
     await releaseSeat(source, occupationId);
 
-    const outcome = await apply({ ...planWithoutCoachTwo, timetableVersion: 2 });
+    const outcome = await apply({
+      ...planWithoutCoachTwo,
+      timetableVersion: 2,
+    });
 
     expect(outcome.kind).toBe('created');
     expect(await countRows('trip_seat')).toBe(10);
@@ -322,7 +368,14 @@ describe('SeatPlanRepository.apply', () => {
     await apply({ ...plan, timetableVersion: 1 });
 
     const seatId = await seatIdByCoachAndNumber(1, '1');
-    await occupySeat(source, seatId, plan.tripId, segmentOf(0, 2), 'held', new Date(Date.now() + 60 * 60_000));
+    await occupySeat(
+      source,
+      seatId,
+      plan.tripId,
+      segmentOf(0, 2),
+      'held',
+      new Date(Date.now() + 60 * 60_000),
+    );
 
     await close(plan.tripId);
 
@@ -353,7 +406,11 @@ describe('SeatPlanRepository.apply', () => {
     // The unit test proves the plan carries adjacency; this proves the system
     // actually stores it. Same row and same side is the adjacency rule (BR-25).
     const plan = seatPlanFrom(
-      payloadWithRow({ rowNumber: 3, leftSeats: ['A', 'B'], rightSeats: ['C'] }),
+      payloadWithRow({
+        rowNumber: 3,
+        leftSeats: ['A', 'B'],
+        rightSeats: ['C'],
+      }),
     );
 
     await apply(plan);
@@ -425,7 +482,13 @@ describe('SeatPlanRepository.apply', () => {
     await apply({ ...plan, timetableVersion: 1 });
 
     const occupiedSeat = await seatIdByCoachAndNumber(1, '1');
-    await occupySeat(source, occupiedSeat, plan.tripId, segmentOf(0, 2), 'sold');
+    await occupySeat(
+      source,
+      occupiedSeat,
+      plan.tripId,
+      segmentOf(0, 2),
+      'sold',
+    );
 
     const insertedStop = {
       stationId: randomUUID(),

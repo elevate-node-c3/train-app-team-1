@@ -25,7 +25,7 @@ import type {
 import {
   AvailabilityPublisher,
   WHOLE_TRIP,
-} from '../seats/availability-publisher.service.js';
+} from '../seats/services/availability-publisher.service.js';
 import {
   buildTripPublicationRefused,
   buildTripSeatsCreated,
@@ -33,8 +33,8 @@ import {
 import { verdictFor } from '../seats/publication-validation.js';
 import { seatPlanFrom } from '../seats/seat-plan.js';
 import type { SeatPlan } from '../seats/seat-plan.js';
-import { SeatPlanRepository } from '../seats/seat-plan.repository.js';
-import type { ApplyOutcome } from '../seats/seat-plan.repository.js';
+import { SeatPlanRepository } from '../seats/repositories/seat-plan.repository.js';
+import type { ApplyOutcome } from '../seats/repositories/seat-plan.repository.js';
 
 /** Turns `catalog.trip.published` into committed seats; closes withdrawn trips. */
 @Injectable()

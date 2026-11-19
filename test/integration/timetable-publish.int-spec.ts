@@ -14,19 +14,19 @@ import { DataSourceInitializer } from '../../libs/common/src/persistence/data-so
 import { TypeOrmUnitOfWork } from '../../libs/common/src/persistence/typeorm-unit-of-work.js';
 import { TypeOrmOutboxRepository } from '../../libs/messaging/src/outbox/typeorm-outbox.repository.js';
 
-import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/operations-audit.repository.js';
-import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/operations-audit.service.js';
-import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/operations-request.repository.js';
-import { TimetablePublishRepository } from '../../apps/catalog/src/modules/operations/timetable-publish.repository.js';
-import { TimetablePublishService } from '../../apps/catalog/src/modules/operations/timetable-publish.service.js';
-import { TimetableVersionService } from '../../apps/catalog/src/modules/operations/timetable-version.service.js';
+import { OperationsAuditRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-audit.repository.js';
+import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/services/operations-audit.service.js';
+import { OperationsRequestRepository } from '../../apps/catalog/src/modules/operations/repositories/operations-request.repository.js';
+import { TimetablePublishRepository } from '../../apps/catalog/src/modules/operations/repositories/timetable-publish.repository.js';
+import { TimetablePublishService } from '../../apps/catalog/src/modules/operations/services/timetable-publish.service.js';
+import { TimetableVersionService } from '../../apps/catalog/src/modules/operations/services/timetable-version.service.js';
 import { TimetableEntity } from '../../apps/catalog/src/modules/timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../../apps/catalog/src/modules/timetables/entities/timetable-stop.entity.js';
 import { TimetablesService } from '../../apps/catalog/src/modules/timetables/timetables.service.js';
 import { TrainCoachEntity } from '../../apps/catalog/src/modules/trains/entities/train-coach.entity.js';
 import { FareEntity } from '../../apps/catalog/src/modules/fares/entities/fare.entity.js';
 import { DatedTripEntity } from '../../apps/catalog/src/modules/trips/entities/dated-trip.entity.js';
-import { TripsService } from '../../apps/catalog/src/modules/trips/trips.service.js';
+import { TripsService } from '../../apps/catalog/src/modules/trips/services/trips.service.js';
 
 import {
   catalogDataSource,

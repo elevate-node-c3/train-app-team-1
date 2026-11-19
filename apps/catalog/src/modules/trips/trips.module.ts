@@ -11,19 +11,19 @@ import { TimetableStopEntity } from '../timetables/entities/timetable-stop.entit
 import { TrainEntity } from '../trains/entities/train.entity.js';
 import { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
 
-import { BookingQuoteService } from './booking-quote.service.js';
-import { CatalogReferenceRepository } from './catalog-reference.repository.js';
+import { BookingQuoteService } from './services/booking-quote.service.js';
+import { CatalogReferenceRepository } from './repositories/catalog-reference.repository.js';
 import { DatedTripEntity } from './entities/dated-trip.entity.js';
 import { TripStopEntity } from './entities/trip-stop.entity.js';
-import { SeatAvailabilityService } from './seat-availability.service.js';
-import { TripDayService } from './trip-day.service.js';
-import { TripReturnSearchService } from './trip-return-search.service.js';
-import { TripSearchRepository } from './trip-search.repository.js';
-import { TripSearchService } from './trip-search.service.js';
-import { TripStopsRepository } from './trip-stops.repository.js';
-import { TripStopsService } from './trip-stops.service.js';
+import { SeatAvailabilityService } from './services/seat-availability.service.js';
+import { TripDayService } from './services/trip-day.service.js';
+import { TripReturnSearchService } from './services/trip-return-search.service.js';
+import { TripSearchRepository } from './repositories/trip-search.repository.js';
+import { TripSearchService } from './services/trip-search.service.js';
+import { TripStopsRepository } from './repositories/trip-stops.repository.js';
+import { TripStopsService } from './services/trip-stops.service.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
-import { TripsService } from './trips.service.js';
+import { TripsService } from './services/trips.service.js';
 
 @Module({
   imports: [

@@ -1,7 +1,7 @@
 import { SEARCH_FIXTURE_IDS as IDS } from '../../apps/catalog/src/database/seeds/search-fixture.js';
 import { seedSearchFixture } from '../../apps/catalog/src/database/seeds/search-fixture.seed.js';
-import { TripSearchRepository } from '../../apps/catalog/src/modules/trips/trip-search.repository.js';
-import { TripStopsRepository } from '../../apps/catalog/src/modules/trips/trip-stops.repository.js';
+import { TripSearchRepository } from '../../apps/catalog/src/modules/trips/repositories/trip-search.repository.js';
+import { TripStopsRepository } from '../../apps/catalog/src/modules/trips/repositories/trip-stops.repository.js';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 

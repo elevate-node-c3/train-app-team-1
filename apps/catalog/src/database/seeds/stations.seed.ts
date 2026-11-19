@@ -18,7 +18,7 @@ import { withBackgroundJobsDisabled } from '../../config/trip-generation-setting
 import { CityEntity } from '../../modules/stations/entities/city.entity.js';
 import { GovernorateEntity } from '../../modules/stations/entities/governorate.entity.js';
 import { StationEntity } from '../../modules/stations/entities/station.entity.js';
-import { StationsService } from '../../modules/stations/stations.service.js';
+import { StationsService } from '../../modules/stations/services/stations.service.js';
 import { buildStationChanged } from '../../modules/stations/station-events.factory.js';
 import { governorates } from './stations.js';
 

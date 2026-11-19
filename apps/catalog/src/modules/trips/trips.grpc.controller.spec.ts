@@ -12,9 +12,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CatalogSearchError } from './catalog-search-error.js';
 import { TripsGrpcController } from './trips.grpc.controller.js';
-import type { TripReturnSearchService } from './trip-return-search.service.js';
-import type { TripSearchService } from './trip-search.service.js';
-import type { TripStopsService } from './trip-stops.service.js';
+import type { TripReturnSearchService } from './services/trip-return-search.service.js';
+import type { TripSearchService } from './services/trip-search.service.js';
+import type { TripStopsService } from './services/trip-stops.service.js';
 
 const EMPTY_RESPONSE = {
   dateStrip: [],

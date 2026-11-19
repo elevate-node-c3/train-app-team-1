@@ -15,8 +15,8 @@ import {
   sixStopPayload,
   withTwoCoachesNumbered,
 } from '../seats/seat-plan.fixture.js';
-import { WHOLE_TRIP } from '../seats/availability-publisher.service.js';
-import type { ApplyOutcome } from '../seats/seat-plan.repository.js';
+import { WHOLE_TRIP } from '../seats/services/availability-publisher.service.js';
+import type { ApplyOutcome } from '../seats/repositories/seat-plan.repository.js';
 import { TripLifecycleConsumer } from './trip-lifecycle.consumer.js';
 
 const tanta = '20000000-0000-4000-8000-000000000003';
@@ -43,7 +43,10 @@ describe('TripLifecycleConsumer', () => {
   // Opaque in production; a plain marker is all the mock needs to compare identity.
   const ctx = { driver: 'typeorm' } as TransactionContext;
 
-  let repository: { apply: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
+  let repository: {
+    apply: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
   let outbox: { append: ReturnType<typeof vi.fn> };
   let unitOfWork: { withTransaction: ReturnType<typeof vi.fn> };
   let availability: { publishChange: ReturnType<typeof vi.fn> };
@@ -182,9 +185,11 @@ describe('TripLifecycleConsumer', () => {
 
   it('warns about a capacity mismatch without refusing', async () => {
     const warnings: string[] = [];
-    vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(
+      (message: unknown) => {
+        warnings.push(String(message));
+      },
+    );
 
     repository.apply.mockResolvedValue({
       kind: 'created',
@@ -217,8 +222,12 @@ describe('TripLifecycleConsumer', () => {
   it('lets an unknown-trip withdrawal fail transiently so it retries', async () => {
     // A withdrawal can arrive before a publication that is retrying; swallowing
     // the miss would leave the later trip on sale forever.
-    repository.close.mockRejectedValue(new Error(`Cannot close unknown trip ${tripId}`));
+    repository.close.mockRejectedValue(
+      new Error(`Cannot close unknown trip ${tripId}`),
+    );
 
-    await expect(consumer.handle(withdrawnEnvelope, 1)).rejects.toThrow(/unknown trip/i);
+    await expect(consumer.handle(withdrawnEnvelope, 1)).rejects.toThrow(
+      /unknown trip/i,
+    );
   });
 });

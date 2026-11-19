@@ -16,10 +16,10 @@ import {
   type TripStopsResponse,
 } from '@app/contracts';
 
-import { BookingQuoteService } from './booking-quote.service.js';
-import { TripReturnSearchService } from './trip-return-search.service.js';
-import { TripSearchService } from './trip-search.service.js';
-import { TripStopsService } from './trip-stops.service.js';
+import { BookingQuoteService } from './services/booking-quote.service.js';
+import { TripReturnSearchService } from './services/trip-return-search.service.js';
+import { TripSearchService } from './services/trip-search.service.js';
+import { TripStopsService } from './services/trip-stops.service.js';
 import {
   GetTripStopsRequestDto,
   QuoteBookingRequestDto,

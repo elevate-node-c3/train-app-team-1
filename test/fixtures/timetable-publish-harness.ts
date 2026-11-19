@@ -19,9 +19,9 @@ import type { DatedTripEntity } from '../../apps/catalog/src/modules/trips/entit
 import type { TripStopEntity } from '../../apps/catalog/src/modules/trips/entities/trip-stop.entity.js';
 import type { OperationsAuditEntity } from '../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
 import type { StoredOperationsRequest } from '../../apps/catalog/src/modules/operations/operations-request.types.js';
-import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/operations-audit.service.js';
-import { TimetablePublishService } from '../../apps/catalog/src/modules/operations/timetable-publish.service.js';
-import { TripsService } from '../../apps/catalog/src/modules/trips/trips.service.js';
+import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/services/operations-audit.service.js';
+import { TimetablePublishService } from '../../apps/catalog/src/modules/operations/services/timetable-publish.service.js';
+import { TripsService } from '../../apps/catalog/src/modules/trips/services/trips.service.js';
 import {
   buildTripPublished,
   buildTripWithdrawn,
