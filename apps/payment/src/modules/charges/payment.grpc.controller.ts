@@ -1,7 +1,7 @@
 import { Controller } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { UseInterceptors } from '@nestjs/common';
-import { GrpcCorrelationInterceptor } from '@app/common';
+import { GrpcCorrelationInterceptor, toRpcException } from '@app/common';
 import {
   PAYMENT_SERVICE_NAME,
   type CancelChargeRequest,
@@ -17,12 +17,22 @@ export class PaymentGrpcController {
   constructor(private readonly payment: PaymentDoubleService) {}
 
   @GrpcMethod(PAYMENT_SERVICE_NAME, 'StartCharge')
-  startCharge(request: StartChargeRequest): Promise<StartChargeResponse> {
-    return this.payment.start(request);
+  async startCharge(request: StartChargeRequest): Promise<StartChargeResponse> {
+    try {
+      return await this.payment.start(request);
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
   }
 
   @GrpcMethod(PAYMENT_SERVICE_NAME, 'CancelCharge')
-  cancelCharge(request: CancelChargeRequest): Promise<CancelChargeResponse> {
-    return this.payment.cancel(request);
+  async cancelCharge(
+    request: CancelChargeRequest,
+  ): Promise<CancelChargeResponse> {
+    try {
+      return await this.payment.cancel(request);
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
   }
 }

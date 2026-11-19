@@ -1,11 +1,13 @@
 import { Controller, Logger, UseGuards, UseInterceptors } from '@nestjs/common';
-import { GrpcMethod, RpcException } from '@nestjs/microservices';
-import * as grpc from '@grpc/grpc-js';
+import { GrpcMethod, type RpcException } from '@nestjs/microservices';
 import { ClsService } from 'nestjs-cls';
-import { CORRELATION_ID_KEY, GrpcCorrelationInterceptor } from '@app/common';
+import {
+  CORRELATION_ID_KEY,
+  GrpcCorrelationInterceptor,
+  toRpcException as toSharedRpcException,
+} from '@app/common';
 import {
   INVENTORY_SERVICE_NAME,
-  ErrorCode,
   type CreateHoldRequest,
   type CreateHoldResponse,
   type ExtendHoldRequest,
@@ -19,59 +21,9 @@ import { HoldCoreError } from './hold-core.errors.js';
 import { HoldCoreService } from './hold-core.service.js';
 import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
 
-export function toRpcException(error: unknown): unknown {
-  if (error instanceof RpcException) return error;
-
-  if (error instanceof HoldCoreError) {
-    return new RpcException({
-      code: grpcStatusFor(error.code),
-      details: JSON.stringify({
-        code: error.code,
-        ...(error.availableCount !== undefined
-          ? { availableCount: error.availableCount }
-          : {}),
-        ...(error.passengerRef !== undefined
-          ? { passengerRef: error.passengerRef }
-          : {}),
-      }),
-      message: error.message,
-    });
-  }
-
-  // SQL errors can contain identity values in their message and detail fields.
-  return new RpcException({
-    code: grpc.status.INTERNAL,
-    details: JSON.stringify({ code: ErrorCode.INTERNAL_SERVER_ERROR }),
-    message: 'The hold operation could not be completed.',
-  });
-}
-
-function grpcStatusFor(code: ErrorCode): number {
-  switch (code) {
-    case ErrorCode.HOLD_NOT_FOUND:
-    case ErrorCode.RESOURCE_NOT_FOUND:
-      return grpc.status.NOT_FOUND;
-    case ErrorCode.SEAT_TAKEN:
-    case ErrorCode.SEAT_ALREADY_TAKEN:
-    case ErrorCode.PASSENGER_OVERLAP:
-    case ErrorCode.BOOKING_KEY_CONFLICT:
-    case ErrorCode.CONFLICT:
-      return grpc.status.ABORTED;
-    case ErrorCode.INSUFFICIENT_SEATS:
-    case ErrorCode.SALES_CLOSED:
-    case ErrorCode.HOLD_TERMINAL:
-    case ErrorCode.EXTENSION_NOT_ALLOWED:
-      return grpc.status.FAILED_PRECONDITION;
-    case ErrorCode.VALIDATION_ERROR:
-    case ErrorCode.BAD_REQUEST:
-    case ErrorCode.INVALID_PAYLOAD:
-      return grpc.status.INVALID_ARGUMENT;
-    case ErrorCode.FORBIDDEN:
-    case ErrorCode.UNAUTHORIZED:
-      return grpc.status.PERMISSION_DENIED;
-    default:
-      return grpc.status.INTERNAL;
-  }
+/** HoldCoreError carries the code and its refs; everything else is masked. */
+export function toRpcException(error: unknown): RpcException {
+  return toSharedRpcException(error);
 }
 
 @Controller()

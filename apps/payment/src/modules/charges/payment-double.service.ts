@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { status } from '@grpc/grpc-js';
 import { DataSource } from 'typeorm';
 import { v4 as uuid } from 'uuid';
 import { paymentDoubleSucceededBookingsFromEnv } from '../../config/payment-double.settings.js';
-import type {
-  CancelChargeRequest,
-  CancelChargeResponse,
-  StartChargeRequest,
-  StartChargeResponse,
+import {
+  ErrorCode,
+  type CancelChargeRequest,
+  type CancelChargeResponse,
+  type StartChargeRequest,
+  type StartChargeResponse,
 } from '@app/contracts';
+import { PaymentError } from './payment-error.js';
 
 interface ChargeRow {
   id: string;
@@ -36,10 +36,7 @@ export class PaymentDoubleService {
       !Number.isInteger(request.amountPiastres) ||
       request.amountPiastres < 1
     ) {
-      throw new RpcException({
-        code: status.INVALID_ARGUMENT,
-        message: 'Invalid charge request',
-      });
+      throw new PaymentError(ErrorCode.INVALID_PAYLOAD);
     }
 
     await this.dataSource.query(
@@ -66,10 +63,7 @@ export class PaymentDoubleService {
       charge.idempotency_key !== request.idempotencyKey ||
       Number(charge.amount_piastres) !== request.amountPiastres
     ) {
-      throw new RpcException({
-        code: status.ALREADY_EXISTS,
-        message: 'Payment idempotency key conflicts with an existing charge',
-      });
+      throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
     }
 
     if (this.succeededBookings.has(request.bookingReference)) {
@@ -107,9 +101,6 @@ export class PaymentDoubleService {
     if (existing[0]?.status === 'cancelled') {
       return { status: 'CANCELLED' };
     }
-    throw new RpcException({
-      code: status.NOT_FOUND,
-      message: 'Charge not found',
-    });
+    throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
   }
 }

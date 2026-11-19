@@ -9,6 +9,8 @@ import {
   type HoldSnapshot,
 } from '@app/contracts';
 
+import { decodeRefusal, type ServiceRefusal } from '@app/common';
+
 import { HoldCoreError } from './hold-core.errors.js';
 import { SeatHoldGrpcController } from './seat-hold.grpc.controller.js';
 
@@ -74,15 +76,27 @@ function buildController(correlationId: string | undefined = 'corr-1') {
   };
 }
 
+/**
+ * The envelope, not a literal string: the status, the business code and the
+ * field refs. There is no prose to assert -- the code is the message, and the
+ * gateway resolves the Arabic and English text from the caller's language.
+ */
 async function expectRpcError(
   run: () => Promise<unknown>,
-  expected: { code: number; details: string; message: string },
+  expected: { code: number; details: ServiceRefusal },
 ): Promise<void> {
   try {
     await run();
   } catch (error) {
     expect(error).toBeInstanceOf(RpcException);
-    expect((error as RpcException).getError()).toEqual(expected);
+    const payload = (error as RpcException).getError() as {
+      code: number;
+      message: string;
+      details: string;
+    };
+    expect(payload.code).toBe(expected.code);
+    expect(payload.message).toBe(expected.details.code);
+    expect(decodeRefusal(error)).toEqual(expected.details);
     return;
   }
 
@@ -97,10 +111,17 @@ describe('SeatHoldGrpcController hold RPCs', () => {
     );
     await expectRpcError(() => controller.createHold(request), {
       code: grpc.status.INTERNAL,
-      details: JSON.stringify({ code: ErrorCode.INTERNAL_SERVER_ERROR }),
-      message: 'The hold operation could not be completed.',
+      details: { code: ErrorCode.INTERNAL_SERVER_ERROR, details: [] },
     });
+
+    const thrown = await controller
+      .createHold(request)
+      .catch((error: unknown) => error);
+    const wire = JSON.stringify((thrown as RpcException).getError());
+    expect(wire).not.toContain('private-token');
+    expect(wire).not.toContain('29001018888888');
   });
+
   it('delegates CreateHold with the interceptor correlation id', async () => {
     const { controller, core } = buildController('corr-abc');
     core.createHold.mockResolvedValue(snapshot);
@@ -138,8 +159,17 @@ describe('SeatHoldGrpcController hold RPCs', () => {
 
     await expectRpcError(() => controller.createHold(request), {
       code: grpc.status.ABORTED,
-      details: JSON.stringify({ code: ErrorCode.SEAT_TAKEN }),
-      message: 'A seat was just taken.',
+      details: {
+        code: ErrorCode.SEAT_TAKEN,
+        details: [
+          {
+            field: 'legs',
+            rejectedValue: undefined,
+            issueKey: 'ISSUE_SEATS_JUST_TAKEN',
+            actionKey: 'ACTION_PICK_ANOTHER_TRAIN_OR_CLASS',
+          },
+        ],
+      },
     });
   });
 
@@ -156,11 +186,17 @@ describe('SeatHoldGrpcController hold RPCs', () => {
 
     await expectRpcError(() => controller.createHold(request), {
       code: grpc.status.ABORTED,
-      details: JSON.stringify({
+      details: {
         code: ErrorCode.PASSENGER_OVERLAP,
-        passengerRef: 'p-1',
-      }),
-      message: 'A passenger already has an overlapping claim.',
+        details: [
+          {
+            field: 'passengerRefs',
+            rejectedValue: { passengerRef: 'p-1' },
+            issueKey: 'ISSUE_PASSENGER_ALREADY_BOOKED',
+            actionKey: 'ACTION_REMOVE_PASSENGER_OR_PICK_ANOTHER_TRAIN',
+          },
+        ],
+      },
     });
   });
 
@@ -172,8 +208,17 @@ describe('SeatHoldGrpcController hold RPCs', () => {
 
     await expectRpcError(() => controller.createHold(request), {
       code: grpc.status.FAILED_PRECONDITION,
-      details: JSON.stringify({ code: ErrorCode.SALES_CLOSED }),
-      message: 'Sales are closed.',
+      details: {
+        code: ErrorCode.SALES_CLOSED,
+        details: [
+          {
+            field: 'legs',
+            rejectedValue: undefined,
+            issueKey: 'ISSUE_SALES_CLOSED_FOR_TRAIN',
+            actionKey: 'ACTION_PICK_ANOTHER_TRAIN',
+          },
+        ],
+      },
     });
   });
 
@@ -191,8 +236,7 @@ describe('SeatHoldGrpcController hold RPCs', () => {
         }),
       {
         code: grpc.status.NOT_FOUND,
-        details: JSON.stringify({ code: ErrorCode.HOLD_NOT_FOUND }),
-        message: 'No hold.',
+        details: { code: ErrorCode.HOLD_NOT_FOUND, details: [] },
       },
     );
   });
@@ -205,8 +249,7 @@ describe('SeatHoldGrpcController hold RPCs', () => {
 
     await expectRpcError(() => controller.createHold(request), {
       code: grpc.status.INVALID_ARGUMENT,
-      details: JSON.stringify({ code: ErrorCode.VALIDATION_ERROR }),
-      message: 'Bad request.',
+      details: { code: ErrorCode.VALIDATION_ERROR, details: [] },
     });
   });
 });

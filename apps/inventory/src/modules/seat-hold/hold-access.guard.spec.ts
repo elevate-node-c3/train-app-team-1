@@ -92,6 +92,8 @@ describe('private Inventory hold admission', () => {
       expect((error as RpcException).getError()).toEqual({
         code: status.UNAVAILABLE,
         details: JSON.stringify({ code: 'SERVICE_UNAVAILABLE' }),
+        // The code is the message; the edge resolves the caller's language.
+        message: 'SERVICE_UNAVAILABLE',
       });
       expect(JSON.stringify(error)).not.toContain('private');
       expect(JSON.stringify(error)).not.toContain('29801011234567');

@@ -4,14 +4,14 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { Metadata, status } from '@grpc/grpc-js';
+import { Metadata } from '@grpc/grpc-js';
 import { ErrorCode } from '@app/contracts';
 import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
 import {
   DataSourceInitializer,
   MigrationRunnerService,
   SchemaReadinessGate,
+  refusalException,
 } from '@app/common';
 
 @Injectable()
@@ -26,10 +26,7 @@ export class HoldServiceGuard implements CanActivate {
         process.env.BOOKING_INVENTORY_SERVICE_KEY,
       )
     ) {
-      throw new RpcException({
-        code: status.PERMISSION_DENIED,
-        details: JSON.stringify({ code: ErrorCode.FORBIDDEN }),
-      });
+      throw refusalException({ code: ErrorCode.FORBIDDEN, details: [] });
     }
     return true;
   }
@@ -47,10 +44,7 @@ export class HoldCreationGuard implements CanActivate {
 
   async canActivate(): Promise<boolean> {
     const unavailable = () =>
-      new RpcException({
-        code: status.UNAVAILABLE,
-        details: JSON.stringify({ code: ErrorCode.SERVICE_UNAVAILABLE }),
-      });
+      refusalException({ code: ErrorCode.SERVICE_UNAVAILABLE, details: [] });
     // Rollback disables new ownership, not release, expiry, or durable publication.
     if (process.env.HOLD_CREATION_ENABLED !== 'true') throw unavailable();
     await this.schema.whenReady;
