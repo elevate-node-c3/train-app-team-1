@@ -13,14 +13,19 @@ import {
   GrpcCorrelationInterceptor,
   toRpcException as toSharedRpcException,
 } from '@app/common';
-import { INVENTORY_SERVICE_NAME } from '@app/contracts';
+import {
+  INVENTORY_SERVICE_NAME,
+  type CreateHoldResponse,
+  type ExtendHoldResponse,
+  type GetHoldResponse,
+  type ReleaseHoldResponse,
+} from '@app/contracts';
 import {
   CreateHoldRequestDto,
   ExtendHoldRequestDto,
   GetHoldRequestDto,
   ReleaseHoldRequestDto,
 } from './dto/hold-request.dto.js';
-import { HoldSnapshotResponseDto } from './dto/hold-response.dto.js';
 import { HoldCoreError } from './hold-core.errors.js';
 import { HoldCoreService } from './hold-core.service.js';
 import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
@@ -45,12 +50,11 @@ export class SeatHoldGrpcController {
 
   @GrpcMethod(INVENTORY_SERVICE_NAME, 'CreateHold')
   @UseGuards(HoldCreationGuard)
-  async createHold(
-    request: CreateHoldRequestDto,
-  ): Promise<HoldSnapshotResponseDto> {
+  async createHold(request: CreateHoldRequestDto): Promise<CreateHoldResponse> {
     try {
-      return HoldSnapshotResponseDto.from(
-        await this.holdCoreService.createHold(request, this.correlationId()),
+      return await this.holdCoreService.createHold(
+        request,
+        this.correlationId(),
       );
     } catch (error) {
       this.logger.warn(`CreateHold error: ${safeErrorName(error)}`);
@@ -59,11 +63,9 @@ export class SeatHoldGrpcController {
   }
 
   @GrpcMethod(INVENTORY_SERVICE_NAME, 'GetHold')
-  async getHold(request: GetHoldRequestDto): Promise<HoldSnapshotResponseDto> {
+  async getHold(request: GetHoldRequestDto): Promise<GetHoldResponse> {
     try {
-      return HoldSnapshotResponseDto.from(
-        await this.holdCoreService.getHold(request, this.correlationId()),
-      );
+      return await this.holdCoreService.getHold(request, this.correlationId());
     } catch (error) {
       this.logger.warn(`GetHold error: ${safeErrorName(error)}`);
       throw toRpcException(error);
@@ -73,10 +75,11 @@ export class SeatHoldGrpcController {
   @GrpcMethod(INVENTORY_SERVICE_NAME, 'ReleaseHold')
   async releaseHold(
     request: ReleaseHoldRequestDto,
-  ): Promise<HoldSnapshotResponseDto> {
+  ): Promise<ReleaseHoldResponse> {
     try {
-      return HoldSnapshotResponseDto.from(
-        await this.holdCoreService.releaseHold(request, this.correlationId()),
+      return await this.holdCoreService.releaseHold(
+        request,
+        this.correlationId(),
       );
     } catch (error) {
       this.logger.warn(`ReleaseHold error: ${safeErrorName(error)}`);
@@ -85,12 +88,11 @@ export class SeatHoldGrpcController {
   }
 
   @GrpcMethod(INVENTORY_SERVICE_NAME, 'ExtendHold')
-  async extendHold(
-    request: ExtendHoldRequestDto,
-  ): Promise<HoldSnapshotResponseDto> {
+  async extendHold(request: ExtendHoldRequestDto): Promise<ExtendHoldResponse> {
     try {
-      return HoldSnapshotResponseDto.from(
-        await this.holdCoreService.extendHold(request, this.correlationId()),
+      return await this.holdCoreService.extendHold(
+        request,
+        this.correlationId(),
       );
     } catch (error) {
       this.logger.warn(`ExtendHold error: ${safeErrorName(error)}`);
