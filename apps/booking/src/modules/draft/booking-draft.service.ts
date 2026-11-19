@@ -109,6 +109,23 @@ export class BookingDraftService implements OnModuleInit {
     if (draft.releaseRequested) return this.releaseHold(userId, id, language);
     if (draft.holdFailure) throw this.failureFor(draft.holdFailure, draft);
 
+    return this.resolveAndHold(draft, intent, language);
+  }
+
+  /**
+   * Resolves the passengers and creates the hold for an intent already
+   * committed under this booking key. createDraft calls it straight after
+   * writing the intent; the checkout flow calls it for the row it wrote
+   * itself, so the hold has exactly one implementation.
+   */
+  async resolveAndHold(
+    committed: BookingDraftEntity,
+    intent: BookingHoldIntent,
+    language?: string,
+  ): Promise<BookingDraftResponse> {
+    const { id, userId } = committed;
+    let draft = committed;
+
     if (!draft.passengerSnapshot) {
       try {
         const resolved = await this.rpc<
