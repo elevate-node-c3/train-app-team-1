@@ -7,6 +7,7 @@ traveller reads, and what each layer is allowed to do to it on the way.
 
 - [The one rule](#the-one-rule)
 - [Where the text comes from](#where-the-text-comes-from)
+  - [Every service has the filter, but only one uses it](#every-service-has-the-filter-but-only-one-uses-it)
 - [The layers](#the-layers)
 - [What crosses the transport](#what-crosses-the-transport)
 - [Outbound: a thrown error becomes a status](#outbound-a-thrown-error-becomes-a-status)
@@ -57,6 +58,23 @@ it are filled from the ref's `params` — so the same refusal reads correctly in
 either language, and a missing header defaults to Arabic. The line-level
 detail, and what follows from the resolution living only here, is under
 [Localization](#localization).
+
+### Every service has the filter, but only one uses it
+
+[`setupApp`](../libs/common/src/setup.ts) registers `HttpExceptionFilter`, and
+every service calls `setupApp`. So all seven services carry it.
+
+Only the gateway answers callers over HTTP, so only the gateway's filter runs
+on a real request. Between services we use gRPC, and the filter is not on that
+path. The other services only serve health probes.
+
+This is also why text cannot be made earlier: `Accept-Language` is not passed
+between services, so only the gateway knows the language. A service that
+translated mid-call would always answer in Arabic.
+
+If an internal call ever becomes HTTP, we will move the filter to the gateway only
+instead of `setupApp`, and let the inner service answer with the plain refusal
+— `{ code, details, retryAfterSeconds }`, no text — like it does over gRPC.
 
 ## The layers
 
