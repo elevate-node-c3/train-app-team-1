@@ -19,8 +19,8 @@ import { WHOLE_TRIP } from '../seats/availability-publisher.service.js';
 import type { ApplyOutcome } from '../seats/seat-plan.repository.js';
 import { TripLifecycleConsumer } from './trip-lifecycle.consumer.js';
 
-const tanta = '20000000-0000-0000-0000-000000000003';
-const firstClass = '50000000-0000-0000-0000-000000000002';
+const tanta = '20000000-0000-4000-8000-000000000003';
+const firstClass = '50000000-0000-4000-8000-000000000002';
 const tripId = sixStopPayload().tripId;
 
 function envelopeFor<T>(
