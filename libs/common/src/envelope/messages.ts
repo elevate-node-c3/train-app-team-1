@@ -1,6 +1,4 @@
-import { ErrorCode } from '@app/contracts';
-
-export type SupportedLanguage = 'ar' | 'en';
+import { ErrorCode, type SupportedLanguage } from '@app/contracts';
 
 /**
  * Date refusal with lastBookableDate, not SearchEmptyReason: the request is

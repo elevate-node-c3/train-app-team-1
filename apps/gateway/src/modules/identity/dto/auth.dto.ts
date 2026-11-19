@@ -8,7 +8,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import type { EventLanguage } from '@app/contracts';
+import type { SupportedLanguage } from '@app/contracts';
 
 const CODE_PATTERN = /^\d{6}$/;
 
@@ -23,7 +23,7 @@ export class SignUpDto {
 
   @IsOptional()
   @IsIn(['ar', 'en'])
-  language?: EventLanguage;
+  language?: SupportedLanguage;
 }
 
 export class VerifyEmailDto {

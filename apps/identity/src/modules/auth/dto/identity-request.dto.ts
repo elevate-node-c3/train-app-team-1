@@ -11,7 +11,7 @@ import {
 } from 'class-validator';
 import type {
   CompleteProfileRequestDto,
-  EventLanguage,
+  SupportedLanguage,
   ForgotPasswordRequestDto,
   RefreshTokenRequestDto,
   ResendVerificationRequestDto,
@@ -49,16 +49,16 @@ const MAX_EMAIL_LENGTH = 254;
  * preference. The controller turns '' into absent, which is what the services
  * mean by it -- languageOf falls back to Arabic either way.
  */
-const LANGUAGES: readonly (EventLanguage | '')[] = ['ar', 'en', ''];
+const LANGUAGES: readonly (SupportedLanguage | '')[] = ['ar', 'en', ''];
 
 class LanguagePreference {
   @IsIn(LANGUAGES)
   @IsOptional()
-  language?: EventLanguage | '';
+  language?: SupportedLanguage | '';
 }
 
 // Omit language: the DTO follows the proto, which allows '' for no preference,
-// while the contract interface narrows it to a resolved EventLanguage.
+// while the contract interface narrows it to a resolved SupportedLanguage.
 export class SignUpRequestBodyDto
   extends LanguagePreference
   implements Omit<SignUpRequestDto, 'language'>
@@ -89,9 +89,7 @@ export class VerifyEmailRequestBodyDto implements VerifyEmailRequestDto {
   deviceId?: string;
 }
 
-export class ResendVerificationRequestBodyDto
-  implements ResendVerificationRequestDto
-{
+export class ResendVerificationRequestBodyDto implements ResendVerificationRequestDto {
   @IsEmail()
   @MaxLength(MAX_EMAIL_LENGTH)
   email!: string;
@@ -155,9 +153,7 @@ export class ResetPasswordRequestBodyDto implements ResetPasswordRequestDto {
 }
 
 /** Every field belongs to profile-validation.ts, which names each refusal. */
-export class CompleteProfileRequestBodyDto
-  implements CompleteProfileRequestDto
-{
+export class CompleteProfileRequestBodyDto implements CompleteProfileRequestDto {
   @IsString()
   fullName!: string;
 
@@ -210,9 +206,7 @@ export class DeletePassengerRequestBodyDto {
  * Booking's private call. The refs and trip ids reach uuid columns, and a
  * malformed one would surface as a masked INTERNAL rather than an answer.
  */
-export class ResolveHoldPassengersRequestBodyDto
-  implements ResolveHoldPassengersRequest
-{
+export class ResolveHoldPassengersRequestBodyDto implements ResolveHoldPassengersRequest {
   @IsUUID()
   ownerId!: string;
 

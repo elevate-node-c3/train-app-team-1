@@ -1,4 +1,4 @@
-import type { EventEnvelope, EventLanguage } from './event-envelope.js';
+import type { EventEnvelope, SupportedLanguage } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
 
 /** Keep reset and verification codes separate so one cannot be used for the other. */
@@ -19,7 +19,7 @@ export interface VerificationCodeIssuedPayloadV1 {
   code: string;
   purpose: VerificationCodePurpose;
   /** Stored account language, not an HTTP header. */
-  language: EventLanguage;
+  language: SupportedLanguage;
   /** UTC issuance time in identity's transaction; delivery timing starts here. */
   issuedAt: string;
   /** UTC expiry; the consumer must not send expired codes. */

@@ -2,7 +2,7 @@ import {
   VERIFICATION_CODE_ISSUED_PAYLOAD_KEYS,
   VERIFICATION_CODE_PURPOSES,
   type EventEnvelope,
-  type EventLanguage,
+  type SupportedLanguage,
   type VerificationCodeIssuedPayloadV1,
   type VerificationCodePurpose,
 } from '@app/contracts';
@@ -56,7 +56,7 @@ export function parseVerificationCodeIssuedPayload(
   }
 
   // Unknown languages fall back to Arabic instead of blocking delivery.
-  const language: EventLanguage = record.language === 'en' ? 'en' : 'ar';
+  const language: SupportedLanguage = record.language === 'en' ? 'en' : 'ar';
 
   const issuedAt = instant(record, 'issuedAt');
   const expiresAt = instant(record, 'expiresAt');

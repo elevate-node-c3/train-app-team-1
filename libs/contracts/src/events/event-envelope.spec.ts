@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { SupportedLanguage } from '@app/common';
 import {
   ENVELOPE_REQUIRED_KEYS,
   isEventEnvelope,
   type EventEnvelope,
-  type EventLanguage,
+  type SupportedLanguage,
 } from '@app/contracts';
 
 function envelope(): EventEnvelope {
@@ -21,10 +20,11 @@ function envelope(): EventEnvelope {
 
 describe('Event envelope contract (ADR-0005, §10.C)', () => {
   // Type assertions keep both language unions compatible in both directions.
-  it('keeps EventLanguage and SupportedLanguage mutually assignable', () => {
-    const toSupported = (language: EventLanguage): SupportedLanguage =>
+  it('keeps SupportedLanguage assignable', () => {
+    const toSupported = (language: SupportedLanguage): SupportedLanguage =>
       language;
-    const toEvent = (language: SupportedLanguage): EventLanguage => language;
+    const toEvent = (language: SupportedLanguage): SupportedLanguage =>
+      language;
 
     expect(toSupported('ar')).toBe('ar');
     expect(toSupported('en')).toBe('en');

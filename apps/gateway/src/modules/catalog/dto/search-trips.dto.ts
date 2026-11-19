@@ -14,7 +14,7 @@ import {
   type ValidationArguments,
   type ValidatorConstraintInterface,
 } from 'class-validator';
-import type { EventLanguage } from '@app/contracts';
+import type { SupportedLanguage } from '@app/contracts';
 
 /** Valid minute indexes are 0..1439. */
 export const MINUTES_IN_A_DAY = 24 * 60;
@@ -196,5 +196,5 @@ export class SearchTripsDto {
   /** Optional preference; Accept-Language controls the response language. */
   @IsOptional()
   @IsIn(['ar', 'en'])
-  language?: EventLanguage;
+  language?: SupportedLanguage;
 }

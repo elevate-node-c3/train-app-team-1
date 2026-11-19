@@ -14,7 +14,7 @@ import {
   type ValidationArguments,
   type ValidatorConstraintInterface,
 } from 'class-validator';
-import type { EventLanguage } from '@app/contracts';
+import type { SupportedLanguage } from '@app/contracts';
 
 import {
   CIVIL_DATE_PATTERN,
@@ -113,5 +113,5 @@ export class SearchReturnTripsDto {
 
   @IsOptional()
   @IsIn(['ar', 'en'])
-  language?: EventLanguage;
+  language?: SupportedLanguage;
 }
