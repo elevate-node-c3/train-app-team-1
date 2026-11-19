@@ -203,8 +203,14 @@ export class BookingDraftEntity {
   @Column({ name: 'resume_next_attempt_at', type: 'timestamptz', nullable: true })
   resumeNextAttemptAt!: Date | null;
 
+  @Column({ name: 'resume_attempts', type: 'integer', default: 0 })
+  resumeAttempts!: number;
+
   @Column({ name: 'lease_until', type: 'timestamptz', nullable: true })
   leaseUntil!: Date | null;
+
+  @Column({ name: 'lease_owner', type: 'uuid', nullable: true })
+  leaseOwner!: string | null;
 
   @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
   updatedAt!: Date;
