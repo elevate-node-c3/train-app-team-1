@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { databaseUrlFromEnv } from '@app/common/config/database-url.js';
+import { seedDatabaseUrlFromEnv } from '../config/database-settings.js';
 
 import { GovernorateEntity } from '../modules/stations/entities/governorate.entity.js';
 import { CityEntity } from '../modules/stations/entities/city.entity.js';
@@ -29,7 +29,8 @@ import { migrations } from './migrations/index.js';
  */
 export default new DataSource({
   type: 'postgres',
-  url: databaseUrlFromEnv(),
+  // CLI and seeds run on the host, so this resolves the published port too.
+  url: seedDatabaseUrlFromEnv(),
   synchronize: false,
   entities: [
     GovernorateEntity,
