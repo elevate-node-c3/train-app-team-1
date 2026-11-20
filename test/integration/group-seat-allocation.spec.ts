@@ -10,8 +10,7 @@ import {
   type HoldSnapshot,
   type ResolveHoldPassengersRequest,
 } from '@app/contracts';
-import { BookingController } from '../../apps/gateway/src/modules/booking/booking.controller.js';
-import { BookingService } from '../../apps/gateway/src/modules/booking/booking.service.js';
+import { NoSeatSelectionPipe } from '../../apps/gateway/src/modules/booking/dto/create-booking.dto.js';
 import {
   BookingDraftService,
   BookingDraftError,
@@ -88,12 +87,9 @@ function occupiedExcept(
 // Transport orchestration with real SEAT-2 allocation/projection. PostgreSQL
 // atomicity is covered separately in hold-core.int-spec.ts, not by these fakes.
 describe('Group seat allocation through the atomic Booking API', () => {
-  let controller: BookingController;
-  let gatewayBookingService: BookingService;
   let backendDraftService: BookingDraftService;
   let store: BookingDraftStore;
   let mockInventoryService: InventoryGrpcService;
-  let mockClsService: any;
 
   // Stored drafts for in-memory persistence verification
   const draftDb = new Map<string, BookingDraftEntity>();
@@ -248,25 +244,6 @@ describe('Group seat allocation through the atomic Booking API', () => {
       { get: () => OWNER } as never,
     );
 
-    // Wire Gateway BookingService to call backend BookingDraftService
-    const mockBookingClient = {
-      createDraft: vi.fn(async (dto: any, userId: string) => {
-        return backendDraftService.createDraft({ ...dto, userId });
-      }),
-    };
-
-    gatewayBookingService = new BookingService(mockBookingClient as any);
-
-    mockClsService = {
-      get: vi.fn().mockReturnValue(OWNER),
-    };
-
-    controller = new BookingController(
-      gatewayBookingService,
-      // These flows end at the hold; checkout is booking's own test.
-      {} as never,
-      mockClsService,
-    );
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -288,10 +265,10 @@ describe('Group seat allocation through the atomic Booking API', () => {
     givenAllocations(allocResult);
     const clientPayload = payload(2);
 
-    const response = await controller.createBooking(
-      clientPayload as any,
-      { body: clientPayload } as any,
-    );
+    const response = await backendDraftService.createDraft({
+      ...clientPayload,
+      userId: OWNER,
+    } as never);
 
     expect(response.status).toBe('PENDING');
     expect(response.legs).toHaveLength(1);
@@ -322,10 +299,10 @@ describe('Group seat allocation through the atomic Booking API', () => {
     givenAllocations(allocResult);
     const clientPayload = payload(3);
 
-    const response = await controller.createBooking(
-      clientPayload as any,
-      { body: clientPayload } as any,
-    );
+    const response = await backendDraftService.createDraft({
+      ...clientPayload,
+      userId: OWNER,
+    } as never);
 
     expect(response.legs[0].allocationOutcome).toBe(
       AllocationOutcome.SAME_COACH,
@@ -354,10 +331,10 @@ describe('Group seat allocation through the atomic Booking API', () => {
     givenAllocations(allocResult);
     const clientPayload = payload(4);
 
-    const response = await controller.createBooking(
-      clientPayload as any,
-      { body: clientPayload } as any,
-    );
+    const response = await backendDraftService.createDraft({
+      ...clientPayload,
+      userId: OWNER,
+    } as never);
 
     const leg = response.legs[0];
     expect(leg.allocationOutcome).toBe(AllocationOutcome.SPLIT);
@@ -384,18 +361,15 @@ describe('Group seat allocation through the atomic Booking API', () => {
       groupSize: 2,
     };
 
-    await expect(
-      controller.createBooking(
-        forbiddenPayload as any,
-        { body: forbiddenPayload } as any,
-      ),
-    ).rejects.toThrowError(HttpException);
+    // The ban lives in the pipe and the guard at the edge; the draft is
+    // never reached, so no hold is ever requested.
+    const pipe = new NoSeatSelectionPipe();
+    expect(() =>
+      pipe.transform(forbiddenPayload, { type: 'body' } as never),
+    ).toThrow(HttpException);
 
     try {
-      await controller.createBooking(
-        forbiddenPayload as any,
-        { body: forbiddenPayload } as any,
-      );
+      pipe.transform(forbiddenPayload, { type: 'body' } as never);
     } catch (error) {
       const httpError = error as HttpException;
       expect(httpError.getStatus()).toBe(HttpStatus.BAD_REQUEST);
@@ -428,10 +402,10 @@ describe('Group seat allocation through the atomic Booking API', () => {
     );
     const roundTripPayload = payload(2, [OUTBOUND, INBOUND]);
 
-    const response = await controller.createBooking(
-      roundTripPayload as any,
-      { body: roundTripPayload } as any,
-    );
+    const response = await backendDraftService.createDraft({
+      ...roundTripPayload,
+      userId: OWNER,
+    } as never);
 
     expect(response.status).toBe('PENDING');
     expect(response.legs).toHaveLength(2);
@@ -469,7 +443,10 @@ describe('Group seat allocation through the atomic Booking API', () => {
       new BookingDraftError(ErrorCode.SEAT_TAKEN),
     );
     await expect(
-      controller.createBooking(payload(2, [OUTBOUND, INBOUND])),
+      backendDraftService.createDraft({
+        ...payload(2, [OUTBOUND, INBOUND]),
+        userId: OWNER,
+      } as never),
     ).rejects.toMatchObject({ code: ErrorCode.SEAT_TAKEN });
     expect(mockInventoryService.createHold).toHaveBeenCalledOnce();
     expect(mockInventoryService.releaseHold).not.toHaveBeenCalled();

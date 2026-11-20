@@ -7,7 +7,6 @@ import request from 'supertest';
 import { HttpExceptionFilter } from '@app/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { BookingController } from './booking.controller.js';
-import { BookingGrpcClientService } from './booking.grpc.client.js';
 import { BookingService } from './booking.service.js';
 import { BookingRequestGuard } from './booking-request.guard.js';
 
@@ -27,12 +26,10 @@ describe('BR-10 actual Gateway booking entry', () => {
         set: (key: string, value: unknown) => values.set(key, value),
       };
       const booking = {
-        createBooking: vi
-          .fn()
-          .mockResolvedValue({
-            id: 'draft',
-            serverNow: '2026-11-15T12:00:00Z',
-          }),
+        submit: vi.fn().mockResolvedValue({
+          bookingReference: '70000000-0000-4000-8000-000000000001',
+          serverTime: '2026-11-15T12:00:00Z',
+        }),
       };
       const module = await Test.createTestingModule({
         controllers: [BookingController],
@@ -40,8 +37,6 @@ describe('BR-10 actual Gateway booking entry', () => {
           BookingRequestGuard,
           { provide: ClsService, useValue: cls },
           { provide: BookingService, useValue: booking },
-          // Access is decided before checkout is reached.
-          { provide: BookingGrpcClientService, useValue: {} },
           {
             provide: APP_GUARD,
             useFactory: () =>
@@ -86,11 +81,11 @@ describe('BR-10 actual Gateway booking entry', () => {
         });
       if (bookable) {
         expect(response.status).toBe(201);
-        expect(booking.createBooking).toHaveBeenCalledOnce();
+        expect(booking.submit).toHaveBeenCalledOnce();
       } else {
         expect(response.status).toBe(403);
         expect(response.body.error.code).toBe('PROFILE_INCOMPLETE');
-        expect(booking.createBooking).not.toHaveBeenCalled();
+        expect(booking.submit).not.toHaveBeenCalled();
       }
     },
   );

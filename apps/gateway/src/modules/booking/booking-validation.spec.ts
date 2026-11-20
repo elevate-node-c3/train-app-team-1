@@ -1,354 +1,281 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import 'reflect-metadata';
+import { ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import { ACCESS_LEVEL_KEY } from '@app/common';
 import {
   AllocationOutcome,
   ErrorCode,
-  SEATS_SPLIT_NOTICE,
+  type BookingResponse,
 } from '@app/contracts';
-import { ACCESS_LEVEL_KEY } from '@app/common';
-import { BookingController } from './booking.controller.js';
-import { BookingService } from './booking.service.js';
-import {
-  findForbiddenSeatSelectionKey,
-  NoSeatSelectionPipe,
-} from './dto/create-booking.dto.js';
 
-describe('BookingController & Route Validation', () => {
-  let controller: BookingController;
-  let mockBookingService: {
-    createBooking: ReturnType<typeof vi.fn>;
+import { BookingController } from './booking.controller.js';
+import { BookingRequestGuard } from './booking-request.guard.js';
+import type { BookingService } from './booking.service.js';
+import { NoSeatSelectionPipe } from './dto/create-booking.dto.js';
+
+const TRIP_ID = '11111111-1111-4111-8111-111111111111';
+const RETURN_TRIP_ID = '55555555-5555-4555-8555-555555555555';
+const CLASS_ID = '22222222-2222-4222-8222-222222222222';
+const ORIGIN_ID = '33333333-3333-4333-8333-333333333333';
+const DESTINATION_ID = '44444444-4444-4444-8444-444444444444';
+const BOOKING_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PASSENGER_ONE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+const PASSENGER_TWO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+
+/** A booking as checkout answers; the gateway only passes it on. */
+function bookingResponse(
+  legs: BookingResponse['legs'] = [],
+): BookingResponse {
+  return {
+    bookingReference: '70000000-0000-4000-8000-000000000001',
+    state: 'seats_held',
+    totalPiastres: 12_500,
+    currency: 'EGP',
+    holdExpiresAt: new Date().toISOString(),
+    paymentReference: '',
+    serverTime: new Date().toISOString(),
+    legs,
+    fareTotalPiastres: 12_000,
+    bookingFeePiastres: 500,
+    bookingFeePercent: 4,
+    termsAcceptedAt: '',
   };
-  let mockClsService: {
-    get: ReturnType<typeof vi.fn>;
+}
+
+function leg(
+  tripId: string,
+  outcome: AllocationOutcome,
+  splitNotice?: BookingResponse['legs'][number]['splitNotice'],
+): BookingResponse['legs'][number] {
+  return {
+    tripId,
+    trainNumber: 101,
+    trainType: { ar: 'مكيف', en: 'Air-conditioned' },
+    departure: {
+      stationId: ORIGIN_ID,
+      name: { ar: '', en: '' },
+      at: new Date().toISOString(),
+    },
+    arrival: {
+      stationId: DESTINATION_ID,
+      name: { ar: '', en: '' },
+      at: new Date().toISOString(),
+    },
+    farePiastres: 6_000,
+    allocationOutcome: outcome,
+    ...(splitNotice ? { splitNotice } : {}),
+    passengers: [],
+  } as unknown as BookingResponse['legs'][number];
+}
+
+/** Guards read the raw request, before any pipe has touched it. */
+function guardContextFor(
+  body: unknown,
+  headers: Record<string, unknown> = {},
+): ExecutionContext {
+  return {
+    switchToHttp: () => ({ getRequest: () => ({ body, headers }) }),
+  } as unknown as ExecutionContext;
+}
+
+describe('BookingController & route validation', () => {
+  let controller: BookingController;
+  let bookings: {
+    submit: ReturnType<typeof vi.fn>;
+    review: ReturnType<typeof vi.fn>;
+    acceptTerms: ReturnType<typeof vi.fn>;
+    continueToPayment: ReturnType<typeof vi.fn>;
+    abandon: ReturnType<typeof vi.fn>;
   };
   let pipe: NoSeatSelectionPipe;
+  let guard: BookingRequestGuard;
 
   beforeEach(() => {
-    mockBookingService = {
-      createBooking: vi.fn(),
+    bookings = {
+      submit: vi.fn().mockResolvedValue(bookingResponse()),
+      review: vi.fn().mockResolvedValue(bookingResponse()),
+      acceptTerms: vi.fn().mockResolvedValue(bookingResponse()),
+      continueToPayment: vi.fn().mockResolvedValue(bookingResponse()),
+      abandon: vi.fn().mockResolvedValue(bookingResponse()),
     };
-    mockClsService = {
-      get: vi.fn().mockReturnValue('user-acc-123'),
-    };
-    controller = new BookingController(
-      mockBookingService as unknown as BookingService,
-      // Checkout is not reached from these draft-creation tests.
-      {} as never,
-      mockClsService as any,
-    );
+    controller = new BookingController(bookings as unknown as BookingService);
     pipe = new NoSeatSelectionPipe();
+    guard = new BookingRequestGuard();
   });
 
-  describe('Route Security & Metadata (BR-01, R4)', () => {
-    it('requires the existing bookable access level at the single booking entry', () => {
-      const classLevel = Reflect.getMetadata(
-        ACCESS_LEVEL_KEY,
-        BookingController,
+  describe('route security and metadata (BR-01, R4)', () => {
+    it('requires a bookable profile at the booking entry', () => {
+      expect(Reflect.getMetadata(ACCESS_LEVEL_KEY, BookingController)).toBe(
+        'bookable',
       );
-      const handlerLevel = Reflect.getMetadata(
-        ACCESS_LEVEL_KEY,
-        BookingController.prototype.createBooking,
-      );
-      expect(classLevel).toBe('bookable');
-      expect(handlerLevel).toBe('bookable');
     });
   });
 
-  describe('The Server Allocates: Ban on seat & coach parameters (BR-25, D2)', () => {
+  describe('the server allocates: no seat or coach may be chosen (BR-25, D2)', () => {
     const forbiddenPayloads = [
       {
         name: 'seatId at root',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          seatId: 'seat-uuid-12',
-          groupSize: 2,
-        },
+        body: { tripId: TRIP_ID, seatId: 'seat-uuid-12' },
         expectedKey: 'seatId',
       },
       {
         name: 'coachNumber at root',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          coachNumber: 3,
-          groupSize: 2,
-        },
+        body: { tripId: TRIP_ID, coachNumber: 3 },
         expectedKey: 'coachNumber',
       },
       {
-        name: 'seatNumber at root',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          seatNumber: '14B',
-          groupSize: 2,
-        },
+        name: 'seat_number in snake case',
+        body: { tripId: TRIP_ID, seat_number: '12A' },
+        expectedKey: 'seat_number',
+      },
+      {
+        name: 'a seat nested inside a leg',
+        body: { legs: [{ tripId: TRIP_ID, seatNumber: '12A' }] },
         expectedKey: 'seatNumber',
       },
       {
-        name: 'coach at root',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          coach: 5,
-          groupSize: 2,
-        },
-        expectedKey: 'coach',
-      },
-      {
-        name: 'coachId at root',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          coachId: 'coach-uuid-1',
-          groupSize: 2,
-        },
-        expectedKey: 'coachId',
-      },
-      {
-        name: 'seatId inside passengers array',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          passengers: [{ fullName: 'Passenger 1', seatId: 'seat-uuid-22' }],
-        },
-        expectedKey: 'seatId',
-      },
-      {
-        name: 'coachNumber inside passengers array',
-        body: {
-          tripId: '11111111-1111-4111-8111-111111111111',
-          travelClassId: '22222222-2222-4222-8222-222222222222',
-          originStationId: '33333333-3333-4333-8333-333333333333',
-          destinationStationId: '44444444-4444-4444-8444-444444444444',
-          passengers: [{ fullName: 'Passenger 1', coachNumber: 4 }],
-        },
-        expectedKey: 'coachNumber',
-      },
-      {
-        name: 'coach inside legs array',
-        body: {
-          legs: [
-            {
-              tripId: '11111111-1111-4111-8111-111111111111',
-              travelClassId: '22222222-2222-4222-8222-222222222222',
-              originStationId: '33333333-3333-4333-8333-333333333333',
-              destinationStationId: '44444444-4444-4444-8444-444444444444',
-              coach: 2,
-            },
-          ],
-          groupSize: 2,
-        },
-        expectedKey: 'coach',
-      },
-      {
-        name: 'seatNumber inside legs array',
-        body: {
-          legs: [
-            {
-              tripId: '11111111-1111-4111-8111-111111111111',
-              travelClassId: '22222222-2222-4222-8222-222222222222',
-              originStationId: '33333333-3333-4333-8333-333333333333',
-              destinationStationId: '44444444-4444-4444-8444-444444444444',
-              seatNumber: '22',
-            },
-          ],
-          groupSize: 2,
-        },
-        expectedKey: 'seatNumber',
+        name: 'a seats array',
+        body: { tripId: TRIP_ID, seats: ['12A', '12B'] },
+        expectedKey: 'seats',
       },
     ];
 
     it.each(forbiddenPayloads)(
-      'rejects $name with HTTP 400 INVALID_PAYLOAD in scanner',
+      'the pipe refuses $name as INVALID_PAYLOAD',
       ({ body, expectedKey }) => {
-        const found = findForbiddenSeatSelectionKey(body);
-        expect(found).toBe(expectedKey);
+        try {
+          pipe.transform(body, { type: 'body' } as never);
+          expect.unreachable('the payload should have been refused');
+        } catch (error) {
+          const refusal = error as HttpException;
+          expect(refusal.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+          const response = refusal.getResponse() as Record<string, unknown>;
+          expect(response.code).toBe(ErrorCode.INVALID_PAYLOAD);
+          expect(String(response.message)).toContain(expectedKey);
+        }
       },
     );
 
     it.each(forbiddenPayloads)(
-      'pipe rejects $name with HTTP 400 and ErrorCode.INVALID_PAYLOAD',
+      'the guard refuses $name before any pipe runs',
       ({ body }) => {
-        expect(() => {
-          pipe.transform(body, { type: 'body' });
-        }).toThrowError(HttpException);
-
-        try {
-          pipe.transform(body, { type: 'body' });
-        } catch (error) {
-          const httpError = error as HttpException;
-          expect(httpError.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-          const response = httpError.getResponse() as Record<string, unknown>;
-          expect(response.code).toBe(ErrorCode.INVALID_PAYLOAD);
-        }
-      },
-    );
-
-    it.each(forbiddenPayloads)(
-      'controller rejects $name with HTTP 400 INVALID_PAYLOAD and never calls bookingService',
-      async ({ body }) => {
-        await expect(
-          controller.createBooking(body as any, { body } as any),
-        ).rejects.toThrowError(HttpException);
-
-        try {
-          await controller.createBooking(body as any, { body } as any);
-        } catch (error) {
-          const httpError = error as HttpException;
-          expect(httpError.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-          const response = httpError.getResponse() as Record<string, unknown>;
-          expect(response.code).toBe(ErrorCode.INVALID_PAYLOAD);
-        }
-
-        expect(mockBookingService.createBooking).not.toHaveBeenCalled();
+        // The guard's allow-list is the first of the two: a key it does not
+        // know never reaches the pipe, the DTO or booking.
+        expect(() => guard.canActivate(guardContextFor(body))).toThrow(
+          HttpException,
+        );
       },
     );
   });
 
-  describe('Booking Forwarding & Successful Draft Assembly', () => {
-    it('forwards valid single-leg booking draft and returns HTTP 201 response', async () => {
-      const validDto = {
-        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        passengerIds: [
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
-        ],
-        tripId: '11111111-1111-4111-8111-111111111111',
-        travelClassId: '22222222-2222-4222-8222-222222222222',
-        originStationId: '33333333-3333-4333-8333-333333333333',
-        destinationStationId: '44444444-4444-4444-8444-444444444444',
-      };
-
-      const expectedDraft = {
-        id: 'draft-uuid-1',
-        userId: 'user-acc-123',
-        status: 'PENDING',
-        expiresAt: new Date().toISOString(),
-        legs: [
-          {
-            holdId: 'hold-1',
-            tripId: validDto.tripId,
-            travelClassId: validDto.travelClassId,
-            originStationId: validDto.originStationId,
-            destinationStationId: validDto.destinationStationId,
-            allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-            seats: [
-              'Passenger · Coach 5 · Seat 44',
-              'Passenger · Coach 5 · Seat 45',
-            ],
-            expiresAt: new Date().toISOString(),
-          },
-        ],
-        createdAt: new Date().toISOString(),
-      };
-
-      mockBookingService.createBooking.mockResolvedValueOnce(expectedDraft);
-
-      const result = await controller.createBooking(
-        validDto as any,
-        { body: validDto } as any,
-      );
-
-      expect(mockBookingService.createBooking).toHaveBeenCalledWith(
-        validDto,
-        'user-acc-123',
-      );
-      expect(result).toEqual(expectedDraft);
-      expect(result.legs[0].allocationOutcome).toBe(
-        AllocationOutcome.SIDE_BY_SIDE,
-      );
-      expect(result.legs[0].seats).toEqual([
-        'Passenger · Coach 5 · Seat 44',
-        'Passenger · Coach 5 · Seat 45',
-      ]);
+  describe('what the guard refuses, so nothing downstream has to', () => {
+    it('never honours an owner supplied in the body', () => {
+      expect(() =>
+        guard.canActivate(
+          guardContextFor({
+            bookingKey: BOOKING_KEY,
+            passengerIds: [PASSENGER_ONE],
+            userId: 'attacker',
+          }),
+        ),
+      ).toThrow(HttpException);
     });
 
-    it('forwards valid round-trip and surfaces splitNotice on return leg only', async () => {
-      const roundTripDto = {
-        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        passengerIds: [
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
-          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
-        ],
-        legs: [
-          {
-            tripId: '11111111-1111-4111-8111-111111111111',
-            travelClassId: '22222222-2222-4222-8222-222222222222',
-            originStationId: '33333333-3333-4333-8333-333333333333',
-            destinationStationId: '44444444-4444-4444-8444-444444444444',
-          },
-          {
-            tripId: '55555555-5555-4555-8555-555555555555',
-            travelClassId: '22222222-2222-4222-8222-222222222222',
-            originStationId: '44444444-4444-4444-8444-444444444444',
-            destinationStationId: '33333333-3333-4333-8333-333333333333',
-          },
-        ],
-        groupSize: 4,
+    it('requires saved passenger references, not a passenger count', () => {
+      expect(() =>
+        guard.canActivate(
+          guardContextFor({ bookingKey: BOOKING_KEY, groupSize: 2 }),
+        ),
+      ).toThrow(HttpException);
+    });
+
+    it('refuses a body key that disagrees with the Idempotency-Key header', () => {
+      expect(() =>
+        guard.canActivate(
+          guardContextFor(
+            { bookingKey: BOOKING_KEY, passengerIds: [PASSENGER_ONE] },
+            { 'idempotency-key': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+          ),
+        ),
+      ).toThrow(HttpException);
+    });
+
+    it('accepts a well-formed submission', () => {
+      expect(
+        guard.canActivate(
+          guardContextFor(
+            {
+              passengerIds: [PASSENGER_ONE, PASSENGER_TWO],
+              tripId: TRIP_ID,
+              travelClassId: CLASS_ID,
+              originStationId: ORIGIN_ID,
+              destinationStationId: DESTINATION_ID,
+            },
+            { 'idempotency-key': BOOKING_KEY },
+          ),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe('what reaches checkout', () => {
+    it('sends one leg, the class, and the header key as the idempotency key', async () => {
+      await controller.submit(
+        {
+          passengerIds: [PASSENGER_ONE, PASSENGER_TWO],
+          tripId: TRIP_ID,
+          travelClassId: CLASS_ID,
+          originStationId: ORIGIN_ID,
+          destinationStationId: DESTINATION_ID,
+        } as never,
+        BOOKING_KEY,
+      );
+
+      // No owner: booking reads the caller from the call's metadata.
+      expect(bookings.submit).toHaveBeenCalledWith(
+        {
+          passengerIds: [PASSENGER_ONE, PASSENGER_TWO],
+          tripId: TRIP_ID,
+          travelClassId: CLASS_ID,
+          originStationId: ORIGIN_ID,
+          destinationStationId: DESTINATION_ID,
+        },
+        BOOKING_KEY,
+      );
+    });
+
+    it('returns a round trip with its per-leg outcome and split notice', async () => {
+      const splitNotice = {
+        code: 'SEATS_SPLIT',
+        message: 'لم نتمكن من جلوسكم معاً.',
+        messageEn: 'Seats have been split across coaches',
       };
+      bookings.submit.mockResolvedValueOnce(
+        bookingResponse([
+          leg(TRIP_ID, AllocationOutcome.SIDE_BY_SIDE),
+          leg(RETURN_TRIP_ID, AllocationOutcome.SPLIT, splitNotice),
+        ]),
+      );
 
-      const expectedDraft = {
-        id: 'draft-roundtrip-1',
-        userId: 'user-acc-123',
-        status: 'PENDING',
-        expiresAt: new Date().toISOString(),
-        legs: [
-          {
-            holdId: 'hold-outbound',
-            tripId: roundTripDto.legs[0].tripId,
-            travelClassId: roundTripDto.legs[0].travelClassId,
-            originStationId: roundTripDto.legs[0].originStationId,
-            destinationStationId: roundTripDto.legs[0].destinationStationId,
-            allocationOutcome: AllocationOutcome.SIDE_BY_SIDE,
-            seats: [
-              'Passenger · Coach 1 · Seat 1',
-              'Passenger · Coach 1 · Seat 2',
-              'Passenger · Coach 1 · Seat 3',
-              'Passenger · Coach 1 · Seat 4',
-            ],
-            expiresAt: new Date().toISOString(),
-          },
-          {
-            holdId: 'hold-return',
-            tripId: roundTripDto.legs[1].tripId,
-            travelClassId: roundTripDto.legs[1].travelClassId,
-            originStationId: roundTripDto.legs[1].originStationId,
-            destinationStationId: roundTripDto.legs[1].destinationStationId,
-            allocationOutcome: AllocationOutcome.SPLIT,
-            seats: [
-              'Passenger · Coach 1 · Seat 1',
-              'Passenger · Coach 1 · Seat 2',
-              'Passenger · Coach 2 · Seat 1',
-              'Passenger · Coach 2 · Seat 2',
-            ],
-            splitNotice: SEATS_SPLIT_NOTICE,
-            expiresAt: new Date().toISOString(),
-          },
-        ],
-        createdAt: new Date().toISOString(),
-      };
-
-      mockBookingService.createBooking.mockResolvedValueOnce(expectedDraft);
-
-      const result = await controller.createBooking(
-        roundTripDto as any,
-        { body: roundTripDto } as any,
+      const result = await controller.submit(
+        {
+          passengerIds: [PASSENGER_ONE, PASSENGER_TWO],
+          legs: [
+            {
+              tripId: TRIP_ID,
+              travelClassId: CLASS_ID,
+              originStationId: ORIGIN_ID,
+              destinationStationId: DESTINATION_ID,
+            },
+            {
+              tripId: RETURN_TRIP_ID,
+              travelClassId: CLASS_ID,
+              originStationId: DESTINATION_ID,
+              destinationStationId: ORIGIN_ID,
+            },
+          ],
+        } as never,
+        BOOKING_KEY,
       );
 
       expect(result.legs[0].allocationOutcome).toBe(
@@ -356,97 +283,42 @@ describe('BookingController & Route Validation', () => {
       );
       expect(result.legs[0].splitNotice).toBeUndefined();
       expect(result.legs[1].allocationOutcome).toBe(AllocationOutcome.SPLIT);
-      expect(result.legs[1].splitNotice).toEqual(SEATS_SPLIT_NOTICE);
       expect(result.legs[1].splitNotice?.messageEn).toContain(
         'Seats have been split across coaches',
       );
     });
-  });
 
-  describe('Downstream Business Error Translation', () => {
-    it('propagates downstream INSUFFICIENT_SEATS as HTTP 409 Conflict', async () => {
-      mockBookingService.createBooking.mockRejectedValueOnce(
+    it('passes a refusal through unchanged', async () => {
+      bookings.submit.mockRejectedValueOnce(
         new HttpException(
-          {
-            code: ErrorCode.INSUFFICIENT_SEATS,
-            message: 'Not enough seats available',
-            availableCount: 1,
-          },
+          { code: ErrorCode.INSUFFICIENT_SEATS },
           HttpStatus.CONFLICT,
         ),
       );
 
-      const validDto = {
-        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
-        tripId: '11111111-1111-4111-8111-111111111111',
-        travelClassId: '22222222-2222-4222-8222-222222222222',
-        originStationId: '33333333-3333-4333-8333-333333333333',
-        destinationStationId: '44444444-4444-4444-8444-444444444444',
-        groupSize: 3,
-      };
+      const error = await controller
+        .submit({ passengerIds: [PASSENGER_ONE] } as never, BOOKING_KEY)
+        .catch((caught: unknown) => caught);
 
-      await expect(
-        controller.createBooking(validDto as any, { body: validDto } as any),
-      ).rejects.toThrowError(HttpException);
-
-      try {
-        await controller.createBooking(
-          validDto as any,
-          { body: validDto } as any,
-        );
-      } catch (error) {
-        const httpError = error as HttpException;
-        expect(httpError.getStatus()).toBe(HttpStatus.CONFLICT);
-        const res = httpError.getResponse() as Record<string, unknown>;
-        expect(res.code).toBe(ErrorCode.INSUFFICIENT_SEATS);
-      }
+      expect((error as HttpException).getStatus()).toBe(HttpStatus.CONFLICT);
+      expect(
+        (error as HttpException).getResponse() as Record<string, unknown>,
+      ).toMatchObject({ code: ErrorCode.INSUFFICIENT_SEATS });
     });
   });
 
-  it('never falls back to a body-supplied owner when caller context is absent', async () => {
-    mockClsService.get.mockReturnValue(undefined);
-    await expect(
-      controller.createBooking({ userId: 'attacker' } as never),
-    ).rejects.toMatchObject({ status: 401 });
-    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
-  });
+  describe('the steps after the seats are held', () => {
+    const reference = '70000000-0000-4000-8000-000000000001';
 
-  it('requires actual saved passenger references instead of count-only requests', async () => {
-    await expect(
-      controller.createBooking({
-        bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        groupSize: 2,
-      } as never),
-    ).rejects.toMatchObject({ status: 400 });
-    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
-  });
+    it.each([
+      ['review', 'review'],
+      ['acceptTerms', 'acceptTerms'],
+      ['continueToPayment', 'continueToPayment'],
+      ['abandon', 'abandon'],
+    ] as const)('%s names the booking and nothing else', async (route, call) => {
+      await controller[route]({ bookingReference: reference });
 
-  it('uses an immutable Idempotency-Key header and the authenticated owner', async () => {
-    const bookingKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const dto = {
-      passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
-      userId: 'spoofed',
-    };
-    await controller.createBooking(dto as never, {
-      headers: { 'idempotency-key': bookingKey },
+      expect(bookings[call]).toHaveBeenCalledWith(reference);
     });
-    expect(mockBookingService.createBooking).toHaveBeenCalledWith(
-      { ...dto, bookingKey },
-      'user-acc-123',
-    );
-  });
-
-  it('rejects disagreeing body/header keys without calling Booking', async () => {
-    const dto = {
-      bookingKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      passengerIds: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'],
-    };
-    await expect(
-      controller.createBooking(dto, {
-        headers: { 'idempotency-key': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
-      }),
-    ).rejects.toMatchObject({ status: 400 });
-    expect(mockBookingService.createBooking).not.toHaveBeenCalled();
   });
 });
