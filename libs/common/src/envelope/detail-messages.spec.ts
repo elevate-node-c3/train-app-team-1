@@ -547,7 +547,7 @@ describe('detail catalogue source guard', () => {
       ),
     ).toBe(true);
     expect(
-      sources.some(({ fileName }) => fileName.endsWith('detail-catalogue.ts')),
+      sources.some(({ fileName }) => fileName.endsWith('detail-messages.ts')),
     ).toBe(true);
     expect(sources.every(({ fileName }) => isProductionSource(fileName))).toBe(
       true,
