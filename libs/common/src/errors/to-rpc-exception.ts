@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { ErrorCode, grpcStatusForErrorCode } from '@app/contracts';
 
@@ -5,6 +6,12 @@ import {
   isRefusalError,
   type ServiceRefusal,
 } from './service-refusal.js';
+
+/**
+ * A masked failure still has to be diagnosable. The caller learns nothing, so
+ * the cause belongs here -- in the correlated log -- and nowhere else.
+ */
+const logger = new Logger('ServiceRefusal');
 
 export interface RefusalTransportOptions {
   /**
@@ -52,6 +59,12 @@ export function toRpcException(
         error.retryAfterSeconds ?? options.retryAfterSeconds?.(error.code),
     });
   }
+
+  logger.error(
+    `Masked as INTERNAL_SERVER_ERROR: ${
+      error instanceof Error ? (error.stack ?? error.message) : String(error)
+    }`,
+  );
 
   return refusalException({
     code: ErrorCode.INTERNAL_SERVER_ERROR,

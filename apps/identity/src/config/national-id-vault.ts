@@ -122,14 +122,23 @@ export function decryptNationalId(
   }
 }
 
+/**
+ * An account has no National ID until its profile is completed, and TypeORM
+ * hands an unset column through as undefined rather than null. Both mean there
+ * is nothing to encrypt, so neither may reach the cipher.
+ */
 export function nationalIdTransformer(
   scope: NationalIdScope,
 ): ValueTransformer {
   return {
-    to: (value: string | null) =>
-      value === null ? null : encryptNationalId(value, scope),
-    from: (value: string | null) =>
-      value === null ? null : decryptNationalId(value, scope),
+    to: (value: string | null | undefined) =>
+      value === null || value === undefined
+        ? null
+        : encryptNationalId(value, scope),
+    from: (value: string | null | undefined) =>
+      value === null || value === undefined
+        ? null
+        : decryptNationalId(value, scope),
   };
 }
 

@@ -13,19 +13,24 @@ import { nationalIdBlindIndex } from '../../../config/national-id-vault.js';
 export class AccountRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  async save(ctx: TransactionContext, account: AccountEntity): Promise<void> {
+  /**
+   * A sign-up has no National ID yet -- the profile is completed later -- so a
+   * fresh account reaches here with the field absent rather than null. Both
+   * mean the same thing: there is nothing to index.
+   */
+  private indexNationalId(account: AccountEntity): void {
+    const nationalId = account.nationalId ?? null;
     account.nationalIdHash =
-      account.nationalId === null
-        ? null
-        : nationalIdBlindIndex(account.nationalId);
+      nationalId === null ? null : nationalIdBlindIndex(nationalId);
+  }
+
+  async save(ctx: TransactionContext, account: AccountEntity): Promise<void> {
+    this.indexNationalId(account);
     await entityManagerOf(ctx).insert(AccountEntity, account);
   }
 
   async update(ctx: TransactionContext, account: AccountEntity): Promise<void> {
-    account.nationalIdHash =
-      account.nationalId === null
-        ? null
-        : nationalIdBlindIndex(account.nationalId);
+    this.indexNationalId(account);
     await entityManagerOf(ctx).update(
       AccountEntity,
       { id: account.id },
