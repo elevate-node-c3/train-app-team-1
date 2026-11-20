@@ -22,9 +22,7 @@ import {
   INVENTORY_GRPC_CLIENT,
   IDENTITY_GRPC_CLIENT,
 } from './booking-draft.service.js';
-import { BookingDraftController } from './booking-draft.controller.js';
 import { BookingDraftStore } from './booking-draft.store.js';
-import { BookingIngressGuard } from './booking-ingress.guard.js';
 import {
   BookingHoldLifecycleConsumer,
   createHoldLifecycleSubscriptions,
@@ -72,11 +70,9 @@ export function inventoryGrpcUrl(): string {
       },
     ]),
   ],
-  controllers: [BookingDraftController],
   providers: [
     BookingDraftService,
     BookingDraftStore,
-    BookingIngressGuard,
     BookingHoldLifecycleConsumer,
     TypeOrmProcessedEventStore,
     { provide: PROCESSED_EVENT_STORE, useExisting: TypeOrmProcessedEventStore },

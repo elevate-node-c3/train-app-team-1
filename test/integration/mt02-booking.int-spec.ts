@@ -12,8 +12,6 @@ import {
 } from 'vitest';
 import { DataSource } from 'typeorm';
 import type { ClsService } from 'nestjs-cls';
-import { Test } from '@nestjs/testing';
-import request from 'supertest';
 import { status } from '@grpc/grpc-js';
 import {
   ErrorCode,
@@ -22,11 +20,6 @@ import {
   HOLD_RELEASED_EVENT_TYPE,
   type HoldSnapshot,
 } from '@app/contracts';
-import {
-  createValidationPipe,
-  HttpExceptionFilter,
-  ResponseInterceptor,
-} from '@app/common';
 import { migrations } from '../../apps/booking/src/database/migrations/index.js';
 import { CreateBookingDraftTables1793500000000 } from '../../apps/booking/src/database/migrations/1793500000000-create-booking-draft-tables.js';
 import { BookingDraftEntity } from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
@@ -36,8 +29,6 @@ import {
   type BookingIdentityGrpcService,
   type InventoryGrpcService,
 } from '../../apps/booking/src/modules/draft/booking-draft.service.js';
-import { BookingDraftController } from '../../apps/booking/src/modules/draft/booking-draft.controller.js';
-import { BookingIngressGuard } from '../../apps/booking/src/modules/draft/booking-ingress.guard.js';
 import { BookingHoldLifecycleConsumer } from '../../apps/booking/src/modules/draft/hold-lifecycle.consumer.js';
 import {
   OTHER_OWNER_ID,
@@ -557,60 +548,4 @@ describe('MT-02 Booking durable orchestration (real PostgreSQL)', () => {
     ).toBe(true);
   });
 
-  it('private HTTP ingress authenticates before work and never reflects tokens or raw identity', async () => {
-    const module = await Test.createTestingModule({
-      controllers: [BookingDraftController],
-      providers: [
-        BookingIngressGuard,
-        { provide: BookingDraftService, useValue: service },
-      ],
-    }).compile();
-    const app = module.createNestApplication({ logger: false });
-    app.useGlobalPipes(createValidationPipe());
-    app.useGlobalInterceptors(new ResponseInterceptor(cls));
-    app.useGlobalFilters(new HttpExceptionFilter(cls));
-    await app.init();
-    try {
-      const dto = draftInput();
-      await request(app.getHttpServer()).post('/drafts').send(dto).expect(401);
-      expect(await store.findOwned(dto.bookingKey, OWNER_ID)).toBeNull();
-      const invalid = await request(app.getHttpServer())
-        .post('/drafts')
-        .set('x-gateway-booking-key', process.env.GATEWAY_BOOKING_SERVICE_KEY!)
-        .send({
-          ...dto,
-          passengers: [
-            {
-              nationalId: '29001010112345',
-              passengerToken: 'do-not-reflect-this',
-            },
-          ],
-        })
-        .expect(400);
-      expect(JSON.stringify(invalid.body)).not.toMatch(
-        /29001010112345|do-not-reflect-this/,
-      );
-      expect(identity.resolveHoldPassengers).not.toHaveBeenCalled();
-      const response = await request(app.getHttpServer())
-        .post('/drafts')
-        .set('x-gateway-booking-key', process.env.GATEWAY_BOOKING_SERVICE_KEY!)
-        .send(dto)
-        .expect(201);
-      expect(response.body.data).toMatchObject({
-        id: dto.bookingKey,
-        holdState: 'HELD',
-      });
-      expect(JSON.stringify(response.body)).not.toMatch(
-        /passengerToken|passengerKeyVersion|nationalId|passengerSnapshot/,
-      );
-      await request(app.getHttpServer())
-        .get(`/drafts/${dto.bookingKey}`)
-        .query({ userId: OTHER_OWNER_ID })
-        .set('x-gateway-booking-key', process.env.GATEWAY_BOOKING_SERVICE_KEY!)
-        .expect(404);
-      expect(inventory.getHold).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
 });
