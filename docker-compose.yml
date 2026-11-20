@@ -210,6 +210,9 @@ services:
     environment:
       <<: *service-env
       DATABASE_URL: postgres://payment:${PAYMENT_DB_PASSWORD:-payment_dev}@postgres:5432/payment
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
 
   notification:
     <<: *service

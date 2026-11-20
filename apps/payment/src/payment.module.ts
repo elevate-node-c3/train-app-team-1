@@ -9,6 +9,7 @@ import { MessagingModule } from '@app/messaging';
 import { ServiceInfoController } from './service-info.controller.js';
 import { migrations } from './database/migrations/index.js';
 import { ChargesModule } from './modules/charges/charges.module.js';
+import { CardsModule } from './modules/cards/cards.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ChargesModule } from './modules/charges/charges.module.js';
     MessagingModule,
     MigrationModule,
     ChargesModule,
+    CardsModule,
   ],
   controllers: [ServiceInfoController],
 })

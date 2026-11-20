@@ -4320,6 +4320,360 @@
       ]
     },
     {
+      "name": "Saved Cards (Gateway & Stripe)",
+      "item": [
+        {
+          "name": "Start Setup Intent (Add Card Step 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "if (json.data && json.data.setupIntentId) {",
+                  "    pm.environment.set(\"setupIntentId\", json.data.setupIntentId);",
+                  "    pm.environment.set(\"stripeClientSecret\", json.data.clientSecret);",
+                  "    pm.environment.set(\"stripePublishableKey\", json.data.publishableKey);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/saved-cards/setup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "saved-cards",
+                "setup"
+              ]
+            },
+            "description": "Initiates a Stripe SetupIntent flow without charging anything. Returns client secret for client SDK."
+          }
+        },
+        {
+          "name": "Simulate Stripe SDK Confirmation (Test Card)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "pm.test(\"SetupIntent succeeded\", function () {",
+                  "    pm.expect(json.status).to.eql(\"succeeded\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{stripeSecretKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "payment_method",
+                  "value": "pm_card_visa",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "https://api.stripe.com/v1/setup_intents/{{setupIntentId}}/confirm",
+              "protocol": "https",
+              "host": [
+                "api",
+                "stripe",
+                "com"
+              ],
+              "path": [
+                "v1",
+                "setup_intents",
+                "{{setupIntentId}}",
+                "confirm"
+              ]
+            },
+            "description": "Simulates the frontend Stripe Elements / Mobile SDK entering the card and confirming with Stripe cloud."
+          }
+        },
+        {
+          "name": "Confirm Setup (Add Card Step 2)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-confirm with Stripe if testing directly in Postman without frontend",
+                  "const setupIntentId = pm.environment.get(\"setupIntentId\");",
+                  "const stripeSecretKey = pm.environment.get(\"stripeSecretKey\");",
+                  "",
+                  "if (setupIntentId && stripeSecretKey) {",
+                  "    pm.sendRequest({",
+                  "        url: \"https://api.stripe.com/v1/setup_intents/\" + setupIntentId + \"/confirm\",",
+                  "        method: \"POST\",",
+                  "        header: {",
+                  "            \"Authorization\": \"Bearer \" + stripeSecretKey,",
+                  "            \"Content-Type\": \"application/x-www-form-urlencoded\"",
+                  "        },",
+                  "        body: {",
+                  "            mode: \"urlencoded\",",
+                  "            urlencoded: [{ key: \"payment_method\", value: \"pm_card_visa\" }]",
+                  "        }",
+                  "    }, function (err, res) {",
+                  "        if (err) {",
+                  "            console.warn(\"Pre-request Stripe confirm warning:\", err);",
+                  "        } else {",
+                  "            console.log(\"Pre-request confirmed with Stripe test card:\", res.json()?.status);",
+                  "        }",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "if (json.data && json.data.card && json.data.card.id) {",
+                  "    pm.environment.set(\"savedCardId\", json.data.card.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"setupIntentId\": \"{{setupIntentId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/saved-cards/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "saved-cards",
+                "confirm"
+              ]
+            },
+            "description": "Client reports setup finished after Stripe SDK confirmation. Payment verifies with Stripe and records card."
+          }
+        },
+        {
+          "name": "List Saved Cards",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "pm.test(\"Contains cards array\", function () {",
+                  "    pm.expect(json.data.cards).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/saved-cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "saved-cards"
+              ]
+            },
+            "description": "Returns the single, consistent list of saved cards for settings and PAY-2 step. Reads local DB only."
+          }
+        },
+        {
+          "name": "Delete Saved Card",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/saved-cards/{{savedCardId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "saved-cards",
+                "{{savedCardId}}"
+              ]
+            },
+            "description": "Detaches the card from the traveller Stripe customer and removes it from active list."
+          }
+        },
+        {
+          "name": "Security Guard - Attempt Sending PAN/CVV (Refused)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "var body = pm.response.text();",
+                  "pm.test(\"Response never echoes card number\", function () {",
+                  "    pm.expect(body).to.not.include(\"4242424242424242\");",
+                  "    pm.expect(body).to.not.include(\"123\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept-Language",
+                "value": "{{acceptLanguage}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"4242424242424242\",\n  \"cvv\": \"123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/saved-cards/setup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "saved-cards",
+                "setup"
+              ]
+            },
+            "description": "BR-32 & PCI DSS: Gateway CardDataSanitizationGuard rejects raw card details without mirroring them."
+          }
+        }
+      ]
+    },
+    {
       "name": "Standalone Microservices (Host Dev Mode)",
       "description": "Direct endpoints when running individual services locally on host (e.g. npm run start:dev identity).",
       "item": [

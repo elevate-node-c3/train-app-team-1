@@ -20,4 +20,13 @@ export class PaymentChargeEntity {
 
   @Column({ type: 'varchar', length: 16 })
   status!: 'started' | 'succeeded' | 'cancelled';
+
+  @Column({ name: 'card_brand', type: 'varchar', length: 32, nullable: true })
+  cardBrand?: string | null;
+
+  @Column({ name: 'card_last4', type: 'varchar', length: 4, nullable: true })
+  cardLast4?: string | null;
+
+  @Column({ name: 'stripe_payment_method_id', type: 'varchar', length: 128, nullable: true })
+  stripePaymentMethodId?: string | null;
 }

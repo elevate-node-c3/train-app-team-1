@@ -388,7 +388,7 @@ export class BookingFlowRepository {
 
   /** Leases the steps a worker may resume, skipping another worker's rows. */
   async claimResumable(workerId: string): Promise<LeasedFlow[]> {
-    const rows = (await this.drafts.query(
+    const rawResult = await this.drafts.query(
       `WITH due AS (
          SELECT id FROM booking_draft
           WHERE flow_state IN ('quote_pending', 'price_locked', 'hold_pending',
@@ -406,12 +406,12 @@ export class BookingFlowRepository {
          FROM due WHERE draft.id = due.id
        RETURNING draft.id AS "id", draft.flow_state AS "flowState"`,
       [workerId, CLAIM_LIMIT],
-    )) as LeasedFlow[];
-    return rows;
+    );
+    return unwrapQueryResult<LeasedFlow>(rawResult);
   }
 
   async claimCompensable(workerId: string): Promise<string[]> {
-    const rows = (await this.drafts.query(
+    const rawResult = await this.drafts.query(
       `WITH due AS (
          SELECT id FROM booking_draft
           WHERE compensation_status = 'pending'
@@ -427,8 +427,10 @@ export class BookingFlowRepository {
          FROM due WHERE draft.id = due.id
        RETURNING draft.id AS "id"`,
       [workerId, CLAIM_LIMIT],
-    )) as { id: string }[];
-    return rows.map((row) => row.id);
+    );
+    return unwrapQueryResult<{ id: string }>(rawResult)
+      .map((row) => row.id)
+      .filter(Boolean);
   }
 
   async releaseLease(id: string, workerId: string): Promise<void> {
@@ -515,4 +517,16 @@ function idsOf(raw: unknown): string[] {
   return Array.isArray(raw)
     ? raw.map((row: { id: string }) => row.id).filter(Boolean)
     : [];
+}
+
+function unwrapQueryResult<T>(result: unknown): T[] {
+  if (!Array.isArray(result)) return [];
+  if (
+    result.length === 2 &&
+    Array.isArray(result[0]) &&
+    typeof result[1] === 'number'
+  ) {
+    return result[0] as T[];
+  }
+  return result as T[];
 }
