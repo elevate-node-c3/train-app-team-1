@@ -1,166 +1,99 @@
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import {
-  HttpException,
-  HttpStatus,
-  Inject,
-  Injectable,
-  Optional,
-} from '@nestjs/common';
-import { ErrorCode } from '@app/contracts';
-import { ClsService } from 'nestjs-cls';
-import { CORRELATION_ID_KEY } from '@app/common';
-import { isUUID } from 'class-validator';
-import type {
-  BookingDraftResponse,
-  CreateBookingDto,
-} from './dto/create-booking.dto.js';
+  ErrorCode,
+  type BookingLeg,
+  type BookingResponse,
+  type SubmitBookingRequest,
+} from '@app/contracts';
 
-export const BOOKING_CLIENT = 'BOOKING_CLIENT';
-
-export interface BookingClient {
-  createDraft(
-    dto: CreateBookingDto,
-    userId: string,
-  ): Promise<BookingDraftResponse>;
-  getDraft?(id: string): Promise<BookingDraftResponse>;
-}
+import { BookingGrpcClientService } from './booking.grpc.client.js';
+import type { CreateBookingDto } from './dto/create-booking.dto.js';
 
 /**
- * Default HTTP client that communicates with the downstream booking microservice.
- */
-@Injectable()
-export class BookingHttpService implements BookingClient {
-  private readonly normalizedBaseUrl: string;
-
-  constructor(
-    baseUrl = 'http://booking:3000',
-    private readonly cls?: ClsService,
-  ) {
-    this.normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
-  }
-
-  async createDraft(
-    dto: CreateBookingDto,
-    userId: string,
-  ): Promise<BookingDraftResponse> {
-    const url = `${this.normalizedBaseUrl}/drafts`;
-    const serviceKey = process.env.GATEWAY_BOOKING_SERVICE_KEY;
-    if (!serviceKey || serviceKey.length < 32) {
-      throw new HttpException(
-        { code: ErrorCode.SERVICE_UNAVAILABLE },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-gateway-booking-key': serviceKey,
-          'x-correlation-id': this.cls?.get<string>(CORRELATION_ID_KEY) ?? '',
-        },
-        // Never forward inline National IDs, caller-selected tokens, or owner overrides.
-        body: JSON.stringify({
-          userId,
-          bookingKey: dto.bookingKey,
-          passengerIds: dto.passengerIds,
-          legs: dto.legs ?? [
-            {
-              tripId: dto.tripId,
-              travelClassId: dto.travelClassId,
-              originStationId: dto.originStationId,
-              destinationStationId: dto.destinationStationId,
-            },
-          ],
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch {
-      throw new HttpException(
-        {
-          code: ErrorCode.SERVICE_UNAVAILABLE,
-          message: 'Booking service is unreachable',
-        },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-
-    const payload = (await response.json()) as Record<string, unknown>;
-    if (!response.ok) {
-      const error =
-        payload.error && typeof payload.error === 'object'
-          ? (payload.error as Record<string, unknown>)
-          : payload;
-      const code = Object.values(ErrorCode).includes(error.code as ErrorCode)
-        ? error.code
-        : ErrorCode.SERVICE_UNAVAILABLE;
-      const detail = Array.isArray(error.details)
-        ? (error.details.find((item: unknown) => {
-            if (!item || typeof item !== 'object') return false;
-            const value = (item as Record<string, unknown>).rejectedValue;
-            if (!value || typeof value !== 'object') return false;
-            const passenger = value as Record<string, unknown>;
-            return (
-              isUUID(passenger.passengerRef) &&
-              /^\*{10}\d{4}$/.test(String(passenger.maskedNationalId))
-            );
-          }) as Record<string, unknown> | undefined)
-        : undefined;
-      const passenger = detail?.rejectedValue as
-        { passengerRef: string; maskedNationalId: string } | undefined;
-      throw new HttpException(
-        {
-          code,
-          ...(code === ErrorCode.PASSENGER_OVERLAP && passenger
-            ? {
-                details: [
-                  {
-                    field: 'passengerIds',
-                    rejectedValue: {
-                      passengerRef: passenger.passengerRef,
-                      maskedNationalId: passenger.maskedNationalId,
-                    },
-                    issueKey: 'ISSUE_PASSENGER_ALREADY_TRAVELLING',
-                    actionKey: 'ACTION_CHANGE_PASSENGER_OR_TRIP',
-                    params: { maskedNationalId: passenger.maskedNationalId },
-                  },
-                ],
-              }
-            : {}),
-        },
-        response.status,
-      );
-    }
-    return (
-      payload.success === true ? payload.data : payload
-    ) as BookingDraftResponse;
-  }
-}
-
-/**
- * Gateway service coordinating booking draft operations.
+ * The gateway's booking work: shape a submission for booking's checkout, and
+ * name every later step by its reference.
+ *
+ * BookingRequestGuard has already refused anything malformed -- unknown keys,
+ * a non-UUID, more than four passengers, more than two legs, a leg that starts
+ * and ends at one station -- so nothing is re-checked here. What is left is the
+ * one thing the guard cannot do: turn the request's two accepted shapes into
+ * the single shape booking's contract takes.
  */
 @Injectable()
 export class BookingService {
-  constructor(
-    @Optional()
-    @Inject(BOOKING_CLIENT)
-    private readonly client?: BookingClient,
-  ) {}
+  constructor(private readonly bookings: BookingGrpcClientService) {}
 
-  async createBooking(
-    dto: CreateBookingDto,
-    userId: string,
-  ): Promise<BookingDraftResponse> {
-    if (!this.client) {
-      throw new HttpException(
-        {
-          code: ErrorCode.SERVICE_UNAVAILABLE,
-          message: 'Booking client not configured',
-        },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-    return this.client.createDraft(dto, userId);
+  submit(dto: CreateBookingDto, headerKey?: string): Promise<BookingResponse> {
+    return this.bookings.submit(submissionOf(dto, headerKey));
   }
+
+  review(bookingReference: string): Promise<BookingResponse> {
+    return this.bookings.get({ bookingReference });
+  }
+
+  acceptTerms(bookingReference: string): Promise<BookingResponse> {
+    return this.bookings.acceptTerms({ bookingReference });
+  }
+
+  continueToPayment(bookingReference: string): Promise<BookingResponse> {
+    return this.bookings.continueToPayment({ bookingReference });
+  }
+
+  abandon(bookingReference: string): Promise<BookingResponse> {
+    return this.bookings.abandon({ bookingReference });
+  }
+}
+
+/**
+ * A booking may arrive as a `legs` array or as one leg's fields at the top
+ * level, and carries its class per leg. Checkout prices one class for the
+ * whole booking, so two legs must agree on it.
+ *
+ * The owner is never read from the body: booking takes the caller from the
+ * metadata the gateway signs onto the call.
+ */
+function submissionOf(
+  dto: CreateBookingDto,
+  headerKey?: string,
+): SubmitBookingRequest {
+  const legs = dto.legs ?? [
+    {
+      tripId: dto.tripId,
+      travelClassId: dto.travelClassId,
+      originStationId: dto.originStationId,
+      destinationStationId: dto.destinationStationId,
+    },
+  ];
+
+  const travelClassId = legs[0]?.travelClassId;
+  if (!travelClassId || legs.some((leg) => leg.travelClassId !== travelClassId)) {
+    throw new HttpException(
+      {
+        code: ErrorCode.VALIDATION_ERROR,
+        message: [
+          {
+            field: 'travelClassId',
+            rejectedValue: undefined,
+            issueKey: 'ISSUE_VALIDATION_FAILED',
+            actionKey: 'ACTION_PICK_SEAT_CLASS',
+          },
+        ],
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  return {
+    // The guard has already made the header and the body key agree.
+    idempotencyKey: (headerKey ?? dto.bookingKey) as string,
+    travelClassId,
+    passengerIds: dto.passengerIds,
+    legs: legs.map(
+      (leg): BookingLeg => ({
+        tripId: leg.tripId as string,
+        originStationId: leg.originStationId as string,
+        destinationStationId: leg.destinationStationId as string,
+      }),
+    ),
+  };
 }
