@@ -957,7 +957,7 @@ describe('MT-15 key reads and request validation', () => {
   });
 });
 
-describe('MT-02 hold-schema rollback safety', () => {
+describe('TA-70 hold-schema rollback safety', () => {
   it('refuses before destructive SQL when protected hold data exists', async () => {
     const trip = await seedTrip({ departureAt: atIn(120) });
     const hold = await service.createHold(
@@ -975,7 +975,7 @@ describe('MT-02 hold-schema rollback safety', () => {
     try {
       await expect(
         new CreateHoldCore1794600000008().down(runner),
-      ).rejects.toThrow('Cannot roll back MT-02 hold storage');
+      ).rejects.toThrow('Cannot roll back hold storage');
     } finally {
       await runner.release();
     }
@@ -1353,7 +1353,7 @@ describe('durable whole-hold expiry batches', () => {
   });
 });
 
-describe('original MT-02 concurrent segment acceptance', () => {
+describe('original TA-70 concurrent segment acceptance', () => {
   it('enforces passenger overlap across accounts and travel classes with free seats', async () => {
     const trip = await seedTrip({
       departureAt: atIn(120),
@@ -1487,7 +1487,7 @@ describe('original MT-02 concurrent segment acceptance', () => {
   });
 });
 
-describe('MT-02 authoritative legacy-data activation gate', () => {
+describe('TA-70 authoritative legacy-data activation gate', () => {
   async function readiness(): Promise<boolean> {
     const previous = process.env.HOLD_CREATION_ENABLED;
     process.env.HOLD_CREATION_ENABLED = 'true';

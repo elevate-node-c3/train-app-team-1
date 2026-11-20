@@ -9,7 +9,15 @@ export default defineConfig({
     root: './',
     include: ['**/*.int-spec.ts'],
     // Replacing exclude also replaces Vitest's defaults.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.claude/**',
+      // TA-70's holds tier owns these: they need their own database URLs and
+      // truncate what they test. `npm run test:holds` runs them.
+      'test/integration/hold-*.int-spec.ts',
+      'test/integration/booking-hold.int-spec.ts',
+    ],
     // Shared database cleanup requires sequential test files.
     fileParallelism: false,
     // Allow time for first-run migrations.

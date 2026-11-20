@@ -1,4 +1,5 @@
-# Local-only database/cache ports for `npm run test:int`.
+# Local-only database/cache/broker ports for `npm run test:int` and
+# `npm run test:holds`.
 # Compose loads this file automatically; do not use it in production.
 # Non-default ports avoid local service conflicts and Windows reserved ranges.
 # Check ranges: `netsh interface ipv4 show excludedportrange protocol=tcp`.
@@ -11,3 +12,8 @@ services:
   redis:
     ports:
       - '127.0.0.1:${REDIS_HOST_PORT:-16379}:6379'
+
+  rabbitmq:
+    # TA-70's expiry-load tier publishes and consumes from the host.
+    ports:
+      - '127.0.0.1:${AMQP_HOST_PORT:-15673}:5672'

@@ -35,7 +35,7 @@ export class CreateHoldPassengerTripKeys1794764000000 implements MigrationInterf
     );
     if (usage?.hasPinnedTrips !== false) {
       throw new Error(
-        'Cannot roll back MT-02 passenger-token key pins while pinned trips exist. Existing tokens depend on their immutable key versions; retain the pins and use a forward migration.',
+        'Cannot roll back passenger-token key pins while pinned trips exist. Existing tokens depend on their immutable key versions; retain the pins and use a forward migration.',
       );
     }
     await queryRunner.query('DROP TABLE hold_passenger_trip_key');

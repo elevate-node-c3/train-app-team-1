@@ -1,0 +1,78 @@
+import { defineConfig } from 'vitest/config';
+import tsconfigPaths from 'vite-tsconfig-paths';
+
+/**
+ * TA-70's tier runs against the development stack from docker-compose.yml,
+ * reached on the host ports the override publishes.
+ *
+ * These fixtures truncate the tables they test and the expiry-load spec stops
+ * and starts the broker, so running this tier resets the local development
+ * data for inventory, identity and booking. The guard below keeps that
+ * confined to the published local ports: it refuses any host or port that is
+ * not this machine's compose stack, so no shared or remote database can ever
+ * be the target.
+ */
+const HOST = '127.0.0.1';
+const POSTGRES_PORT = process.env.POSTGRES_HOST_PORT?.trim() || '15432';
+const AMQP_PORT = process.env.AMQP_HOST_PORT?.trim() || '15673';
+
+/** Compose's own default, which .env overrides per machine. */
+function password(variable: string, fallback: string): string {
+  return process.env[variable]?.trim() || fallback;
+}
+
+function localDatabase(variable: string, role: string): string {
+  const value =
+    process.env[variable] ??
+    `postgres://${role}:${password(
+      `${role.toUpperCase()}_DB_PASSWORD`,
+      `${role}_dev`,
+    )}@${HOST}:${POSTGRES_PORT}/${role}`;
+  const url = new URL(value);
+
+  if (
+    url.hostname !== HOST ||
+    url.port !== POSTGRES_PORT ||
+    url.pathname !== `/${role}`
+  ) {
+    throw new Error(
+      `${variable} must target the local compose database ${role} on ${HOST}:${POSTGRES_PORT}; these fixtures truncate it.`,
+    );
+  }
+  return value;
+}
+
+export default defineConfig({
+  plugins: [tsconfigPaths()],
+  test: {
+    globals: true,
+    root: './',
+    // TA-70's tier: inventory's holds, and booking as their only caller.
+    include: [
+      'test/integration/hold-*.int-spec.ts',
+      'test/integration/booking-hold.int-spec.ts',
+    ],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.kilo/**'],
+    fileParallelism: false,
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
+    env: {
+      INVENTORY_TEST_DATABASE_URL: localDatabase(
+        'HOLDS_INVENTORY_DATABASE_URL',
+        'inventory',
+      ),
+      IDENTITY_TEST_DATABASE_URL: localDatabase(
+        'HOLDS_IDENTITY_DATABASE_URL',
+        'identity',
+      ),
+      BOOKING_TEST_DATABASE_URL: localDatabase(
+        'HOLDS_BOOKING_DATABASE_URL',
+        'booking',
+      ),
+      HOLDS_TEST_RABBITMQ_URL: `amqp://${password(
+        'RABBITMQ_USER',
+        'train_app',
+      )}:${password('RABBITMQ_PASSWORD', 'train_app')}@${HOST}:${AMQP_PORT}`,
+    },
+  },
+});

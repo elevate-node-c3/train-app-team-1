@@ -46,7 +46,7 @@ import {
   truncateInventory,
 } from './support/inventory-database.js';
 import { seedSixStopTrip, SIX_STOP_TRIP } from './support/inventory-fixture.js';
-import { isolatedMt02Endpoints } from './support/mt02-hold-fixture.js';
+import { isolatedHoldEndpoints } from './support/hold-fixture.js';
 
 type Method = 'createHold' | 'getHold' | 'releaseHold' | 'extendHold';
 type NativeClient = grpc.Client &
@@ -62,7 +62,7 @@ type NativeClient = grpc.Client &
       ) => void,
     ) => grpc.ClientUnaryCall
   >;
-const key = 'mt02-native-inventory-service-credential-test-only';
+const key = 'holds-native-inventory-service-credential-test-only';
 const trace = randomUUID();
 let source: DataSource;
 let app: INestMicroservice;
@@ -120,7 +120,7 @@ function request(): CreateHoldRequest {
         tripId: leg.tripId,
         passengerKeyVersion: 1,
         passengerToken: createHash('sha256')
-          .update(`mt02-wire:${passengerRef}:${leg.tripId}`)
+          .update(`holds-wire:${passengerRef}:${leg.tripId}`)
           .digest('hex'),
       })),
     })),
@@ -128,7 +128,7 @@ function request(): CreateHoldRequest {
 }
 
 beforeAll(async () => {
-  isolatedMt02Endpoints();
+  isolatedHoldEndpoints();
   vi.stubEnv('BOOKING_INVENTORY_SERVICE_KEY', key);
   source = await inventoryDataSource();
   const initializer = new DataSourceInitializer(source);
@@ -156,18 +156,16 @@ beforeAll(async () => {
     probe.close((error) => (error ? reject(error) : resolve())),
   );
   const url = `127.0.0.1:${port}`;
-  app = module.createNestMicroservice(
-    {
-      transport: Transport.GRPC,
-      options: {
-        url,
-        package: INVENTORY_PACKAGE_NAME,
-        protoPath: getInventoryProtoPath(),
-        loader: INVENTORY_GRPC_LOADER_OPTIONS,
-      },
+  app = module.createNestMicroservice({
+    transport: Transport.GRPC,
+    logger: false,
+    options: {
+      url,
+      package: INVENTORY_PACKAGE_NAME,
+      protoPath: getInventoryProtoPath(),
+      loader: INVENTORY_GRPC_LOADER_OPTIONS,
     },
-    { logger: false },
-  );
+  });
   await app.listen();
   let definition = grpc.loadPackageDefinition(
     protoLoader.loadSync(
@@ -180,7 +178,10 @@ beforeAll(async () => {
   const Service = definition[
     INVENTORY_SERVICE_NAME
   ] as grpc.ServiceClientConstructor;
-  client = new Service(url, grpc.credentials.createInsecure()) as NativeClient;
+  client = new Service(
+    url,
+    grpc.credentials.createInsecure(),
+  ) as unknown as NativeClient;
 });
 
 beforeEach(async () => {
@@ -230,7 +231,7 @@ afterAll(async () => {
   vi.unstubAllEnvs();
 });
 
-describe('MT-02 live private Inventory protobuf transport', () => {
+describe('TA-70 live private Inventory protobuf transport', () => {
   it('refuses unauthenticated calls without writing a hold', async () => {
     await expect(
       call('createHold', request(), new grpc.Metadata()),
@@ -269,11 +270,21 @@ describe('MT-02 live private Inventory protobuf transport', () => {
       bookingKey: randomUUID(),
       passengers: [{ ...req.passengers[0], passengerRef }],
     };
+    // The refusal names the passenger, as a detail ref the edge resolves into
+    // Arabic or English (TA-70, BR-57). Inventory holds no National ID, so the
+    // booking reference is what it can name.
     await expect(call('createHold', conflicting)).rejects.toMatchObject({
       code: grpc.status.ABORTED,
       details: JSON.stringify({
         code: ErrorCode.PASSENGER_OVERLAP,
-        passengerRef,
+        details: [
+          {
+            field: 'passengerRefs',
+            rejectedValue: { passengerRef },
+            issueKey: 'ISSUE_PASSENGER_ALREADY_BOOKED',
+            actionKey: 'ACTION_REMOVE_PASSENGER_OR_PICK_ANOTHER_TRAIN',
+          },
+        ],
       }),
     });
     const [event] = await source.query(

@@ -26,7 +26,7 @@ import { HoldPassengerTripKeyRepository } from '../../apps/identity/src/modules/
 import { PassengerRepository } from '../../apps/identity/src/modules/auth/repositories/passenger.repository.js';
 import { HoldPassengersService } from '../../apps/identity/src/modules/auth/services/hold-passengers.service.js';
 
-const schema = `mt02_identity_${randomUUID().replace(/-/g, '')}`;
+const schema = `holds_identity_${randomUUID().replace(/-/g, '')}`;
 const contenderName = `${schema}_contender`;
 const keyOne = randomBytes(32);
 const keyTwo = randomBytes(32);
@@ -48,7 +48,7 @@ function isolatedIdentityUrl(): string {
   const value = process.env.IDENTITY_TEST_DATABASE_URL;
   if (!value)
     throw new Error(
-      'IDENTITY_TEST_DATABASE_URL must explicitly target the isolated MT-02 Identity database.',
+      'IDENTITY_TEST_DATABASE_URL must explicitly target the isolated TA-70 Identity database.',
     );
   let url: URL;
   try {
@@ -56,17 +56,18 @@ function isolatedIdentityUrl(): string {
   } catch {
     throw new Error('Invalid IDENTITY_TEST_DATABASE_URL.');
   }
+  // The password is the machine's own compose value, so it is not asserted.
+  const port = process.env.POSTGRES_HOST_PORT?.trim() || '15432';
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
     url.hostname !== '127.0.0.1' ||
-    url.port !== '25432' ||
+    url.port !== port ||
     url.pathname !== '/identity' ||
     url.username !== 'identity' ||
-    url.password !== 'identity_mt02_test_only' ||
     url.search !== ''
   ) {
     throw new Error(
-      'Identity tests require the dedicated identity role/database on 127.0.0.1:25432.',
+      `Identity tests require the identity role/database on 127.0.0.1:${port}.`,
     );
   }
   return value;
@@ -136,7 +137,7 @@ async function seedPassenger(
        VALUES ($1, $2, 'active', false, $3, $4) ON CONFLICT (id) DO NOTHING`,
       [
         ownerId,
-        `${ownerId}@mt02-identity.invalid`,
+        `${ownerId}@holds-identity.invalid`,
         options.isSelf ? encryptNationalId(plainNationalId, 'account') : null,
         options.isSelf ? nationalIdBlindIndex(plainNationalId) : null,
       ],
@@ -159,7 +160,7 @@ async function seedPassenger(
        VALUES ($1, $2, 'active', false, $3) ON CONFLICT (id) DO NOTHING`,
       [
         ownerId,
-        `${ownerId}@mt02-identity.invalid`,
+        `${ownerId}@holds-identity.invalid`,
         options.isSelf ? plainNationalId : null,
       ],
     );
@@ -238,7 +239,7 @@ afterAll(async () => {
   vi.unstubAllEnvs();
 });
 
-describe('MT-02 Identity real PostgreSQL prerequisite', () => {
+describe('TA-70 Identity real PostgreSQL prerequisite', () => {
   it('upgrades the existing schema forward without rewriting profiles and registers the pin entity', async () => {
     expect(upgraded).toEqual([
       'CreateHoldPassengerTripKeys1794764000000',
@@ -285,7 +286,7 @@ describe('MT-02 Identity real PostgreSQL prerequisite', () => {
       );
       await expect(
         new CreateHoldPassengerTripKeys1794764000000().down(runner),
-      ).rejects.toThrow('Cannot roll back MT-02 passenger-token key pins');
+      ).rejects.toThrow('Cannot roll back passenger-token key pins');
       const [state]: {
         pins: string;
         tableName: string;
@@ -421,7 +422,7 @@ describe('MT-02 Identity real PostgreSQL prerequisite', () => {
     await source.query(
       `INSERT INTO account (id, email, status, bookable)
        VALUES ($1, $2, 'active', false)`,
-      [ownerId, `${ownerId}@mt02-encrypted.invalid`],
+      [ownerId, `${ownerId}@holds-encrypted.invalid`],
     );
     const initializer = new DataSourceInitializer(source);
     const unitOfWork = new TypeOrmUnitOfWork(initializer);
