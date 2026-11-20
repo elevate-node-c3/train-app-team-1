@@ -32,14 +32,14 @@ import {
   failFirstExpiryMark,
   holdEventCapture,
   inventoryExpiryInstance,
-  isolatedMt02Endpoints,
+  isolatedHoldEndpoints,
   rabbitManagement,
   seedHoldGroups,
   waitForSnapshot,
   type HoldEventCapture,
   type InventoryExpiryInstance,
   type SeededHoldGroups,
-} from './support/mt02-hold-fixture.js';
+} from './support/hold-fixture.js';
 
 let source: DataSource;
 let capture: HoldEventCapture | undefined;
@@ -47,25 +47,16 @@ let instances: InventoryExpiryInstance[] = [];
 let cleanup: (() => Promise<void>)[] = [];
 const execute = promisify(execFile);
 
+/** docker-compose.yml's own project name; nothing else may be targeted. */
+const COMPOSE_PROJECT = 'train-app';
+
 async function brokerCommand(action: 'stop' | 'start'): Promise<void> {
-  isolatedMt02Endpoints();
-  if (action === 'stop') {
-    const overview = await rabbitManagement<{ node: string }>('overview');
-    if (overview.node !== 'rabbit@mt02-rabbitmq')
-      throw new Error('Refusing to stop a non-MT-02 broker');
-  }
-  // Never target the developer stack, recreate volumes, or stop PostgreSQL.
+  isolatedHoldEndpoints();
+  // Only ever the broker of this machine's compose project, by name, and only
+  // stop/start it: never `down`, never a volume, never PostgreSQL.
   await execute(
     'docker',
-    [
-      'compose',
-      '-f',
-      'docker-compose.mt02-test.yml',
-      '-p',
-      'train-app-mt02-test',
-      action,
-      'rabbitmq',
-    ],
+    ['compose', '-p', COMPOSE_PROJECT, action, 'rabbitmq'],
     {
       cwd: process.cwd(),
       timeout: 45_000,
@@ -218,7 +209,7 @@ async function returnedCounts(
 }
 
 beforeAll(async () => {
-  const endpoints = isolatedMt02Endpoints();
+  const endpoints = isolatedHoldEndpoints();
   vi.stubEnv('RABBITMQ_URL', endpoints.rabbit);
   vi.stubEnv('OUTBOX_RELAY_ENABLED', 'true');
   vi.stubEnv('OUTBOX_BATCH_SIZE', '100');
@@ -243,7 +234,7 @@ beforeAll(async () => {
   expect(postgres.fsync).toBe('on');
   expect(postgres.synchronous_commit).toBe('on');
   console.info(
-    'MT02_ENVIRONMENT',
+    'HOLDS_ENVIRONMENT',
     JSON.stringify({
       postgres,
       rabbit: {
@@ -276,7 +267,7 @@ beforeAll(async () => {
 }, 180_000);
 
 beforeEach(async () => {
-  isolatedMt02Endpoints();
+  isolatedHoldEndpoints();
   await truncateInventory(source);
   capture = await holdEventCapture();
 });
@@ -299,7 +290,7 @@ afterAll(async () => {
   vi.unstubAllEnvs();
 });
 
-describe('MT-02 real isolated expiry SLO and recovery', () => {
+describe('TA-70 real isolated expiry SLO and recovery', () => {
   it('retains a mandatory return without a binding and recovers the same expired event ID', async () => {
     await capture!.unbindExpiry();
     await assertNoExpiryBinding();
@@ -335,7 +326,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
     await assertWholeGroups(seed);
     expect(capturedExpired(seed)[0].event.id).toBe(pending.id);
     console.info(
-      'MT02_MANDATORY_RETURN_RECOVERY',
+      'HOLDS_MANDATORY_RETURN_RECOVERY',
       JSON.stringify({
         eventId: pending.id,
         attempts: pending.attemptCount,
@@ -377,7 +368,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
         if (!deadlineReported && snapshot.now.getTime() >= deadline) {
           deadlineReported = true;
           console.info(
-            'MT02_DEADLINE_SNAPSHOT',
+            'HOLDS_DEADLINE_SNAPSHOT',
             JSON.stringify({
               ...snapshot,
               capturedExpired: capturedExpired(seed).length,
@@ -407,7 +398,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
       finished.before -
       seed.deadline.getTime();
     console.info(
-      'MT02_LOAD_RESULT',
+      'HOLDS_LOAD_RESULT',
       JSON.stringify({
         groups: 10_000,
         legs: seed.expectedLegs,
@@ -484,14 +475,14 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
         0,
       ),
     ).toBe(20_000);
-    console.info('MT02_INSTANCE_CONTRIBUTIONS', JSON.stringify(contributions));
+    console.info('HOLDS_INSTANCE_CONTRIBUTIONS', JSON.stringify(contributions));
   }, 600_000);
 
   it('restarts from hour-aged deadlines and unpublished expiry events after injected broker unavailability', async () => {
     const unavailable = await instance('outage', false);
     const failedPublisher = vi
       .spyOn(unavailable.publisher, 'publishConfirmed')
-      .mockRejectedValue(new Error('MT02 injected broker unavailable'));
+      .mockRejectedValue(new Error('HOLDS injected broker unavailable'));
     await unavailable.start();
     const seed = await seedHoldGroups(source, 200, -HOUR_MS);
     await waitForSnapshot(
@@ -544,7 +535,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
       });
     }
     console.info(
-      'MT02_AGED_RESTART_RESULT',
+      'HOLDS_AGED_RESTART_RESULT',
       JSON.stringify({
         groups: 200,
         pendingExpiredEvents: pending.length,
@@ -573,12 +564,12 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
     }[] = await source.query(`SELECT count(*)::integer AS rows,
       count(*) FILTER (WHERE published_at <= transaction_started_at OR published_at > observed_at)::integer AS "badClock",
       (min(extract(epoch FROM published_at - transaction_started_at)) * 1000)::double precision AS "minPostTransactionMs"
-      FROM mt02_fixture_mark_audit`);
+      FROM holds_fixture_mark_audit`);
     expect(audit.rows).toBe(10);
     expect(audit.badClock).toBe(0);
     expect(audit.minPostTransactionMs).toBeGreaterThan(0);
     console.info(
-      'MT02_CONFIRM_MARK_REPLAY',
+      'HOLDS_CONFIRM_MARK_REPLAY',
       JSON.stringify({
         ...audit,
         replayedIds: capturedExpired(seed)
@@ -602,7 +593,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
         if (!disconnected && options?.type === HOLD_EXPIRED_EVENT_TYPE) {
           disconnected = true;
           transport.stream.destroy(
-            new Error('MT02 injected producer disconnect'),
+            new Error('HOLDS injected producer disconnect'),
           );
         }
         return accepted;
@@ -620,7 +611,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
     expect(retried.count).toBeGreaterThan(0);
     expect(capture!.errors).toEqual([]);
     console.info(
-      'MT02_CONNECTION_RECOVERY',
+      'HOLDS_CONNECTION_RECOVERY',
       JSON.stringify({
         retriedExpiredEvents: retried.count,
         uniqueExpiredIds: capturedExpired(seed).length,
@@ -677,7 +668,7 @@ describe('MT-02 real isolated expiry SLO and recovery', () => {
       await assertWholeGroups(seed);
       expect(capture.errors).toEqual([]);
       console.info(
-        'MT02_REAL_BROKER_RESTART',
+        'HOLDS_REAL_BROKER_RESTART',
         JSON.stringify({
           groups: seed.groups.length,
           expiredWhileBrokerOffline: offline.expired,

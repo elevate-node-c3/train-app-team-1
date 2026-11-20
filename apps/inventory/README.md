@@ -4,7 +4,7 @@ The Inventory service is the authoritative owner of train seat inventory, coach 
 
 This document details the pure group seat allocation engine: coach layout geometry, the tiered fallback order, and the tie-breaking hierarchies that make allocation deterministic. The seat tables it reads, and the occupation rules that decide what is free, are documented alongside the schema in `src/modules/seats/`.
 
-## MT-02 Current Hold Lifecycle
+## TA-70 Current Hold Lifecycle
 
 Holds are created only here. The SEAT-2 `allocateGroupSeats` engine documented
 below is reused as-is; there is no second allocator and no per-leg
@@ -110,17 +110,20 @@ geometry changes for in-use trips. The Inventory refusal remains defense in dept
 Use the separate project, not the normal e2e harness (which removes volumes):
 
 ```powershell
-docker compose -f docker-compose.mt02-test.yml -p train-app-mt02-test up
-pnpm test:mt02
+docker compose up -d postgres rabbitmq redis
+pnpm test:holds
 pnpm exec vitest run test/contracts/hold-events.contract.spec.ts
-docker compose -f docker-compose.mt02-test.yml -p train-app-mt02-test stop
 ```
 
-The first command runs in a separate terminal. This stack publishes only local
-test ports: PostgreSQL `25432`, AMQP `35672`, management `35673`. Fixtures use
-service roles and refuse non-dedicated database targets. Test data and volumes
-belong exclusively to `train-app-mt02-test`; do not point cleanup at the normal
-developer database. `pnpm test:mt02` does not use `--passWithNoTests`.
+The tier runs against the development stack in `docker-compose.yml`, on the
+host ports `docker-compose.override.yml` publishes: PostgreSQL `15432`, AMQP
+`15673`, management `15672`. Fixtures use service roles and refuse any target
+that is not this machine's compose stack.
+
+These fixtures truncate what they test, and the expiry-load spec stops and
+starts the broker, so running the tier resets local development data for
+inventory, identity and booking. `pnpm test:holds` does not use
+`--passWithNoTests`.
 
 The hold-core suite covers a 50-iteration last-seat race, concurrent touching
 and intersecting segments, replacement rollback, release/create fencing,
@@ -137,14 +140,14 @@ percentiles alone are not sufficient evidence.
 - Catalog consumes all four lifecycle events on separate durable queues and
   advances a per-trip availability generation, invalidating exact and overlapping
   cached segments without Redis scans. An authoritative Catalog count projection
-  belongs to SEAT-4 and is not required by MT-02; Inventory always uses PostgreSQL
+  belongs to SEAT-4 and is not required by TA-70; Inventory always uses PostgreSQL
   facts for hold decisions.
 - Authoritative legacy occupation backfill, real secret provisioning/retention,
   production monitoring, and an actual hour-long outage soak remain operational
   activation work. Hour-aged fixtures plus a real broker restart prove recovery
   mechanics, not an elapsed one-hour production soak.
 
-Exact MT-02 production/soak actions:
+Exact TA-70 production/soak actions:
 
 1. Back up Identity, provision all purpose-specific keys, and run additive
    migrations before enabling hold creation. Verify every non-null Identity
@@ -167,7 +170,7 @@ Exact MT-02 production/soak actions:
 
 ## Table of Contents
 
-- [MT-02 Current Hold Lifecycle](#mt-02-current-hold-lifecycle)
+- [TA-70 Current Hold Lifecycle](#mt-02-current-hold-lifecycle)
   - [Database and Worker](#database-and-worker)
   - [Runtime and Rollout](#runtime-and-rollout)
   - [Isolated Verification](#isolated-verification)

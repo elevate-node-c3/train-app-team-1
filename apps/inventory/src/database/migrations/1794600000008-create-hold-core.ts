@@ -218,7 +218,7 @@ export class CreateHoldCore1794600000008 implements MigrationInterface {
     `);
     if (usage?.hasProtectedData !== false) {
       throw new Error(
-        'Cannot roll back MT-02 hold storage while hold heads, receipts, owner guards, passenger snapshots, or referenced occupations exist. Disable hold creation and use a forward migration that preserves committed hold data.',
+        'Cannot roll back hold storage while hold heads, receipts, owner guards, passenger snapshots, or referenced occupations exist. Disable hold creation and use a forward migration that preserves committed hold data.',
       );
     }
 

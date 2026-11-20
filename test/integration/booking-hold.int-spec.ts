@@ -45,27 +45,28 @@ function dedicatedBookingUrl(): string {
   const value = process.env.BOOKING_TEST_DATABASE_URL;
   if (!value)
     throw new Error(
-      'Set BOOKING_TEST_DATABASE_URL for the isolated MT-02 Booking database.',
+      'Set BOOKING_TEST_DATABASE_URL for the isolated TA-70 Booking database.',
     );
   const url = new URL(value);
+  const port = process.env.POSTGRES_HOST_PORT?.trim() || '15432';
   if (
     url.hostname !== '127.0.0.1' ||
-    url.port !== '25432' ||
+    url.port !== port ||
     url.pathname !== '/booking' ||
     url.username !== 'booking'
   ) {
     throw new Error(
-      'Booking integration tests require booking@127.0.0.1:25432/booking.',
+      `Booking integration tests require booking@127.0.0.1:${port}/booking.`,
     );
   }
   return value;
 }
 
-describe('MT-02 Booking durable orchestration (real PostgreSQL)', () => {
-  const schema = `mt02_booking_${randomUUID().replaceAll('-', '')}`;
+describe('TA-70 Booking durable orchestration (real PostgreSQL)', () => {
+  const schema = `holds_booking_${randomUUID().replaceAll('-', '')}`;
   const legacyId = randomUUID();
   const cls = {
-    get: () => 'mt02-booking-correlation',
+    get: () => 'holds-booking-correlation',
   } as unknown as ClsService;
   let setup: DataSource;
   let first: DataSource;
@@ -200,6 +201,7 @@ describe('MT-02 Booking durable orchestration (real PostgreSQL)', () => {
     ).toEqual([
       'CreateBookingDraftTables1793500000000',
       'BookingHoldIntent1794764000000',
+      'BookingCheckoutFlow1795000000002',
     ]);
     await expect(
       service.createDraft({ ...draftInput(), bookingKey: legacyId }),

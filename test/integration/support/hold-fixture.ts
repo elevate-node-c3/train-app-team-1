@@ -39,27 +39,30 @@ const TRAVEL_CLASS = randomUUID();
 const STATIONS = [randomUUID(), randomUUID(), randomUUID()];
 
 /** Refuse developer ports before any fixture can truncate or create a queue. */
-export function isolatedMt02Endpoints(): { database: string; rabbit: string } {
+export function isolatedHoldEndpoints(): { database: string; rabbit: string } {
   const database = new URL(INVENTORY_DATABASE_URL);
-  const rabbit = new URL(process.env.MT02_TEST_RABBITMQ_URL ?? '');
+  const rabbit = new URL(process.env.HOLDS_TEST_RABBITMQ_URL ?? '');
+  // Local compose only: these fixtures truncate, so a remote or shared target
+  // must never be reachable from here. The ports come from the override.
+  const postgresPort = process.env.POSTGRES_HOST_PORT?.trim() || '15432';
+  const amqpPort = process.env.AMQP_HOST_PORT?.trim() || '15673';
   if (
     database.hostname !== '127.0.0.1' ||
-    database.port !== '25432' ||
+    database.port !== postgresPort ||
     database.pathname !== '/inventory' ||
     database.username !== 'inventory'
   ) {
     throw new Error(
-      'MT-02 fixtures require the inventory role/database on 127.0.0.1:25432',
+      `TA-70 fixtures require the inventory role/database on 127.0.0.1:${postgresPort}`,
     );
   }
   if (
     rabbit.protocol !== 'amqp:' ||
     rabbit.hostname !== '127.0.0.1' ||
-    rabbit.port !== '35672' ||
-    rabbit.username !== 'mt02'
+    rabbit.port !== amqpPort
   ) {
     throw new Error(
-      'MT-02 fixtures require the isolated mt02 RabbitMQ user on 127.0.0.1:35672',
+      `TA-70 fixtures require the local compose RabbitMQ on 127.0.0.1:${amqpPort}`,
     );
   }
   return { database: database.href, rabbit: rabbit.href };
@@ -72,10 +75,10 @@ export async function inventoryExpiryInstance(
   start = true,
 ) {
   const options = observer.options;
-  if (options.type !== 'postgres') throw new Error('MT-02 requires PostgreSQL');
+  if (options.type !== 'postgres') throw new Error('TA-70 requires PostgreSQL');
   const source = new DataSource({
     ...options,
-    extra: { ...options.extra, max: 4, application_name: `mt02-${label}` },
+    extra: { ...options.extra, max: 4, application_name: `holds-${label}` },
   });
   const module = await Test.createTestingModule({
     imports: [ClsModule.forRoot()],
@@ -215,9 +218,9 @@ export async function seedHoldGroups(
   count: number,
   dueInMs = 10_000,
 ): Promise<SeededHoldGroups> {
-  isolatedMt02Endpoints();
+  isolatedHoldEndpoints();
   if (!Number.isInteger(count) || count < 1 || count > 10_000)
-    throw new Error('Invalid MT-02 fixture size');
+    throw new Error('Invalid TA-70 fixture size');
   const began = performance.now();
   const trips = Array.from(
     { length: Math.ceil(count / 100) * 2 },
@@ -255,7 +258,7 @@ export async function seedHoldGroups(
             tripId: leg.tripId,
             passengerKeyVersion: 1,
             passengerToken: createHash('sha256')
-              .update(`mt02:${id}:${passengerRef}:${leg.tripId}`)
+              .update(`holds:${id}:${passengerRef}:${leg.tripId}`)
               .digest('hex'),
           })),
         };
@@ -282,13 +285,13 @@ export async function seedHoldGroups(
       'SELECT clock_timestamp() AS now',
     );
     await manager.query(
-      `CREATE TEMP TABLE mt02_trip_seed ON COMMIT DROP AS
+      `CREATE TEMP TABLE holds_trip_seed ON COMMIT DROP AS
       SELECT * FROM jsonb_to_recordset($1::jsonb) AS t(id uuid, "trainId" uuid, index integer, reverse boolean)`,
       [JSON.stringify(trips)],
     );
     await manager.query(
       `INSERT INTO inventory_trip (id, status, timetable_version, train_id, train_number, service_date)
-      SELECT id, 'on_sale', 1, "trainId", 1000 + index, $1::timestamptz::date FROM mt02_trip_seed`,
+      SELECT id, 'on_sale', 1, "trainId", 1000 + index, $1::timestamptz::date FROM holds_trip_seed`,
       [clock.now],
     );
     await manager.query(
@@ -298,13 +301,13 @@ export async function seedHoldGroups(
                         WHEN 1 THEN $3::uuid ELSE CASE WHEN t.reverse THEN $2::uuid ELSE $4::uuid END END,
         CASE WHEN p.position = 0 THEN NULL ELSE $1::timestamptz + interval '40 minutes' + p.position * interval '10 minutes' + CASE WHEN t.reverse THEN interval '2 hours' ELSE interval '0' END END,
         CASE WHEN p.position = 2 THEN NULL ELSE $1::timestamptz + interval '40 minutes' + p.position * interval '10 minutes' + CASE WHEN t.reverse THEN interval '2 hours' ELSE interval '0' END END
-      FROM mt02_trip_seed t CROSS JOIN (VALUES (0), (1), (2)) p(position)`,
+      FROM holds_trip_seed t CROSS JOIN (VALUES (0), (1), (2)) p(position)`,
       [clock.now, ...STATIONS],
     );
     await manager.query(
       `INSERT INTO trip_coach (id, trip_id, coach_number, position, travel_class_id, travel_class_name_en, travel_class_name_ar)
-      SELECT gen_random_uuid(), t.id, c.number, c.number - 1, $1, 'MT02 Economy', 'MT02 Economy'
-      FROM mt02_trip_seed t CROSS JOIN generate_series(1, 3) c(number)`,
+      SELECT gen_random_uuid(), t.id, c.number, c.number - 1, $1, 'HOLDS Economy', 'HOLDS Economy'
+      FROM holds_trip_seed t CROSS JOIN generate_series(1, 3) c(number)`,
       [TRAVEL_CLASS],
     );
     await manager.query(`INSERT INTO trip_seat (id, trip_id, trip_coach_id, seat_number, travel_class_id, row_number, side, seat_index_in_side)
@@ -312,54 +315,54 @@ export async function seedHoldGroups(
         CASE WHEN s.number % 2 = 1 THEN 'left' ELSE 'right' END, 0
       FROM trip_coach c CROSS JOIN LATERAL generate_series(1, CASE WHEN c.coach_number = 3 THEN 40 ELSE 80 END) s(number)`);
     await manager.query(
-      `CREATE TEMP TABLE mt02_hold_seed ON COMMIT DROP AS
+      `CREATE TEMP TABLE holds_hold_seed ON COMMIT DROP AS
       SELECT * FROM jsonb_to_recordset($1::jsonb) AS h(id uuid, "ownerId" uuid, "bookingKey" text, fingerprint text, legs jsonb, passengers jsonb)`,
       [JSON.stringify(groups)],
     );
     await manager.query(
-      `INSERT INTO seat_hold_owner_guard (owner_id, created_at) SELECT "ownerId", $1 FROM mt02_hold_seed`,
+      `INSERT INTO seat_hold_owner_guard (owner_id, created_at) SELECT "ownerId", $1 FROM holds_hold_seed`,
       [clock.now],
     );
     await manager.query(
       `INSERT INTO seat_hold_group (id, booking_key, owner_id, request_fingerprint, state, version, extension_used, expires_at, created_at, updated_at)
-      SELECT id, "bookingKey", "ownerId", fingerprint, 'held', 1, false, $1::timestamptz + interval '15 minutes', $1, $1 FROM mt02_hold_seed`,
+      SELECT id, "bookingKey", "ownerId", fingerprint, 'held', 1, false, $1::timestamptz + interval '15 minutes', $1, $1 FROM holds_hold_seed`,
       [clock.now],
     );
     await manager.query(
       `INSERT INTO seat_hold_leg (id, hold_id, trip_id, travel_class_id, origin_station_id, destination_station_id, origin_position, destination_position, segment, outcome, created_at)
       SELECT gen_random_uuid(), h.id, l."tripId", l."travelClassId", l."originStationId", l."destinationStationId", l."originPosition", l."destinationPosition", int4range(0, 2, '[)'), l.outcome, $1
-      FROM mt02_hold_seed h CROSS JOIN LATERAL jsonb_to_recordset(h.legs) AS l("tripId" uuid, "travelClassId" uuid, "originStationId" uuid, "destinationStationId" uuid, "originPosition" integer, "destinationPosition" integer, outcome text)`,
+      FROM holds_hold_seed h CROSS JOIN LATERAL jsonb_to_recordset(h.legs) AS l("tripId" uuid, "travelClassId" uuid, "originStationId" uuid, "destinationStationId" uuid, "originPosition" integer, "destinationPosition" integer, outcome text)`,
       [clock.now],
     );
     await manager.query(
       `INSERT INTO seat_hold_passenger (id, hold_id, trip_id, passenger_ref, passenger_token, passenger_key_version, created_at)
       SELECT gen_random_uuid(), h.id, i."tripId", p."passengerRef", i."passengerToken", i."passengerKeyVersion", $1
-      FROM mt02_hold_seed h
+      FROM holds_hold_seed h
       CROSS JOIN LATERAL jsonb_to_recordset(h.passengers) AS p("passengerRef" text, identities jsonb)
       CROSS JOIN LATERAL jsonb_to_recordset(p.identities) AS i("tripId" uuid, "passengerToken" text, "passengerKeyVersion" integer)`,
       [clock.now],
     );
     await manager.query(
-      `CREATE TEMP TABLE mt02_assignment_seed ON COMMIT DROP AS
+      `CREATE TEMP TABLE holds_assignment_seed ON COMMIT DROP AS
        SELECT h.id AS hold_id, p."passengerRef" AS passenger_ref,
          l."tripId" AS trip_id, l."travelClassId" AS travel_class_id,
          l."originStationId" AS origin_station_id, l."destinationStationId" AS destination_station_id,
          l."originPosition" AS origin_position, l."destinationPosition" AS destination_position, l.outcome,
          (p.slot - 1) / 80 + 1 AS coach_number, ((p.slot - 1) % 80 + 1)::text AS seat_number
-       FROM mt02_hold_seed h
+       FROM holds_hold_seed h
        CROSS JOIN LATERAL jsonb_to_recordset(h.passengers) AS p("passengerRef" text, slot integer)
        CROSS JOIN LATERAL jsonb_to_recordset(h.legs) AS l("tripId" uuid, "travelClassId" uuid, "originStationId" uuid, "destinationStationId" uuid, "originPosition" integer, "destinationPosition" integer, outcome text)`,
     );
     // JSON recordsets have generic row estimates. Real statistics avoid an
     // enormous nested-loop plan after small tests have truncated these tables.
-    await manager.query('ANALYZE mt02_assignment_seed');
+    await manager.query('ANALYZE holds_assignment_seed');
     await manager.query('ANALYZE trip_coach');
     await manager.query('ANALYZE trip_seat');
     await manager.query(
       `INSERT INTO seat_hold_assignment (id, hold_id, passenger_ref, passenger_key_version, trip_id, trip_seat_id, travel_class_id, coach_number, seat_number, row_number, outcome, origin_station_id, destination_station_id, origin_position, destination_position, segment, created_at)
        SELECT gen_random_uuid(), a.hold_id, a.passenger_ref, 1, a.trip_id, s.id, a.travel_class_id, c.coach_number, s.seat_number, s.row_number, a.outcome,
          a.origin_station_id, a.destination_station_id, a.origin_position, a.destination_position, int4range(0, 2, '[)'), $1
-       FROM mt02_assignment_seed a
+       FROM holds_assignment_seed a
        JOIN trip_coach c ON c.trip_id = a.trip_id AND c.coach_number = a.coach_number
        JOIN trip_seat s ON s.trip_coach_id = c.id AND s.seat_number = a.seat_number`,
       [clock.now],
@@ -483,7 +486,7 @@ export async function waitForSnapshot(
     if (performance.now() >= end) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   } while (true);
-  throw new Error(`MT-02 observation timed out: ${JSON.stringify(snapshot)}`);
+  throw new Error(`TA-70 observation timed out: ${JSON.stringify(snapshot)}`);
 }
 
 export interface CapturedHoldEvent {
@@ -494,10 +497,10 @@ export interface CapturedHoldEvent {
 
 /** This owned quorum queue proves a durable route, not all consumer effects. */
 export async function holdEventCapture(previousQueue?: string) {
-  const { rabbit } = isolatedMt02Endpoints();
-  const queue = previousQueue ?? `mt02.expiry.capture.${randomUUID()}`;
-  if (!/^mt02\.expiry\.capture\.[0-9a-f-]{36}$/.test(queue))
-    throw new Error('Only an owned MT-02 capture queue may be resumed');
+  const { rabbit } = isolatedHoldEndpoints();
+  const queue = previousQueue ?? `holds.expiry.capture.${randomUUID()}`;
+  if (!/^holds\.expiry\.capture\.[0-9a-f-]{36}$/.test(queue))
+    throw new Error('Only an owned TA-70 capture queue may be resumed');
   const connection = await amqp.connect(rabbit, { timeout: 5_000 });
   const channel = await connection.createChannel();
   const records = new Map<string, CapturedHoldEvent>();
@@ -586,9 +589,12 @@ export async function holdEventCapture(previousQueue?: string) {
 export type HoldEventCapture = Awaited<ReturnType<typeof holdEventCapture>>;
 
 export async function rabbitManagement<T>(path: string): Promise<T> {
-  const { rabbit } = isolatedMt02Endpoints();
+  const { rabbit } = isolatedHoldEndpoints();
   const url = new URL(rabbit);
-  const response = await fetch(`http://127.0.0.1:35673/api/${path}`, {
+  // The management UI compose publishes beside the AMQP port.
+  const managementPort =
+    process.env.RABBITMQ_MANAGEMENT_PORT?.trim() || '15672';
+  const response = await fetch(`http://127.0.0.1:${managementPort}/api/${path}`, {
     headers: {
       Authorization: `Basic ${Buffer.from(`${url.username}:${url.password}`).toString('base64')}`,
     },
@@ -635,29 +641,29 @@ export async function assertNoExpiryBinding(): Promise<void> {
 export async function failFirstExpiryMark(
   source: DataSource,
 ): Promise<() => Promise<void>> {
-  await source.query('CREATE SEQUENCE mt02_fixture_mark_attempt');
+  await source.query('CREATE SEQUENCE holds_fixture_mark_attempt');
   await source.query(
-    'CREATE TABLE mt02_fixture_mark_audit (event_id uuid, transaction_started_at timestamptz, published_at timestamptz, observed_at timestamptz)',
+    'CREATE TABLE holds_fixture_mark_audit (event_id uuid, transaction_started_at timestamptz, published_at timestamptz, observed_at timestamptz)',
   );
-  await source.query(`CREATE FUNCTION mt02_fixture_fail_mark() RETURNS trigger LANGUAGE plpgsql AS $$
+  await source.query(`CREATE FUNCTION holds_fixture_fail_mark() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
       IF NEW.event_type = '${HOLD_EXPIRED_EVENT_TYPE}' AND NEW.published_at IS NOT NULL AND OLD.published_at IS NULL THEN
-        IF nextval('mt02_fixture_mark_attempt') = 1 THEN
-          RAISE EXCEPTION 'MT02 injected post-confirm database mark failure';
+        IF nextval('holds_fixture_mark_attempt') = 1 THEN
+          RAISE EXCEPTION 'HOLDS injected post-confirm database mark failure';
         END IF;
-        INSERT INTO mt02_fixture_mark_audit VALUES (NEW.id, transaction_timestamp(), NEW.published_at, clock_timestamp());
+        INSERT INTO holds_fixture_mark_audit VALUES (NEW.id, transaction_timestamp(), NEW.published_at, clock_timestamp());
       END IF;
       RETURN NEW;
     END $$`);
   await source.query(
-    'CREATE TRIGGER mt02_fixture_fail_mark BEFORE UPDATE ON outbox_event FOR EACH ROW EXECUTE FUNCTION mt02_fixture_fail_mark()',
+    'CREATE TRIGGER holds_fixture_fail_mark BEFORE UPDATE ON outbox_event FOR EACH ROW EXECUTE FUNCTION holds_fixture_fail_mark()',
   );
   return async () => {
     await source.query(
-      'DROP TRIGGER IF EXISTS mt02_fixture_fail_mark ON outbox_event',
+      'DROP TRIGGER IF EXISTS holds_fixture_fail_mark ON outbox_event',
     );
-    await source.query('DROP FUNCTION IF EXISTS mt02_fixture_fail_mark()');
-    await source.query('DROP TABLE IF EXISTS mt02_fixture_mark_audit');
-    await source.query('DROP SEQUENCE IF EXISTS mt02_fixture_mark_attempt');
+    await source.query('DROP FUNCTION IF EXISTS holds_fixture_fail_mark()');
+    await source.query('DROP TABLE IF EXISTS holds_fixture_mark_audit');
+    await source.query('DROP SEQUENCE IF EXISTS holds_fixture_mark_attempt');
   };
 }
