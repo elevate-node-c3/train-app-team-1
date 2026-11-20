@@ -1,18 +1,22 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { commonEnvSchema, setupApp, validateEnv } from '@app/common';
+import { setupApp, validateEnv } from '@app/common';
 import {
   getHealthProtoPath,
   getPaymentProtoPath,
   HEALTH_PACKAGE_NAME,
   PAYMENT_PACKAGE_NAME,
 } from '@app/contracts';
+import { paymentEnvSchema } from './config/env.schema.js';
 import { PaymentModule } from './payment.module.js';
 
-validateEnv(commonEnvSchema, process.env, 'payment');
+validateEnv(paymentEnvSchema, process.env, 'payment');
 
 async function bootstrap() {
-  const app = await NestFactory.create(PaymentModule, { bufferLogs: true });
+  const app = await NestFactory.create(PaymentModule, {
+    bufferLogs: true,
+    rawBody: true,
+  });
 
   const grpcPort = process.env.GRPC_PORT || 50051;
   app.connectMicroservice<MicroserviceOptions>({

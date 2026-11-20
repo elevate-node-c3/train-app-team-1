@@ -29,6 +29,18 @@ export function redactPii<T>(
       .replace(
         /\*{10}[0-9]{4}|\b[a-f0-9]{64}\b/gi,
         '[REDACTED]',
+      )
+      .replace(
+        /sk_(?:test|live)_[a-zA-Z0-9]+/g,
+        '[REDACTED]',
+      )
+      .replace(
+        /whsec_[a-zA-Z0-9]+/g,
+        '[REDACTED]',
+      )
+      .replace(
+        /seti_[a-zA-Z0-9]+_secret_[a-zA-Z0-9]+/g,
+        '[REDACTED]',
       ) as unknown as T;
   }
 

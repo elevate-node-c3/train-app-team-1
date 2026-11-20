@@ -7,6 +7,12 @@ service PaymentService {
   rpc StartCharge (StartChargeRequest) returns (StartChargeResponse);
   // Cancellation compensation applies an 1800ms deadline and retries with the same key.
   rpc CancelCharge (CancelChargeRequest) returns (CancelChargeResponse);
+
+  // Saved Cards
+  rpc CreateSetupIntent (CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
+  rpc ConfirmSetup (ConfirmSetupRequest) returns (SavedCardResponse);
+  rpc ListSavedCards (ListSavedCardsRequest) returns (ListSavedCardsResponse);
+  rpc DeleteSavedCard (DeleteSavedCardRequest) returns (DeleteSavedCardResponse);
 }
 
 message StartChargeRequest {
@@ -29,4 +35,53 @@ message CancelChargeRequest {
 
 message CancelChargeResponse {
   string status = 1;
+}
+
+message CreateSetupIntentRequest {
+  string accountId = 1;
+}
+
+message CreateSetupIntentResponse {
+  string setupIntentId = 1;
+  string clientSecret = 2;
+  string publishableKey = 3;
+}
+
+message ConfirmSetupRequest {
+  string accountId = 1;
+  string setupIntentId = 2;
+}
+
+message ListSavedCardsRequest {
+  string accountId = 1;
+}
+
+message SavedCardItem {
+  string id = 1;
+  string brand = 2;
+  string last4 = 3;
+  int32 expMonth = 4;
+  int32 expYear = 5;
+  string cardholderName = 6;
+  bool isDefault = 7;
+  bool canPay = 8;
+  bool isExpired = 9;
+  string createdAt = 10;
+}
+
+message ListSavedCardsResponse {
+  repeated SavedCardItem cards = 1;
+}
+
+message SavedCardResponse {
+  SavedCardItem card = 1;
+}
+
+message DeleteSavedCardRequest {
+  string accountId = 1;
+  string cardId = 2;
+}
+
+message DeleteSavedCardResponse {
+  bool success = 1;
 }
