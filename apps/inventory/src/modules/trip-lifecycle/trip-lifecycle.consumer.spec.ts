@@ -94,7 +94,7 @@ describe('TripLifecycleConsumer', () => {
       seatCountByClass: { [firstClass]: 20 },
     } satisfies ApplyOutcome);
 
-    await expect(consumer.handle(publishedEnvelope, 1)).resolves.toEqual({
+    await expect(consumer.handle(publishedEnvelope)).resolves.toEqual({
       status: 'handled',
     });
     expect(outbox.append).toHaveBeenCalledWith(
@@ -117,7 +117,7 @@ describe('TripLifecycleConsumer', () => {
       reason: 'stale-version',
     } satisfies ApplyOutcome);
 
-    await expect(consumer.handle(publishedEnvelope, 1)).resolves.toEqual({
+    await expect(consumer.handle(publishedEnvelope)).resolves.toEqual({
       status: 'skipped',
       skipReason: 'stale-version',
     });
@@ -134,7 +134,7 @@ describe('TripLifecycleConsumer', () => {
     );
 
     const thrown = await consumer
-      .handle(envelopeWithNoCoaches, 1)
+      .handle(envelopeWithNoCoaches)
       .catch((error) => error);
 
     expect(thrown).toBeInstanceOf(Error);
@@ -150,7 +150,7 @@ describe('TripLifecycleConsumer', () => {
     );
 
     await expect(
-      consumer.handle(envelopeWithDuplicateCoachNumber, 1),
+      consumer.handle(envelopeWithDuplicateCoachNumber),
     ).rejects.toBeInstanceOf(PermanentEventError);
     expect(repository.apply).not.toHaveBeenCalled();
     // A malformed payload must never produce any outbox event, not just skip the expected one.
@@ -166,7 +166,7 @@ describe('TripLifecycleConsumer', () => {
       occupiedStationIds: [tanta],
     } satisfies ApplyOutcome);
 
-    await expect(consumer.handle(publishedEnvelope, 1)).rejects.toBeInstanceOf(
+    await expect(consumer.handle(publishedEnvelope)).rejects.toBeInstanceOf(
       PermanentEventError,
     );
     // If this failed, the refusal event would have been lost with the delivery.
@@ -202,7 +202,7 @@ describe('TripLifecycleConsumer', () => {
       { ...sixStopPayload(), capacity: 999 },
     );
 
-    const result = await consumer.handle(envelopeWithWrongCapacity, 1);
+    const result = await consumer.handle(envelopeWithWrongCapacity);
 
     expect(result.status).toBe('handled');
     // The warning is the only signal that catalog's summary disagreed with the layout.
@@ -212,7 +212,7 @@ describe('TripLifecycleConsumer', () => {
   });
 
   it('closes a withdrawn trip and touches no occupation', async () => {
-    await expect(consumer.handle(withdrawnEnvelope, 1)).resolves.toEqual({
+    await expect(consumer.handle(withdrawnEnvelope)).resolves.toEqual({
       status: 'handled',
     });
     // Task 6's close(ctx, tripId) takes the transaction context first.
@@ -226,7 +226,7 @@ describe('TripLifecycleConsumer', () => {
       new Error(`Cannot close unknown trip ${tripId}`),
     );
 
-    await expect(consumer.handle(withdrawnEnvelope, 1)).rejects.toThrow(
+    await expect(consumer.handle(withdrawnEnvelope)).rejects.toThrow(
       /unknown trip/i,
     );
   });
