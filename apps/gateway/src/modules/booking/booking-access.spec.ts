@@ -7,6 +7,7 @@ import request from 'supertest';
 import { HttpExceptionFilter } from '@app/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { BookingController } from './booking.controller.js';
+import { BookingGrpcClientService } from './booking.grpc.client.js';
 import { BookingService } from './booking.service.js';
 import { BookingRequestGuard } from './booking-request.guard.js';
 
@@ -39,6 +40,8 @@ describe('BR-10 actual Gateway booking entry', () => {
           BookingRequestGuard,
           { provide: ClsService, useValue: cls },
           { provide: BookingService, useValue: booking },
+          // Access is decided before checkout is reached.
+          { provide: BookingGrpcClientService, useValue: {} },
           {
             provide: APP_GUARD,
             useFactory: () =>

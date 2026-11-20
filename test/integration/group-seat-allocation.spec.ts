@@ -261,7 +261,12 @@ describe('Group seat allocation through the atomic Booking API', () => {
       get: vi.fn().mockReturnValue(OWNER),
     };
 
-    controller = new BookingController(gatewayBookingService, mockClsService);
+    controller = new BookingController(
+      gatewayBookingService,
+      // These flows end at the hold; checkout is booking's own test.
+      {} as never,
+      mockClsService,
+    );
   });
 
   afterEach(() => vi.unstubAllEnvs());

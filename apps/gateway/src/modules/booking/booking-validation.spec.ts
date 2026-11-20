@@ -32,6 +32,8 @@ describe('BookingController & Route Validation', () => {
     };
     controller = new BookingController(
       mockBookingService as unknown as BookingService,
+      // Checkout is not reached from these draft-creation tests.
+      {} as never,
       mockClsService as any,
     );
     pipe = new NoSeatSelectionPipe();
