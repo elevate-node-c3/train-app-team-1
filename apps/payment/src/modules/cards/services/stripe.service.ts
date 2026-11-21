@@ -192,6 +192,73 @@ export class StripeService {
     });
   }
 
+  /**
+   * One PaymentIntent per booking, keyed by the booking-derived idempotency
+   * key, so a retry after a decline or a restart creates (or retrieves) the
+   * same intent instead of a second charge.
+   */
+  async createOrRetrievePaymentIntent(input: {
+    bookingReference: string;
+    amountPiastres: number;
+    currency: string;
+    customerId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<{
+    id: string;
+    clientSecret: string;
+    status: string;
+    amountReceived: number | null;
+  }> {
+    const intent = await this.executeWithBreaker(async () => {
+      const created = await this.stripeClient.paymentIntents.create(
+        {
+          amount: input.amountPiastres,
+          currency: input.currency.toLowerCase(),
+          customer: input.customerId,
+          ...(input.paymentMethodId
+            ? { payment_method: input.paymentMethodId }
+            : {}),
+        },
+        { idempotencyKey: input.idempotencyKey },
+      );
+      return created;
+    });
+
+    if (!intent.client_secret) {
+      throw new PaymentError(ErrorCode.DEPENDENCY_UNAVAILABLE, 30);
+    }
+
+    return {
+      id: intent.id,
+      clientSecret: intent.client_secret,
+      status: intent.status ?? 'requires_payment_method',
+      amountReceived: intent.amount_received ?? null,
+    };
+  }
+
+  async retrievePaymentIntent(intentId: string): Promise<{
+    id: string;
+    clientSecret: string;
+    status: string;
+    amountReceived: number | null;
+  }> {
+    const intent = await this.executeWithBreaker(async () =>
+      await this.stripeClient.paymentIntents.retrieve(intentId),
+    );
+
+    if (!intent.client_secret) {
+      throw new PaymentError(ErrorCode.DEPENDENCY_UNAVAILABLE, 30);
+    }
+
+    return {
+      id: intent.id,
+      clientSecret: intent.client_secret,
+      status: intent.status ?? 'requires_payment_method',
+      amountReceived: intent.amount_received ?? null,
+    };
+  }
+
   constructEvent(payload: Buffer | string, signature: string): Stripe.Event {
     return this.stripeClient.webhooks.constructEvent(
       payload,

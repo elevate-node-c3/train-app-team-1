@@ -21,6 +21,8 @@ export interface StartChargeRequest {
 export interface StartChargeResponse {
   paymentReference: string;
   status: string;
+  /** The Stripe client secret for the browser; never logged. Empty until created. */
+  clientSecret?: string;
 }
 
 export interface CancelChargeRequest {

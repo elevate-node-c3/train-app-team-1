@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataSource } from 'typeorm';
+import { PaymentIntentService } from './payment-intent.service.js';
 import { PaymentDoubleService } from './payment-double.service.js';
 
 describe('PaymentDoubleService', () => {
@@ -66,9 +67,16 @@ describe('PaymentDoubleService', () => {
       }
       return [];
     });
-    payment = new PaymentDoubleService({
-      query,
-    } as unknown as DataSource);
+    payment = new PaymentDoubleService(
+      { query } as unknown as DataSource,
+      {
+        startFor: vi.fn().mockResolvedValue({
+          paymentIntentId: 'pi_new',
+          clientSecret: 'pi_new_secret',
+          status: 'requires_payment_method',
+        }),
+      } as unknown as PaymentIntentService,
+    );
   });
 
   const startRequest = {
@@ -105,9 +113,16 @@ describe('PaymentDoubleService', () => {
       'PAYMENT_DOUBLE_SUCCEEDED_BOOKINGS',
       startRequest.bookingReference,
     );
-    payment = new PaymentDoubleService({
-      query,
-    } as unknown as DataSource);
+    payment = new PaymentDoubleService(
+      { query } as unknown as DataSource,
+      {
+        startFor: vi.fn().mockResolvedValue({
+          paymentIntentId: 'pi_new',
+          clientSecret: 'pi_new_secret',
+          status: 'requires_payment_method',
+        }),
+      } as unknown as PaymentIntentService,
+    );
     const charge = await payment.start(startRequest);
 
     expect(

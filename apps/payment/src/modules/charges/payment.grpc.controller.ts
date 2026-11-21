@@ -14,7 +14,7 @@ import {
   CancelChargeRequestDto,
   StartChargeRequestDto,
 } from './dto/charge-request.dto.js';
-import { PaymentDoubleService } from './payment-double.service.js';
+import { PaymentDoubleService } from './services/payment-double.service.js';
 
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)

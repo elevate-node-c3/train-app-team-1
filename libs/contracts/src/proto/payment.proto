@@ -27,6 +27,7 @@ message StartChargeRequest {
 message StartChargeResponse {
   string paymentReference = 1;
   string status = 2;
+  string clientSecret = 3;
 }
 
 message CancelChargeRequest {

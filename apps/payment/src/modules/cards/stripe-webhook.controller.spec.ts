@@ -1,9 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type Stripe from 'stripe';
-import { StripeWebhookController } from './stripe-webhook.controller.js';
-import type { SavedCardsService } from './saved-cards.service.js';
-import type { StripeService } from './stripe.service.js';
+import { StripeWebhookController } from './controllers/stripe-webhook.controller.js';
+import type { SavedCardsService } from './services/saved-cards.service.js';
+import type { StripeService } from './services/stripe.service.js';
+import type { ChargeWebhookService } from '../modules/charges/services/charge-webhook.service.js';
 
 describe('StripeWebhookController', () => {
   const event = {
@@ -19,6 +20,7 @@ describe('StripeWebhookController', () => {
     const controller = new StripeWebhookController(
       { constructEvent } as unknown as StripeService,
       { handleWebhookEvent } as unknown as SavedCardsService,
+      { record: vi.fn() } as unknown as ChargeWebhookService,
     );
 
     await expect(
@@ -37,6 +39,7 @@ describe('StripeWebhookController', () => {
     const controller = new StripeWebhookController(
       { constructEvent } as unknown as StripeService,
       { handleWebhookEvent } as unknown as SavedCardsService,
+      { record: vi.fn() } as unknown as ChargeWebhookService,
     );
 
     await expect(

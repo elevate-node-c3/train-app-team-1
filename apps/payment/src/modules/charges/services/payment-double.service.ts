@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { v4 as uuid } from 'uuid';
-import { paymentDoubleSucceededBookingsFromEnv } from '../../config/payment-double.settings.js';
+import { paymentDoubleSucceededBookingsFromEnv } from '../../../config/payment-double.settings.js';
 import {
   ErrorCode,
   type CancelChargeRequest,
@@ -9,9 +9,10 @@ import {
   type StartChargeRequest,
   type StartChargeResponse,
 } from '@app/contracts';
-import { PaymentError } from './payment-error.js';
+import { PaymentError } from '../payment-error.js';
+import { PaymentIntentService } from './payment-intent.service.js';
 
-interface ChargeRow {
+export interface ChargeRow {
   id: string;
   booking_reference: string;
   idempotency_key: string;
@@ -19,6 +20,8 @@ interface ChargeRow {
   currency: string;
   status: 'started' | 'succeeded' | 'cancelled';
   stripe_payment_method_id: string | null;
+  stripe_customer_id?: string | null;
+  stripe_payment_intent_id?: string | null;
 }
 
 interface ChargeCardRow {
@@ -38,7 +41,10 @@ interface ChargeCardRow {
 export class PaymentDoubleService {
   private readonly succeededBookings = paymentDoubleSucceededBookingsFromEnv();
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly intents: PaymentIntentService,
+  ) {}
 
   async start(request: StartChargeRequest): Promise<StartChargeResponse> {
     if (
@@ -143,18 +149,22 @@ export class PaymentDoubleService {
       );
     }
 
-    return {
-      paymentReference: charge.id,
-      status: this.succeededBookings.has(request.bookingReference)
+    const intent = await this.intents.startFor(charge);
+    const status =
+      this.succeededBookings.has(request.bookingReference) ||
+      charge.status === 'succeeded'
         ? 'SUCCEEDED'
-        : 'STARTED',
-    };
+        : 'STARTED';
+
+    // One PaymentIntent per booking; a retry after a decline or a restart
+    // returns the intent the first attempt made.
+    return { paymentReference: charge.id, status, clientSecret: intent.clientSecret };
   }
 
-  private replay(
+  private async replay(
     charge: ChargeRow,
     request: StartChargeRequest,
-  ): StartChargeResponse {
+  ): Promise<StartChargeResponse> {
     if (
       charge.booking_reference !== request.bookingReference ||
       charge.idempotency_key !== request.idempotencyKey ||
@@ -162,6 +172,8 @@ export class PaymentDoubleService {
     ) {
       throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
     }
+
+    const intent = await this.intents.startFor(charge);
 
     return {
       paymentReference: charge.id,
@@ -171,6 +183,7 @@ export class PaymentDoubleService {
           : charge.status === 'cancelled'
             ? 'CANCELLED'
             : 'STARTED',
+      clientSecret: intent.clientSecret,
     };
   }
 

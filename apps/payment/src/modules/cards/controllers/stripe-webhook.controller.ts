@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import type Stripe from 'stripe';
 import { StripeService } from '../services/stripe.service.js';
 import { SavedCardsService } from '../services/saved-cards.service.js';
+import { ChargeWebhookService } from '../../charges/services/charge-webhook.service.js';
 
 interface RawBodyRequest extends Request {
   rawBody?: Buffer;
@@ -24,6 +25,7 @@ export class StripeWebhookController {
   constructor(
     private readonly stripeService: StripeService,
     private readonly savedCardsService: SavedCardsService,
+    private readonly chargeWebhooks: ChargeWebhookService,
   ) {}
 
   @Post('stripe')
@@ -49,7 +51,12 @@ export class StripeWebhookController {
       throw new BadRequestException('Webhook signature verification failed');
     }
 
-    await this.savedCardsService.handleWebhookEvent(event);
+    if (event.type.startsWith('payment_intent.')) {
+      // The charge inbox earns the 2xx; the saga decision happens after.
+      await this.chargeWebhooks.record(event);
+    } else {
+      await this.savedCardsService.handleWebhookEvent(event);
+    }
     return { received: true };
   }
 }
