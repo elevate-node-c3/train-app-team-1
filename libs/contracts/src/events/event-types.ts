@@ -25,6 +25,9 @@ export const EVENT_TYPES = {
   bookingExpired: 'booking.expired-before-payment',
   /** Reconciliation (Sprint 5) and the drop-off KPI read this. */
   bookingAbandoned: 'booking.abandoned',
+  bookingConfirmed: 'booking.confirmed',
+  bookingSeatsChanged: 'booking.seats-changed',
+  bookingRefunded: 'booking.refunded',
   paymentSucceeded: 'payment.charge.succeeded',
   paymentFailed: 'payment.charge.failed',
 } as const;

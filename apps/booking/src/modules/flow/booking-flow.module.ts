@@ -8,9 +8,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   CATALOG_PACKAGE_NAME,
   CATALOG_SERVICE_NAME,
+  INVENTORY_PACKAGE_NAME,
+  INVENTORY_SERVICE_NAME,
   PAYMENT_PACKAGE_NAME,
   PAYMENT_SERVICE_NAME,
   getCatalogProtoPath,
+  getInventoryProtoPath,
   getPaymentProtoPath,
 } from '@app/contracts';
 import {
@@ -24,10 +27,17 @@ import {
   TypeOrmProcessedEventStore,
 } from '@app/messaging';
 
+import {
+  INVENTORY_GRPC_LOADER_OPTIONS,
+  inventoryGrpcUrl,
+} from '../draft/booking-draft.module.js';
 import { BookingDraftModule } from '../draft/booking-draft.module.js';
 import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
+import { TicketEntity } from './entities/ticket.entity.js';
 import { BookingFlowGrpcController } from './booking-flow.grpc.controller.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
+import { BookingConfirmationService } from './services/booking-confirmation.service.js';
+import { TicketIssuerService } from './services/ticket-issuer.service.js';
 import {
   PaymentSucceededConsumer,
   createPaymentSucceededSubscriptions,
@@ -36,12 +46,14 @@ import { BookingFlowService } from './services/booking-flow.service.js';
 import { BookingFlowWorker } from './booking-flow.worker.js';
 import {
   CATALOG_FLOW_CLIENT,
+  INVENTORY_FLOW_CLIENT,
   PAYMENT_FLOW_CLIENT,
 } from './flow-clients.types.js';
 import { FlowGrpcClientsService } from './services/flow-grpc-clients.service.js';
 
 const CATALOG_GRPC_CLIENT = Symbol('CATALOG_GRPC_CLIENT');
 const PAYMENT_GRPC_CLIENT = Symbol('PAYMENT_GRPC_CLIENT');
+const INVENTORY_GRPC_CLIENT = Symbol('INVENTORY_GRPC_CLIENT_FLOW');
 
 /** Addresses stay in the environment; compose sets them per service. */
 export function catalogGrpcUrl(): string {
@@ -53,12 +65,14 @@ export function paymentGrpcUrl(): string {
 }
 
 /**
- * Checkout: quote, hold, pay. Inventory and identity are not reached from
- * here -- BookingDraftModule owns those clients and the hold itself.
+ * Checkout: quote, hold, pay, and -- once payment has settled -- the
+ * confirmation saga that sells inventory's hold or refunds the charge.
+ * Identity is not reached from here -- BookingDraftModule owns that client
+ * and the hold's own create/release/extend lifecycle.
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([BookingDraftEntity]),
+    TypeOrmModule.forFeature([BookingDraftEntity, TicketEntity]),
     MessagingModule,
     OutboxModule,
     BookingDraftModule,
@@ -85,12 +99,26 @@ export function paymentGrpcUrl(): string {
           },
         }),
       },
+      {
+        name: INVENTORY_GRPC_CLIENT,
+        useFactory: () => ({
+          transport: Transport.GRPC,
+          options: {
+            package: INVENTORY_PACKAGE_NAME,
+            protoPath: getInventoryProtoPath(),
+            url: inventoryGrpcUrl(),
+            loader: INVENTORY_GRPC_LOADER_OPTIONS,
+          },
+        }),
+      },
     ]),
   ],
   controllers: [BookingFlowGrpcController],
   providers: [
     BookingFlowRepository,
     BookingFlowService,
+    BookingConfirmationService,
+    TicketIssuerService,
     FlowGrpcClientsService,
     BookingFlowWorker,
     PaymentSucceededConsumer,
@@ -115,6 +143,12 @@ export function paymentGrpcUrl(): string {
       inject: [PAYMENT_GRPC_CLIENT],
       useFactory: (client: ClientGrpc) =>
         client.getService(PAYMENT_SERVICE_NAME),
+    },
+    {
+      provide: INVENTORY_FLOW_CLIENT,
+      inject: [INVENTORY_GRPC_CLIENT],
+      useFactory: (client: ClientGrpc) =>
+        client.getService(INVENTORY_SERVICE_NAME),
     },
   ],
   exports: [BookingFlowService],

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 
 import { BookingFlowRepository } from './booking-flow.repository.js';
+import { BookingConfirmationService } from './services/booking-confirmation.service.js';
 import { BookingFlowService } from './services/booking-flow.service.js';
 
 /** How often the worker looks for work. Each pass is bounded by the claim. */
@@ -31,6 +32,7 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
   constructor(
     private readonly repository: BookingFlowRepository,
     private readonly flow: BookingFlowService,
+    private readonly confirmation: BookingConfirmationService,
   ) {}
 
   onModuleInit(): void {
@@ -77,6 +79,11 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
       try {
         if (flow.flowState === 'payment_starting') {
           await this.flow.startPayment(flow.id);
+        } else if (
+          flow.flowState === 'confirming' ||
+          flow.flowState === 'refunding'
+        ) {
+          await this.confirmation.run(flow.id);
         } else {
           await this.flow.advance(flow.id);
         }

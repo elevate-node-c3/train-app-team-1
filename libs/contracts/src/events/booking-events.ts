@@ -54,3 +54,68 @@ export type BookingAbandonedEvent = EventEnvelope<
   typeof BOOKING_ABANDONED_EVENT_TYPE,
   BookingAbandonedPayloadV1
 >;
+
+/** Issued once the confirmation saga has tickets to hand over. */
+export interface BookingConfirmedTicketV1 {
+  ticketNumber: string;
+  passengerRef: string;
+  tripId: string;
+  coachNumber: number;
+  seatNumber: string;
+}
+
+export interface BookingConfirmedPayloadV1 {
+  bookingReference: string;
+  totalPiastres: number;
+  tickets: BookingConfirmedTicketV1[];
+}
+
+export const BOOKING_CONFIRMED_EVENT_TYPE = EVENT_TYPES.bookingConfirmed;
+
+export const BOOKING_CONFIRMED_VERSION = 1;
+
+export type BookingConfirmedEvent = EventEnvelope<
+  typeof BOOKING_CONFIRMED_EVENT_TYPE,
+  BookingConfirmedPayloadV1
+>;
+
+/** A late payment forced a reallocation; the traveller's seats moved. */
+export interface BookingSeatsChangedSeatV1 {
+  passengerRef: string;
+  tripId: string;
+  coachNumber: number;
+  seatNumber: string;
+}
+
+export interface BookingSeatsChangedPayloadV1 {
+  bookingReference: string;
+  seats: BookingSeatsChangedSeatV1[];
+}
+
+export const BOOKING_SEATS_CHANGED_EVENT_TYPE =
+  EVENT_TYPES.bookingSeatsChanged;
+
+export const BOOKING_SEATS_CHANGED_VERSION = 1;
+
+export type BookingSeatsChangedEvent = EventEnvelope<
+  typeof BOOKING_SEATS_CHANGED_EVENT_TYPE,
+  BookingSeatsChangedPayloadV1
+>;
+
+/** No seat was left after a late payment; the whole charge comes back. */
+export type BookingRefundedReasonKey = 'REASON_NO_SEATS_AFTER_LATE_PAYMENT';
+
+export interface BookingRefundedPayloadV1 {
+  bookingReference: string;
+  amountPiastres: number;
+  reasonKey: BookingRefundedReasonKey;
+}
+
+export const BOOKING_REFUNDED_EVENT_TYPE = EVENT_TYPES.bookingRefunded;
+
+export const BOOKING_REFUNDED_VERSION = 1;
+
+export type BookingRefundedEvent = EventEnvelope<
+  typeof BOOKING_REFUNDED_EVENT_TYPE,
+  BookingRefundedPayloadV1
+>;

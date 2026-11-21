@@ -9,13 +9,19 @@ import type {
   CancelChargeResponse,
   QuoteBookingRequest,
   QuoteBookingResponse,
+  RefundChargeRequest,
+  RefundChargeResponse,
+  SettleHoldRequest,
+  SettlementSnapshot,
   StartChargeRequest,
   StartChargeResponse,
 } from '@app/contracts';
 import {
   CATALOG_FLOW_CLIENT,
+  INVENTORY_FLOW_CLIENT,
   PAYMENT_FLOW_CLIENT,
   type CatalogFlowClient,
+  type InventoryFlowClient,
   type PaymentFlowClient,
 } from '../flow-clients.types.js';
 
@@ -26,6 +32,8 @@ export class FlowGrpcClientsService {
   constructor(
     @Inject(CATALOG_FLOW_CLIENT) private readonly catalog: CatalogFlowClient,
     @Inject(PAYMENT_FLOW_CLIENT) private readonly payment: PaymentFlowClient,
+    @Inject(INVENTORY_FLOW_CLIENT)
+    private readonly inventory: InventoryFlowClient,
     private readonly cls: ClsService,
   ) {}
 
@@ -58,6 +66,28 @@ export class FlowGrpcClientsService {
     return this.call(
       (metadata, deadline) =>
         this.payment.cancelCharge(request, metadata, { deadline }),
+      correlationId,
+    );
+  }
+
+  refundCharge(
+    request: RefundChargeRequest,
+    correlationId?: string,
+  ): Promise<RefundChargeResponse> {
+    return this.call(
+      (metadata, deadline) =>
+        this.payment.refundCharge(request, metadata, { deadline }),
+      correlationId,
+    );
+  }
+
+  settleHold(
+    request: SettleHoldRequest,
+    correlationId?: string,
+  ): Promise<SettlementSnapshot> {
+    return this.call(
+      (metadata, deadline) =>
+        this.inventory.settleHold(request, metadata, { deadline }),
       correlationId,
     );
   }

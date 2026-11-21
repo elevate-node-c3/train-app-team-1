@@ -1,12 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
-import type { QuotedLeg, TravelClass } from '@app/contracts';
+import type {
+  HoldSeatAssignment,
+  QuotedLeg,
+  SettlementOutcome,
+  TravelClass,
+} from '@app/contracts';
+import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
+import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
 import {
   BookingDraftEntity,
   type BookingFlowState,
   type BookingHoldIntent,
+  type SettledSeat,
 } from '../draft/entities/booking-draft.entity.js';
 import type { BookingPrice } from './booking-total.js';
 
@@ -243,6 +251,72 @@ export class BookingFlowRepository {
     );
   }
 
+  /** Records inventory's decision before anything is issued from it. */
+  async recordSettlement(
+    id: string,
+    outcome: SettlementOutcome,
+    assignments: readonly HoldSeatAssignment[],
+    seatsChanged: boolean,
+  ): Promise<boolean> {
+    const settledSeats: SettledSeat[] = assignments.map((assignment) => ({
+      passengerRef: assignment.passengerRef,
+      tripId: assignment.tripId,
+      coachNumber: assignment.coachNumber,
+      seatNumber: assignment.seatNumber,
+    }));
+
+    return this.transition(
+      id,
+      ['confirming'],
+      {
+        settlementOutcome: settlementOutcomeColumnOf(outcome),
+        settledSeats,
+        seatsChanged,
+        sagaStep: 'settled',
+      },
+      "saga_step = 'payment_recorded'",
+    );
+  }
+
+  /** Issues once: guarded on the step and on tickets never having been issued. */
+  async confirm(ctx: TransactionContext, id: string): Promise<boolean> {
+    const result = (await entityManagerOf(ctx).query(
+      `UPDATE booking_draft
+          SET flow_state = 'confirmed', status = 'CONFIRMED',
+              tickets_issued_at = now(), saga_step = 'confirmed',
+              updated_at = now()
+        WHERE id = $1 AND flow_state = 'confirming' AND tickets_issued_at IS NULL
+        RETURNING id`,
+      [id],
+    )) as { id: string }[];
+    return result.length > 0;
+  }
+
+  /** No seat was left after settlement: the whole charge must come back. */
+  async beginRefunding(id: string): Promise<boolean> {
+    return this.transition(id, ['confirming'], {
+      flowState: 'refunding',
+      sagaStep: 'refunding',
+    });
+  }
+
+  async recordRefund(
+    ctx: TransactionContext,
+    id: string,
+    reference: string,
+  ): Promise<boolean> {
+    const result = (await entityManagerOf(ctx).query(
+      `UPDATE booking_draft
+          SET flow_state = 'refunded', status = 'CANCELLED',
+              refund_reference = $2, refunded_at = now(),
+              saga_step = 'refunded', updated_at = now()
+        WHERE id = $1 AND flow_state = 'refunding'
+        RETURNING id`,
+      [id, reference],
+    )) as { id: string }[];
+    return result.length > 0;
+  }
+
   async abandon(id: string): Promise<boolean> {
     return this.transition(id, HELD_STATES, {
       flowState: 'abandoned',
@@ -417,7 +491,7 @@ export class BookingFlowRepository {
       `WITH due AS (
          SELECT id FROM booking_draft
           WHERE flow_state IN ('quote_pending', 'price_locked', 'hold_pending',
-                               'payment_starting')
+                               'payment_starting', 'confirming', 'refunding')
             AND resume_next_attempt_at <= now()
             AND (lease_until IS NULL OR lease_until < now())
           ORDER BY resume_next_attempt_at, created_at
@@ -535,6 +609,20 @@ export class BookingFlowRepository {
 
     const result = await query.execute();
     return (result.affected ?? 0) > 0;
+  }
+}
+
+/** The one place SettlementOutcome's wire case meets the column's own case. */
+function settlementOutcomeColumnOf(
+  outcome: SettlementOutcome,
+): 'sold' | 'reallocated' | 'no_seats' {
+  switch (outcome) {
+    case 'SOLD':
+      return 'sold';
+    case 'REALLOCATED':
+      return 'reallocated';
+    case 'NO_SEATS':
+      return 'no_seats';
   }
 }
 
