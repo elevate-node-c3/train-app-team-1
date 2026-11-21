@@ -11,10 +11,10 @@ import {
 } from '@app/contracts';
 
 import { downstreamGrpcUrlsFromEnv } from '../../config/grpc-settings.js';
-import { CatalogController } from './catalog.controller.js';
+import { CatalogController } from './controllers/catalog.controller.js';
 import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import { CatalogService } from './catalog.service.js';
-import { StationsController } from './stations.controller.js';
+import { StationsController } from './controllers/stations.controller.js';
 import {
   CATALOG_GRPC_CLIENT,
   type CatalogGrpcClient,

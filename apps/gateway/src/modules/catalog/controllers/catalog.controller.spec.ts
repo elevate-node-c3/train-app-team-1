@@ -2,11 +2,11 @@ import { ACCESS_LEVEL_KEY, RATE_LIMIT_KEY } from '@app/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CatalogController } from './catalog.controller.js';
-import type { CatalogService } from './catalog.service.js';
-import type { RecentSearchesQueryDto } from './dto/recent-searches.dto.js';
-import type { SearchReturnTripsDto } from './dto/search-return-trips.dto.js';
-import type { SearchTripsDto } from './dto/search-trips.dto.js';
-import type { TripStopsQueryDto } from './dto/trip-stops.dto.js';
+import type { CatalogService } from '../catalog.service.js';
+import type { RecentSearchesQueryDto } from '../dto/recent-searches.dto.js';
+import type { SearchReturnTripsDto } from '../dto/search-return-trips.dto.js';
+import type { SearchTripsDto } from '../dto/search-trips.dto.js';
+import type { TripStopsQueryDto } from '../dto/trip-stops.dto.js';
 
 const query = {
   from: '11111111-1111-4111-8111-111111111111',

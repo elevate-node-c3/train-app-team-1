@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { CatalogController } from './catalog.controller.js';
+import { CatalogController } from './controllers/catalog.controller.js';
 import { CatalogService } from './catalog.service.js';
 import { CatalogGrpcClientService } from './catalog.grpc.client.js';
 import { CatalogModule } from './catalog.module.js';

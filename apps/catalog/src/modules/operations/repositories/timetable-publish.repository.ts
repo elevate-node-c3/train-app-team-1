@@ -19,7 +19,7 @@ import { TimetableEntity } from '../../timetables/entities/timetable.entity.js';
 import { TimetableStopEntity } from '../../timetables/entities/timetable-stop.entity.js';
 import { DatedTripEntity } from '../../trips/entities/dated-trip.entity.js';
 import { TripStopEntity } from '../../trips/entities/trip-stop.entity.js';
-import type { PublishReferences } from '../timetable-publish.types.js';
+import type { PublishReferences } from '../types/timetable-publish.types.js';
 
 /**
  * Every read and write a timetable publish needs, and nothing else.

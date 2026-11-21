@@ -17,8 +17,8 @@ import {
   CreateSetupIntentRequestDto,
   DeleteSavedCardRequestDto,
   ListSavedCardsRequestDto,
-} from './dto/saved-cards-request.dto.js';
-import { SavedCardsService } from './saved-cards.service.js';
+} from '../dto/saved-cards-request.dto.js';
+import { SavedCardsService } from '../services/saved-cards.service.js';
 
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)

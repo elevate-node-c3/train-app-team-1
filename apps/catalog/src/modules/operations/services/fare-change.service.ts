@@ -17,7 +17,7 @@ import { isChargeableFare } from '../../../config/operations-settings.js';
 import { CatalogSearchError } from '../../trips/catalog-search-error.js';
 
 import { FareChangeRepository } from '../repositories/fare-change.repository.js';
-import type { FareChangeReferences } from '../fare-change.types.js';
+import type { FareChangeReferences } from '../types/fare-change.types.js';
 import { buildFareChanged } from '../fare-events.factory.js';
 import { OperationsAuditService } from './operations-audit.service.js';
 import {

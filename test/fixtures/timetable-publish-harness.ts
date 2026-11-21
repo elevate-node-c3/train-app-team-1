@@ -18,7 +18,7 @@ import type { TimetableStopEntity } from '../../apps/catalog/src/modules/timetab
 import type { DatedTripEntity } from '../../apps/catalog/src/modules/trips/entities/dated-trip.entity.js';
 import type { TripStopEntity } from '../../apps/catalog/src/modules/trips/entities/trip-stop.entity.js';
 import type { OperationsAuditEntity } from '../../apps/catalog/src/modules/operations/entities/operations-audit.entity.js';
-import type { StoredOperationsRequest } from '../../apps/catalog/src/modules/operations/operations-request.types.js';
+import type { StoredOperationsRequest } from '../../apps/catalog/src/modules/operations/types/operations-request.types.js';
 import { OperationsAuditService } from '../../apps/catalog/src/modules/operations/services/operations-audit.service.js';
 import { TimetablePublishService } from '../../apps/catalog/src/modules/operations/services/timetable-publish.service.js';
 import { TripsService } from '../../apps/catalog/src/modules/trips/services/trips.service.js';
@@ -30,7 +30,7 @@ import {
   fareKey,
   resolveStopTimes,
   type FareIndex,
-} from '../../apps/catalog/src/modules/trips/trip-generation.types.js';
+} from '../../apps/catalog/src/modules/trips/types/trip-generation.types.js';
 
 // Stage writes until work succeeds; integration specs verify real Postgres rollback.
 

@@ -32,7 +32,7 @@ import {
   fareKey,
   resolveStopTimes,
   type FareIndex,
-} from '../../trips/trip-generation.types.js';
+} from '../../trips/types/trip-generation.types.js';
 import { TripsService } from '../../trips/services/trips.service.js';
 
 import {
@@ -58,7 +58,7 @@ import type {
   TimetableDiff,
   TimetableVersionSnapshot,
   TripChange,
-} from '../timetable-publish.types.js';
+} from '../types/timetable-publish.types.js';
 
 /** Match generation's one-day margin so counts cover every generated date. */
 const PUBLISH_WINDOW_MARGIN_DAYS = 1;

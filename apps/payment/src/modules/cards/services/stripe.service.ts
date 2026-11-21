@@ -4,11 +4,11 @@ import Stripe from 'stripe';
 import { v4 as uuid } from 'uuid';
 import { DataSource } from 'typeorm';
 import { ErrorCode } from '@app/contracts';
-import { PaymentError } from '../charges/payment-error.js';
+import { PaymentError } from '../../charges/payment-error.js';
 import {
   stripeSettingsFromEnv,
   type StripeSettings,
-} from '../../config/stripe.settings.js';
+} from '../../../config/stripe.settings.js';
 
 const TIMEOUT_MS = 2000;
 const FAILURE_THRESHOLD = 5;

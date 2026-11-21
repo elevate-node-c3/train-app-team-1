@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 import { v4 as uuid } from 'uuid';
 import type Stripe from 'stripe';
 import { ErrorCode, type SavedCardItem } from '@app/contracts';
-import { PaymentError } from '../charges/payment-error.js';
+import { PaymentError } from '../../charges/payment-error.js';
 import { StripeService } from './stripe.service.js';
 
 interface SavedCardRow {

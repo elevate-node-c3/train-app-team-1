@@ -9,14 +9,25 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 const APPS_DIR = join(process.cwd(), 'apps');
 
-/** Folders allowed only when they hold more than one non-spec file. */
-const OPTIONAL_GROUP_DIRECTORIES = [
-  'controllers',
-  'services',
-  'repositories',
-  'listeners',
-  'consumers',
-] as const;
+/**
+ * Folders allowed only when they hold more than one non-spec file, and the
+ * suffix that decides which kind a file is.
+ *
+ * One source for both halves of the rule: a lone file of a kind stays at the
+ * module root, and a second one moves the pair into the folder.
+ */
+const GROUP_SUFFIXES = {
+  controllers: '.controller.ts',
+  services: '.service.ts',
+  repositories: '.repository.ts',
+  listeners: '.listener.ts',
+  consumers: '.consumer.ts',
+  types: '.types.ts',
+} as const;
+
+const OPTIONAL_GROUP_DIRECTORIES = Object.keys(
+  GROUP_SUFFIXES,
+) as readonly (keyof typeof GROUP_SUFFIXES)[];
 
 function tsFilesIn(dir: string): string[] {
   let found: string[] = [];
@@ -323,6 +334,39 @@ describe('Feature module boundaries (§2.5)', () => {
     }
 
     expect([...new Set(violations)]).toEqual([]);
+  });
+
+  it('moves a repeated file kind into its group folder', () => {
+    const violations: string[] = [];
+
+    for (const app of featureModuleApps()) {
+      const modules = modulesDirOf(app);
+      for (const feature of readdirSync(modules)) {
+        const featureDir = join(modules, feature);
+        if (!statSync(featureDir).isDirectory()) continue;
+
+        const atRoot = readdirSync(featureDir).filter(
+          (entry) =>
+            entry.endsWith('.ts') &&
+            !entry.endsWith('.d.ts') &&
+            !entry.endsWith('.spec.ts') &&
+            statSync(join(featureDir, entry)).isFile(),
+        );
+
+        for (const group of OPTIONAL_GROUP_DIRECTORIES) {
+          const repeated = atRoot.filter((entry) =>
+            entry.endsWith(GROUP_SUFFIXES[group]),
+          );
+          if (repeated.length > 1) {
+            violations.push(
+              `${featureDir} keeps ${repeated.length} ${group} at the module root (${repeated.join(', ')}); move them into ${group}/`,
+            );
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 
   it('always keeps DTOs and entities in their own folders', () => {

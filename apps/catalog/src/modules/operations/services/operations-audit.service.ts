@@ -11,7 +11,7 @@ import { OperationsAuditRepository } from '../repositories/operations-audit.repo
 import type {
   OperationsAuditFilter,
   OperationsAuditPage,
-} from '../operations-audit.types.js';
+} from '../types/operations-audit.types.js';
 
 export interface AppendAuditInput {
   action: OperationsAction;

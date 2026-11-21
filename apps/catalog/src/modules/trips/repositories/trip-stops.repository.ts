@@ -5,7 +5,7 @@ import { StationEntity } from '../../stations/entities/station.entity.js';
 import { DatedTripEntity } from '../entities/dated-trip.entity.js';
 import { TripStopEntity } from '../entities/trip-stop.entity.js';
 import { SELLABLE_TRIP_STATUSES } from '../trip-sellability.js';
-import type { TripStopRow } from '../trip-search.types.js';
+import type { TripStopRow } from '../types/trip-search.types.js';
 
 interface RawStopRow {
   station_id: string;
