@@ -35,9 +35,23 @@ export type BookingFlowState =
   | 'awaiting_payment'
   | 'expired'
   | 'abandoned'
-  | 'failed';
+  | 'failed'
+  | 'confirming'
+  | 'confirmed'
+  | 'refunding'
+  | 'refunded';
 
 export type CompensationStatus = 'none' | 'pending' | 'complete' | 'late_payment';
+
+/** Inventory's settlement outcome, lower-cased for this column's own check. */
+export type SettlementOutcomeColumn = 'sold' | 'reallocated' | 'no_seats';
+
+export interface SettledSeat {
+  passengerRef: string;
+  tripId: string;
+  coachNumber: number;
+  seatNumber: string;
+}
 
 export interface BookingHoldIntent {
   legs: HoldLegInput[];
@@ -214,6 +228,42 @@ export class BookingDraftEntity {
 
   @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
   updatedAt!: Date;
+
+  // ---------------------------------------------------------------------
+  // TA-107 confirmation saga.
+  // ---------------------------------------------------------------------
+
+  @Column({ name: 'payment_succeeded_at', type: 'timestamptz', nullable: true })
+  paymentSucceededAt!: Date | null;
+
+  @Column({ name: 'payment_event_id', type: 'uuid', nullable: true })
+  paymentEventId!: string | null;
+
+  @Column({
+    name: 'settlement_outcome',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  settlementOutcome!: SettlementOutcomeColumn | null;
+
+  @Column({ name: 'settled_seats', type: 'jsonb', nullable: true })
+  settledSeats!: SettledSeat[] | null;
+
+  @Column({ name: 'seats_changed', type: 'boolean', default: false })
+  seatsChanged!: boolean;
+
+  @Column({ name: 'tickets_issued_at', type: 'timestamptz', nullable: true })
+  ticketsIssuedAt!: Date | null;
+
+  @Column({ name: 'refund_reference', type: 'text', nullable: true })
+  refundReference!: string | null;
+
+  @Column({ name: 'refunded_at', type: 'timestamptz', nullable: true })
+  refundedAt!: Date | null;
+
+  @Column({ name: 'saga_step', type: 'varchar', length: 24, nullable: true })
+  sagaStep!: string | null;
 
   /** How many passengers the hold is for; the intent is the source. */
   get passengerCount(): number {
