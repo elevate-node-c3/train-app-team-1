@@ -29,4 +29,7 @@ export class PaymentChargeEntity {
 
   @Column({ name: 'stripe_payment_method_id', type: 'varchar', length: 128, nullable: true })
   stripePaymentMethodId?: string | null;
+
+  @Column({ name: 'stripe_payment_intent_id', type: 'varchar', length: 128, nullable: true })
+  stripePaymentIntentId?: string | null;
 }

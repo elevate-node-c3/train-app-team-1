@@ -5,7 +5,7 @@ import {
   createTypeOrmAsyncOptions,
   MigrationModule,
 } from '@app/common';
-import { MessagingModule } from '@app/messaging';
+import { MessagingModule, OutboxModule } from '@app/messaging';
 import { ServiceInfoController } from './service-info.controller.js';
 import { migrations } from './database/migrations/index.js';
 import { ChargesModule } from './modules/charges/charges.module.js';
@@ -18,6 +18,7 @@ import { CardsModule } from './modules/cards/cards.module.js';
     ),
     CommonModule,
     MessagingModule,
+    OutboxModule,
     MigrationModule,
     ChargesModule,
     CardsModule,
