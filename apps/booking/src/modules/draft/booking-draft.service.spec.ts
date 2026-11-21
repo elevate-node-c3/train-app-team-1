@@ -274,6 +274,8 @@ describe('BookingDraftService atomic holds', () => {
 
   it('rejects a third leg before making any partial reservation', async () => {
     const dto = draftInput(2);
+    // The fixture's legs are plain objects, so copying one keeps no prototype.
+    // oxlint-disable-next-line typescript/no-misused-spread
     dto.legs!.push({ ...dto.legs![0], tripId: randomUUID() });
     await expect(service.createDraft(dto)).rejects.toMatchObject({
       code: ErrorCode.VALIDATION_ERROR,
@@ -284,6 +286,7 @@ describe('BookingDraftService atomic holds', () => {
 
   it('supports existing direct single-leg fields without count-only fallback', async () => {
     const { legs, ...dto } = draftInput();
+    // oxlint-disable-next-line typescript/no-misused-spread
     const result = await service.createDraft({ ...dto, ...legs![0] });
     expect(result.legs).toHaveLength(1);
     expect(inventory.createHold).toHaveBeenCalledTimes(1);

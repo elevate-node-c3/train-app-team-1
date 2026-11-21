@@ -44,6 +44,7 @@ export * from './persistence/migration-runner.service.js';
 export * from './persistence/migration.module.js';
 export * from './grpc/grpc-status.exception.js';
 export * from './errors/service-refusal.js';
+export * from './errors/service-refusal.filter.js';
 export * from './errors/to-rpc-exception.js';
 export * from './errors/grpc-validation.pipe.js';
 export * from './errors/to-http-exception.js';
