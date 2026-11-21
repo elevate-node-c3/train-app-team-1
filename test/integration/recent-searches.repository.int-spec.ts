@@ -13,6 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   catalogDataSource,
   closeCatalogDataSource,
+  truncateCatalog,
 } from './support/catalog-database.js';
 
 /**
@@ -58,6 +59,7 @@ describe('the recent-searches table', () => {
 
   beforeAll(async () => {
     source = await catalogDataSource();
+    await truncateCatalog(source);
     await seedSearchFixture(source);
     repository = new RecentSearchesRepository(source);
   });
