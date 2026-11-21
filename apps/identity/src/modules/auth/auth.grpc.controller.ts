@@ -42,6 +42,7 @@ import {
   UpdatePassengerRequestBodyDto,
   VerifyEmailRequestBodyDto,
 } from './dto/identity-request.dto.js';
+import { bookingIdentityServiceKey } from '../../config/service-keys.js';
 import { AuthError } from './auth-error.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
@@ -344,7 +345,7 @@ export class AuthGrpcController {
         keys?.length !== 1 ||
         !matchesServiceCredential(
           keys[0],
-          process.env.BOOKING_IDENTITY_SERVICE_KEY,
+          bookingIdentityServiceKey(),
         )
       ) {
         throw new AuthError(ErrorCode.UNAUTHORIZED);

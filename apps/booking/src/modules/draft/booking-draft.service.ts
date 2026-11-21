@@ -38,6 +38,7 @@ import {
   extractErrorDetails,
   isMissingHold,
 } from './booking-draft.errors.js';
+import { serviceKeyFor } from '../../config/service-keys.js';
 import { isHoldInstant, isHoldOutcome } from './hold-lifecycle.parser.js';
 
 export {
@@ -417,10 +418,7 @@ export class BookingDraftService implements OnModuleInit {
     target: 'inventory' | 'identity',
     language?: string,
   ): Promise<TResponse> {
-    const secret =
-      target === 'inventory'
-        ? process.env.BOOKING_INVENTORY_SERVICE_KEY
-        : process.env.BOOKING_IDENTITY_SERVICE_KEY;
+    const secret = serviceKeyFor(target);
     if (!matchesServiceCredential(secret, secret))
       throw new BookingDraftError(ErrorCode.DEPENDENCY_UNAVAILABLE);
     const metadata = createGrpcMetadataWithCorrelation(this.cls);

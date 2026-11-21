@@ -498,9 +498,10 @@ export interface CapturedHoldEvent {
 /** This owned quorum queue proves a durable route, not all consumer effects. */
 export async function holdEventCapture(previousQueue?: string) {
   const { rabbit } = isolatedHoldEndpoints();
-  const queue = previousQueue ?? `holds.expiry.capture.${randomUUID()}`;
+  const queue = previousQueue ?? `${CAPTURE_QUEUE_PREFIX}${randomUUID()}`;
   if (!/^holds\.expiry\.capture\.[0-9a-f-]{36}$/.test(queue))
     throw new Error('Only an owned TA-70 capture queue may be resumed');
+  await removeStaleExpiryCaptures(queue);
   const connection = await amqp.connect(rabbit, { timeout: 5_000 });
   const channel = await connection.createChannel();
   const records = new Map<string, CapturedHoldEvent>();
@@ -588,21 +589,58 @@ export async function holdEventCapture(previousQueue?: string) {
 
 export type HoldEventCapture = Awaited<ReturnType<typeof holdEventCapture>>;
 
+/** The management UI compose publishes beside the AMQP port. */
+function managementUrl(path: string): string {
+  const port = process.env.RABBITMQ_MANAGEMENT_PORT?.trim() || '15672';
+  return `http://127.0.0.1:${port}/api/${path}`;
+}
+
+/** The same broker credentials the AMQP URL carries. */
+function managementAuthorization(): string {
+  const url = new URL(isolatedHoldEndpoints().rabbit);
+  const credentials = `${url.username}:${url.password}`;
+  return `Basic ${Buffer.from(credentials).toString('base64')}`;
+}
+
 export async function rabbitManagement<T>(path: string): Promise<T> {
-  const { rabbit } = isolatedHoldEndpoints();
-  const url = new URL(rabbit);
-  // The management UI compose publishes beside the AMQP port.
-  const managementPort =
-    process.env.RABBITMQ_MANAGEMENT_PORT?.trim() || '15672';
-  const response = await fetch(`http://127.0.0.1:${managementPort}/api/${path}`, {
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${url.username}:${url.password}`).toString('base64')}`,
-    },
+  const response = await fetch(managementUrl(path), {
+    headers: { Authorization: managementAuthorization() },
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok)
     throw new Error(`Isolated RabbitMQ management returned ${response.status}`);
   return response.json() as Promise<T>;
+}
+
+/** The prefix every capture queue this fixture owns is named with. */
+const CAPTURE_QUEUE_PREFIX = 'holds.expiry.capture.';
+
+/**
+ * Delete capture queues left by an earlier run.
+ *
+ * The tier shares the development broker, so a run that was interrupted leaves
+ * its queue bound to the expiry route, and the next run's isolation assertion
+ * sees a binding it did not make. Only this fixture's own queues are removed,
+ * never the one it is about to use.
+ */
+export async function removeStaleExpiryCaptures(keep?: string): Promise<string[]> {
+  const queues = await rabbitManagement<{ name: string }[]>('queues/%2F');
+  const stale = queues
+    .map((entry) => entry.name)
+    .filter((name) => name.startsWith(CAPTURE_QUEUE_PREFIX) && name !== keep);
+
+  for (const name of stale) {
+    const response = await fetch(managementUrl(`queues/%2F/${name}`), {
+      method: 'DELETE',
+      headers: { Authorization: managementAuthorization() },
+      signal: AbortSignal.timeout(5_000),
+    });
+    // 404 means another run removed it first, which is the outcome we want.
+    if (!response.ok && response.status !== 404)
+      throw new Error(`Could not delete ${name}: ${response.status}`);
+  }
+
+  return stale;
 }
 
 export async function assertNoExpiryBinding(): Promise<void> {
