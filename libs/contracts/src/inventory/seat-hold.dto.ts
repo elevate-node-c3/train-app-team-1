@@ -9,7 +9,7 @@ import {
  * `HELD` is the only state that owns seats. The other three are terminal
  * receipts: replaying their booking key never reallocates or reclaims seats.
  */
-export type HoldState = 'HELD' | 'RELEASED' | 'EXPIRED' | 'CANCELLED';
+export type HoldState = 'HELD' | 'RELEASED' | 'EXPIRED' | 'CANCELLED' | 'SOLD';
 
 /**
  * Identity's trip-scoped view of one traveller. The same canonical National ID
@@ -134,6 +134,27 @@ export type CreateHoldResponse = HoldSnapshot;
 export type GetHoldResponse = HoldSnapshot;
 export type ReleaseHoldResponse = HoldSnapshot;
 export type ExtendHoldResponse = HoldSnapshot;
+
+export interface SettleHoldRequest {
+  ownerId: string;
+  bookingKey: string;
+}
+
+/**
+ * BR-36's branch: a live hold sells its exact seats, an expired-but-free hold
+ * re-sells them, a taken hold reallocates within the same class, and a full
+ * class refuses rather than occupying nothing.
+ */
+export type SettlementOutcome = 'SOLD' | 'REALLOCATED' | 'NO_SEATS';
+
+export interface SettlementSnapshot {
+  outcome: SettlementOutcome;
+  holdId: string;
+  legs: HoldLegResult[];
+  assignments: HoldSeatAssignment[];
+  /** Postgres `clock_timestamp()` sampled after lock waits. */
+  serverNow: string;
+}
 
 /** Compose per-leg SEAT-2 outcomes into one hold-level outcome. */
 export function composeAllocationOutcome(

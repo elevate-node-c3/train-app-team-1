@@ -51,6 +51,7 @@ export default defineConfig({
     include: [
       'test/integration/hold-*.int-spec.ts',
       'test/integration/booking-hold.int-spec.ts',
+      'test/integration/booking-confirmation.int-spec.ts',
     ],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.kilo/**'],
     fileParallelism: false,
@@ -68,6 +69,10 @@ export default defineConfig({
       BOOKING_TEST_DATABASE_URL: localDatabase(
         'HOLDS_BOOKING_DATABASE_URL',
         'booking',
+      ),
+      PAYMENT_TEST_DATABASE_URL: localDatabase(
+        'HOLDS_PAYMENT_DATABASE_URL',
+        'payment',
       ),
       HOLDS_TEST_RABBITMQ_URL: `amqp://${password(
         'RABBITMQ_USER',

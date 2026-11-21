@@ -20,6 +20,7 @@ import type {
   HoldPassengerInput,
   HoldPassengerLegIdentityInput,
   ReleaseHoldRequest,
+  SettleHoldRequest,
 } from '@app/contracts';
 
 import {
@@ -63,6 +64,10 @@ export class ReleaseHoldRequestDto
 export class ExtendHoldRequestDto
   extends GetHoldRequestDto
   implements ExtendHoldRequest {}
+
+export class SettleHoldRequestDto
+  extends GetHoldRequestDto
+  implements SettleHoldRequest {}
 
 export class HoldLegInputDto implements HoldLegInput {
   @IsUUID()

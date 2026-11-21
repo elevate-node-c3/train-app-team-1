@@ -64,14 +64,17 @@ function buildController(correlationId: string | undefined = 'corr-1') {
     releaseHold: vi.fn(),
     extendHold: vi.fn(),
   };
+  const settlement = { settle: vi.fn() };
   const cls = { get: vi.fn().mockReturnValue(correlationId) };
 
   return {
     controller: new SeatHoldGrpcController(
       core as never,
+      settlement as never,
       cls as never,
     ),
     core,
+    settlement,
     cls,
   };
 }

@@ -19,11 +19,20 @@ import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
 import { HoldCoreError } from './hold-core.errors.js';
-import type { AllocatableSeat } from '../seat-allocation/seat-allocator.types.js';
+import { allocateGroupSeats } from '../seat-allocation/seat-allocator.js';
+import type {
+  AllocatableSeat,
+  AllocationResult,
+} from '../seat-allocation/seat-allocator.types.js';
 import { toInt4Range, type Segment } from '../seats/segment.js';
 import { ErrorCode } from '@app/contracts';
 
-export type DbHoldState = 'held' | 'released' | 'expired' | 'cancelled';
+export type DbHoldState =
+  | 'held'
+  | 'released'
+  | 'expired'
+  | 'cancelled'
+  | 'sold';
 
 export type HoldRow = {
   id: string;
@@ -965,6 +974,388 @@ export class HoldCoreRepository {
       assignments,
     };
   }
+
+  /** True while any occupation this hold made is still held and unreleased. */
+  async hasLiveOccupations(
+    ctx: TransactionContext,
+    holdId: string,
+  ): Promise<boolean> {
+    const rows = (await managerOf(ctx).query(
+      `SELECT 1 FROM seat_occupation
+       WHERE hold_id = $1 AND state = 'held' AND released_at IS NULL
+       LIMIT 1`,
+      [holdId],
+    )) as unknown[];
+    return rows.length > 0;
+  }
+
+  /** The hold's own occupations are still live: sell exactly what is held. */
+  async sellHold(
+    ctx: TransactionContext,
+    holdId: string,
+    now: Date,
+  ): Promise<void> {
+    const manager = managerOf(ctx);
+    await manager.query(
+      `UPDATE seat_occupation
+       SET state = 'sold', hold_expires_at = NULL, updated_at = $2
+       WHERE hold_id = $1 AND state = 'held' AND released_at IS NULL`,
+      [holdId, now],
+    );
+    await this.markHoldSold(ctx, holdId, now);
+  }
+
+  async markHoldSold(
+    ctx: TransactionContext,
+    holdId: string,
+    now: Date,
+  ): Promise<void> {
+    await managerOf(ctx).query(
+      `UPDATE seat_hold_group
+       SET state = 'sold', version = version + 1, updated_at = $2
+       WHERE id = $1 AND state <> 'sold'`,
+      [holdId, now],
+    );
+  }
+
+  /**
+   * Re-occupies exactly the stored assignments as sold, only if every leg's
+   * freshly resolved segment still matches the one the hold was promised, and
+   * every stored seat is still free. All legs or none: the first mismatch or
+   * conflict refuses before any insert happens.
+   */
+  async reacquireSameSeats(
+    ctx: TransactionContext,
+    holdId: string,
+    ownerId: string,
+    facts: readonly LegFacts[],
+    now: Date,
+  ): Promise<boolean> {
+    const manager = managerOf(ctx);
+
+    for (const fact of facts) {
+      const stillSameSegment = (await manager.query(
+        `SELECT 1 FROM seat_hold_leg
+         WHERE hold_id = $1 AND trip_id = $2 AND segment = $3::int4range`,
+        [holdId, fact.leg.tripId, toInt4Range(fact.segment)],
+      )) as unknown[];
+      if (stillSameSegment.length === 0) return false;
+    }
+
+    const assignments = (await manager.query(
+      `SELECT passenger_ref AS "passengerRef", trip_id AS "tripId",
+              trip_seat_id AS "tripSeatId", segment::text AS "segment"
+       FROM seat_hold_assignment
+       WHERE hold_id = $1`,
+      [holdId],
+    )) as {
+      passengerRef: string;
+      tripId: string;
+      tripSeatId: string;
+      segment: string;
+    }[];
+
+    for (const assignment of assignments) {
+      const conflict = (await manager.query(
+        `SELECT 1 FROM seat_occupation
+         WHERE trip_seat_id = $1 AND released_at IS NULL AND segment && $2::int4range
+         LIMIT 1`,
+        [assignment.tripSeatId, assignment.segment],
+      )) as unknown[];
+      if (conflict.length > 0) return false;
+    }
+
+    const identities = (await manager.query(
+      `SELECT trip_id AS "tripId", passenger_ref AS "passengerRef",
+              passenger_token AS "passengerToken",
+              passenger_key_version AS "passengerKeyVersion"
+       FROM seat_hold_passenger
+       WHERE hold_id = $1`,
+      [holdId],
+    )) as {
+      tripId: string;
+      passengerRef: string;
+      passengerToken: string;
+      passengerKeyVersion: number;
+    }[];
+
+    for (const assignment of assignments) {
+      const identity = identities.find(
+        (candidate) =>
+          candidate.tripId === assignment.tripId &&
+          candidate.passengerRef === assignment.passengerRef,
+      );
+      if (!identity) {
+        throw new HoldCoreError(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+          'A sold assignment is missing its passenger identity snapshot.',
+        );
+      }
+
+      await manager.query(
+        `INSERT INTO seat_occupation
+           (id, trip_seat_id, trip_id, segment, state, hold_expires_at,
+            reference_id, hold_id, owner_id, passenger_ref, passenger_token,
+            passenger_key_version, created_at, updated_at)
+         VALUES ($1, $2, $3, $4::int4range, 'sold', NULL, $5, $5, $6, $7, $8,
+                 $9, $10, $10)`,
+        [
+          randomUUID(),
+          assignment.tripSeatId,
+          assignment.tripId,
+          assignment.segment,
+          holdId,
+          ownerId,
+          assignment.passengerRef,
+          identity.passengerToken,
+          identity.passengerKeyVersion,
+          now,
+        ],
+      );
+    }
+
+    await this.markHoldSold(ctx, holdId, now);
+    return true;
+  }
+
+  /**
+   * Re-allocates every leg from scratch, within the same class, when the
+   * stored seats are gone. All legs succeed or nothing is written: every
+   * layout is computed first, and the old assignments are replaced only once
+   * every leg has a result.
+   */
+  async reallocateForBooking(
+    ctx: TransactionContext,
+    holdId: string,
+    ownerId: string,
+    facts: readonly LegFacts[],
+    now: Date,
+  ): Promise<boolean> {
+    const manager = managerOf(ctx);
+
+    const identities = (await manager.query(
+      `SELECT trip_id AS "tripId", passenger_ref AS "passengerRef",
+              passenger_token AS "passengerToken",
+              passenger_key_version AS "passengerKeyVersion"
+       FROM seat_hold_passenger
+       WHERE hold_id = $1`,
+      [holdId],
+    )) as {
+      tripId: string;
+      passengerRef: string;
+      passengerToken: string;
+      passengerKeyVersion: number;
+    }[];
+    const passengerRefs = [
+      ...new Set(identities.map((identity) => identity.passengerRef)),
+    ].sort();
+    if (passengerRefs.length === 0) return false;
+
+    const perLeg: {
+      fact: LegFacts;
+      outcome: AllocationOutcome;
+      seats: {
+        passengerRef: string;
+        seatId: string;
+        coachNumber: number;
+        seatNumber: string;
+        rowNumber: number;
+        label?: string;
+      }[];
+    }[] = [];
+
+    for (const fact of facts) {
+      const layout = await this.layoutFor(ctx, fact, now);
+      if (layout.seats.length === 0) return false;
+
+      const result: AllocationResult = allocateGroupSeats({
+        groupSize: passengerRefs.length,
+        seats: layout.seats,
+        occupiedSeatIds: layout.occupiedSeatIds,
+        passengerIds: passengerRefs,
+      });
+      if (!result.success) return false;
+      if (result.seats.length !== passengerRefs.length) return false;
+
+      perLeg.push({
+        fact,
+        outcome: result.outcome,
+        seats: result.seats.map((seat, index) => ({
+          passengerRef: seat.passengerId ?? passengerRefs[index],
+          seatId: seat.seatId,
+          coachNumber: seat.coachNumber,
+          seatNumber: seat.seatNumber,
+          rowNumber: seat.rowNumber,
+          label: seat.label,
+        })),
+      });
+    }
+
+    await manager.query(`DELETE FROM seat_hold_assignment WHERE hold_id = $1`, [
+      holdId,
+    ]);
+
+    for (const { fact, outcome, seats } of perLeg) {
+      await manager.query(
+        `UPDATE seat_hold_leg
+         SET segment = $2::int4range, origin_position = $3,
+             destination_position = $4, outcome = $5
+         WHERE hold_id = $1 AND trip_id = $6`,
+        [
+          holdId,
+          toInt4Range(fact.segment),
+          fact.originPosition,
+          fact.destinationPosition,
+          outcome,
+          fact.leg.tripId,
+        ],
+      );
+
+      for (const seat of seats) {
+        const identity = identities.find(
+          (candidate) =>
+            candidate.tripId === fact.leg.tripId &&
+            candidate.passengerRef === seat.passengerRef,
+        );
+        if (!identity) {
+          throw new HoldCoreError(
+            ErrorCode.INTERNAL_SERVER_ERROR,
+            'Reallocation referenced an unknown passenger identity.',
+          );
+        }
+
+        await manager.query(
+          `INSERT INTO seat_hold_assignment
+             (id, hold_id, passenger_ref, passenger_key_version, trip_id,
+              trip_seat_id, travel_class_id, coach_number, seat_number,
+              row_number, label, outcome, origin_station_id,
+              destination_station_id, origin_position, destination_position,
+              segment, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                   $13, $14, $15, $16, $17::int4range, $18)`,
+          [
+            randomUUID(),
+            holdId,
+            seat.passengerRef,
+            identity.passengerKeyVersion,
+            fact.leg.tripId,
+            seat.seatId,
+            fact.leg.travelClassId,
+            seat.coachNumber,
+            seat.seatNumber,
+            seat.rowNumber,
+            seat.label ?? null,
+            outcome,
+            fact.leg.originStationId,
+            fact.leg.destinationStationId,
+            fact.originPosition,
+            fact.destinationPosition,
+            toInt4Range(fact.segment),
+            now,
+          ],
+        );
+
+        await manager.query(
+          `INSERT INTO seat_occupation
+             (id, trip_seat_id, trip_id, segment, state, hold_expires_at,
+              reference_id, hold_id, owner_id, passenger_ref, passenger_token,
+              passenger_key_version, created_at, updated_at)
+           VALUES ($1, $2, $3, $4::int4range, 'sold', NULL, $5, $5, $6, $7,
+                   $8, $9, $10, $10)`,
+          [
+            randomUUID(),
+            seat.seatId,
+            fact.leg.tripId,
+            toInt4Range(fact.segment),
+            holdId,
+            ownerId,
+            seat.passengerRef,
+            identity.passengerToken,
+            identity.passengerKeyVersion,
+            now,
+          ],
+        );
+      }
+    }
+
+    await this.markHoldSold(ctx, holdId, now);
+    return true;
+  }
+
+  /** The leg and assignment view a settlement response needs. */
+  async loadSettlement(
+    ctx: TransactionContext,
+    holdId: string,
+  ): Promise<{ legs: HoldLegResult[]; assignments: HoldSeatAssignment[] }> {
+    const manager = managerOf(ctx);
+
+    const legRows = (await manager.query(
+      `SELECT trip_id AS "tripId",
+              travel_class_id AS "travelClassId",
+              origin_station_id AS "originStationId",
+              destination_station_id AS "destinationStationId",
+              origin_position AS "originPosition",
+              destination_position AS "destinationPosition",
+              outcome
+       FROM seat_hold_leg
+       WHERE hold_id = $1
+       ORDER BY trip_id`,
+      [holdId],
+    )) as LegViewRow[];
+
+    const assignmentRows = (await manager.query(
+      `SELECT passenger_ref AS "passengerRef",
+              passenger_key_version AS "passengerKeyVersion",
+              trip_id AS "tripId",
+              trip_seat_id AS "tripSeatId",
+              travel_class_id AS "travelClassId",
+              coach_number AS "coachNumber",
+              seat_number AS "seatNumber",
+              row_number AS "rowNumber",
+              label,
+              outcome,
+              origin_station_id AS "originStationId",
+              destination_station_id AS "destinationStationId",
+              origin_position AS "originPosition",
+              destination_position AS "destinationPosition"
+       FROM seat_hold_assignment
+       WHERE hold_id = $1
+       ORDER BY trip_id, passenger_ref`,
+      [holdId],
+    )) as AssignmentViewRow[];
+
+    const legs: HoldLegResult[] = legRows.map((row) => ({
+      tripId: row.tripId,
+      travelClassId: row.travelClassId,
+      originStationId: row.originStationId,
+      destinationStationId: row.destinationStationId,
+      originPosition: Number(row.originPosition),
+      destinationPosition: Number(row.destinationPosition),
+      outcome: row.outcome,
+      ...(row.outcome === AllocationOutcome.SPLIT
+        ? { splitNotice: SEATS_SPLIT_NOTICE }
+        : {}),
+    }));
+
+    const assignments: HoldSeatAssignment[] = assignmentRows.map((row) => ({
+      passengerRef: row.passengerRef,
+      passengerKeyVersion: Number(row.passengerKeyVersion),
+      tripId: row.tripId,
+      tripSeatId: row.tripSeatId,
+      travelClassId: row.travelClassId,
+      coachNumber: Number(row.coachNumber),
+      seatNumber: row.seatNumber,
+      rowNumber: Number(row.rowNumber),
+      ...(row.label === null ? {} : { label: row.label }),
+      outcome: row.outcome,
+      originStationId: row.originStationId,
+      destinationStationId: row.destinationStationId,
+      originPosition: Number(row.originPosition),
+      destinationPosition: Number(row.destinationPosition),
+    }));
+
+    return { legs, assignments };
+  }
 }
 
 function rowCountOf(result: unknown[]): number {
@@ -983,6 +1374,8 @@ function holdStateOf(state: DbHoldState): HoldState {
       return 'EXPIRED';
     case 'cancelled':
       return 'CANCELLED';
+    case 'sold':
+      return 'SOLD';
   }
 }
 

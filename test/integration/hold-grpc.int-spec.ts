@@ -34,6 +34,7 @@ import {
 } from '@app/contracts';
 import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
 import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
+import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/hold-settlement.service.js';
 import { SeatHoldGrpcController } from '../../apps/inventory/src/modules/seat-hold/seat-hold.grpc.controller.js';
 import {
   HoldCreationGuard,
@@ -142,6 +143,10 @@ beforeAll(async () => {
     controllers: [SeatHoldGrpcController],
     providers: [
       { provide: HoldCoreService, useValue: core },
+      {
+        provide: HoldSettlementService,
+        useValue: { settle: vi.fn() },
+      },
       { provide: DataSourceInitializer, useValue: initializer },
       { provide: SchemaReadinessGate, useValue: new SchemaReadinessGate() },
       { provide: MigrationRunnerService, useValue: { hasCompleted: true } },

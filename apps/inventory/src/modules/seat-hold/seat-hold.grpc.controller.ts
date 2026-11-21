@@ -19,15 +19,18 @@ import {
   type ExtendHoldResponse,
   type GetHoldResponse,
   type ReleaseHoldResponse,
+  type SettlementSnapshot,
 } from '@app/contracts';
 import {
   CreateHoldRequestDto,
   ExtendHoldRequestDto,
   GetHoldRequestDto,
   ReleaseHoldRequestDto,
+  SettleHoldRequestDto,
 } from './dto/hold-request.dto.js';
 import { HoldCoreError } from './hold-core.errors.js';
 import { HoldCoreService } from './hold-core.service.js';
+import { HoldSettlementService } from './hold-settlement.service.js';
 import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
 
 /** HoldCoreError carries the code and its refs; everything else is masked. */
@@ -45,6 +48,7 @@ export class SeatHoldGrpcController {
 
   constructor(
     private readonly holdCoreService: HoldCoreService,
+    private readonly holdSettlementService: HoldSettlementService,
     private readonly cls: ClsService,
   ) {}
 
@@ -96,6 +100,21 @@ export class SeatHoldGrpcController {
       );
     } catch (error) {
       this.logger.warn(`ExtendHold error: ${safeErrorName(error)}`);
+      throw toRpcException(error);
+    }
+  }
+
+  @GrpcMethod(INVENTORY_SERVICE_NAME, 'SettleHold')
+  async settleHold(
+    request: SettleHoldRequestDto,
+  ): Promise<SettlementSnapshot> {
+    try {
+      return await this.holdSettlementService.settle(
+        request,
+        this.correlationId(),
+      );
+    } catch (error) {
+      this.logger.warn(`SettleHold error: ${safeErrorName(error)}`);
       throw toRpcException(error);
     }
   }
