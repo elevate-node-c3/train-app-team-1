@@ -3,6 +3,7 @@ import {
   ErrorCode,
   type BookingLeg,
   type BookingResponse,
+  type ContinueToPaymentRequest,
   type SubmitBookingRequest,
 } from '@app/contracts';
 
@@ -35,8 +36,10 @@ export class BookingService {
     return this.bookings.acceptTerms({ bookingReference });
   }
 
-  continueToPayment(bookingReference: string): Promise<BookingResponse> {
-    return this.bookings.continueToPayment({ bookingReference });
+  continueToPayment(
+    request: ContinueToPaymentRequest,
+  ): Promise<BookingResponse> {
+    return this.bookings.continueToPayment(request);
   }
 
   abandon(bookingReference: string): Promise<BookingResponse> {
@@ -66,7 +69,10 @@ function submissionOf(
   ];
 
   const travelClassId = legs[0]?.travelClassId;
-  if (!travelClassId || legs.some((leg) => leg.travelClassId !== travelClassId)) {
+  if (
+    !travelClassId ||
+    legs.some((leg) => leg.travelClassId !== travelClassId)
+  ) {
     throw new HttpException(
       {
         code: ErrorCode.VALIDATION_ERROR,
@@ -88,12 +94,10 @@ function submissionOf(
     idempotencyKey: (headerKey ?? dto.bookingKey) as string,
     travelClassId,
     passengerIds: dto.passengerIds,
-    legs: legs.map(
-      (leg): BookingLeg => ({
-        tripId: leg.tripId as string,
-        originStationId: leg.originStationId as string,
-        destinationStationId: leg.destinationStationId as string,
-      }),
-    ),
+    legs: legs.map((leg): BookingLeg => ({
+      tripId: leg.tripId as string,
+      originStationId: leg.originStationId as string,
+      destinationStationId: leg.destinationStationId as string,
+    })),
   };
 }

@@ -9,6 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import type Stripe from 'stripe';
 import { StripeService } from './stripe.service.js';
 import { SavedCardsService } from './saved-cards.service.js';
 
@@ -40,17 +41,15 @@ export class StripeWebhookController {
       throw new BadRequestException('Missing request body');
     }
 
+    let event: Stripe.Event;
     try {
-      const event = this.stripeService.constructEvent(payload, signature);
-      await this.savedCardsService.handleWebhookEvent(event);
-      return { received: true };
-    } catch (err: unknown) {
-      this.logger.error(
-        `Webhook signature verification failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      event = this.stripeService.constructEvent(payload, signature);
+    } catch {
+      this.logger.error('Webhook signature verification failed');
       throw new BadRequestException('Webhook signature verification failed');
     }
+
+    await this.savedCardsService.handleWebhookEvent(event);
+    return { received: true };
   }
 }

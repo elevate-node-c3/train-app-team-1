@@ -14,7 +14,7 @@ service BookingService {
   // Records the traveller's acceptance of the Terms and Conditions and the
   // Privacy Policy; ContinueToPayment refuses without it.
   rpc AcceptTerms (ContinueBookingRequest) returns (BookingResponse);
-  rpc ContinueToPayment (ContinueBookingRequest) returns (BookingResponse);
+  rpc ContinueToPayment (ContinueToPaymentRequest) returns (BookingResponse);
   rpc AbandonBooking (ContinueBookingRequest) returns (BookingResponse);
   rpc GetBooking (ContinueBookingRequest) returns (BookingResponse);
 }
@@ -29,6 +29,11 @@ message SubmitBookingRequest {
 
 message ContinueBookingRequest {
   string bookingReference = 1;
+}
+
+message ContinueToPaymentRequest {
+  string bookingReference = 1;
+  string savedCardId = 2;
 }
 
 // The next five mirror catalog's wire shapes, so the Review Tickets step reads

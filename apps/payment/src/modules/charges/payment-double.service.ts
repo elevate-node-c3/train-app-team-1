@@ -18,6 +18,16 @@ interface ChargeRow {
   amount_piastres: number;
   currency: string;
   status: 'started' | 'succeeded' | 'cancelled';
+  stripe_payment_method_id: string | null;
+}
+
+interface ChargeCardRow {
+  stripe_payment_method_id: string;
+  brand: string;
+  last4: string;
+  exp_month: number;
+  exp_year: number;
+  status: 'active' | 'detached';
 }
 
 /**
@@ -39,10 +49,58 @@ export class PaymentDoubleService {
       throw new PaymentError(ErrorCode.INVALID_PAYLOAD);
     }
 
+    let existingCharge: ChargeRow | undefined;
+    if (request.savedCardId) {
+      const existing = (await this.dataSource.query(
+        'SELECT * FROM payment_charge WHERE booking_reference = $1 OR idempotency_key = $2',
+        [request.bookingReference, request.idempotencyKey],
+      )) as ChargeRow[];
+      existingCharge = existing[0];
+    }
+
+    let card: ChargeCardRow | undefined;
+    if (request.savedCardId) {
+      const cards = (await this.dataSource.query(
+        `SELECT stripe_payment_method_id, brand, last4, exp_month, exp_year,
+                status
+         FROM saved_card
+         WHERE id = $1 AND account_id = $2`,
+        [request.savedCardId, request.accountId],
+      )) as ChargeCardRow[];
+      card = cards[0];
+      if (!card) {
+        throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+      }
+
+      if (existingCharge) {
+        if (
+          existingCharge.stripe_payment_method_id !==
+          card.stripe_payment_method_id
+        ) {
+          throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
+        }
+        return this.replay(existingCharge, request);
+      }
+
+      if (card.status !== 'active') {
+        throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+      }
+
+      const now = new Date();
+      if (
+        card.exp_year < now.getUTCFullYear() ||
+        (card.exp_year === now.getUTCFullYear() &&
+          card.exp_month < now.getUTCMonth() + 1)
+      ) {
+        throw new PaymentError(ErrorCode.INVALID_PAYLOAD);
+      }
+    }
+
     await this.dataSource.query(
       `INSERT INTO payment_charge
-         (id, booking_reference, idempotency_key, amount_piastres, currency, status)
-       VALUES ($1, $2, $3, $4, $5, 'started')
+         (id, booking_reference, idempotency_key, amount_piastres, currency, status,
+          card_brand, card_last4, stripe_payment_method_id)
+       VALUES ($1, $2, $3, $4, $5, 'started', $6, $7, $8)
        ON CONFLICT DO NOTHING`,
       [
         uuid(),
@@ -50,6 +108,9 @@ export class PaymentDoubleService {
         request.idempotencyKey,
         request.amountPiastres,
         request.currency,
+        card?.brand ?? null,
+        card?.last4 ?? null,
+        card?.stripe_payment_method_id ?? null,
       ],
     );
     const rows = (await this.dataSource.query(
@@ -66,6 +127,15 @@ export class PaymentDoubleService {
       throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
     }
 
+    if (card) {
+      await this.dataSource.query(
+        `UPDATE saved_card
+         SET last_used_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND account_id = $2 AND status = 'active'`,
+        [request.savedCardId, request.accountId],
+      );
+    }
+
     if (this.succeededBookings.has(request.bookingReference)) {
       await this.dataSource.query(
         "UPDATE payment_charge SET status = 'succeeded' WHERE id = $1 AND status = 'started'",
@@ -78,6 +148,29 @@ export class PaymentDoubleService {
       status: this.succeededBookings.has(request.bookingReference)
         ? 'SUCCEEDED'
         : 'STARTED',
+    };
+  }
+
+  private replay(
+    charge: ChargeRow,
+    request: StartChargeRequest,
+  ): StartChargeResponse {
+    if (
+      charge.booking_reference !== request.bookingReference ||
+      charge.idempotency_key !== request.idempotencyKey ||
+      Number(charge.amount_piastres) !== request.amountPiastres
+    ) {
+      throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
+    }
+
+    return {
+      paymentReference: charge.id,
+      status:
+        charge.status === 'succeeded'
+          ? 'SUCCEEDED'
+          : charge.status === 'cancelled'
+            ? 'CANCELLED'
+            : 'STARTED',
     };
   }
 

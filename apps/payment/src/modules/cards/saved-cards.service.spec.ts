@@ -43,8 +43,12 @@ describe('SavedCardsService', () => {
   describe('createSetupIntent', () => {
     it('creates setup intent for traveller Stripe customer', async () => {
       const result = await service.createSetupIntent(accountId);
-      expect(mockStripeService.getOrCreateCustomer).toHaveBeenCalledWith(accountId);
-      expect(mockStripeService.createSetupIntent).toHaveBeenCalledWith(customerId);
+      expect(mockStripeService.getOrCreateCustomer).toHaveBeenCalledWith(
+        accountId,
+      );
+      expect(mockStripeService.createSetupIntent).toHaveBeenCalledWith(
+        customerId,
+      );
       expect(result.setupIntentId).toBe('seti_123');
       expect(result.clientSecret).toBe('seti_123_secret_xyz');
     });
@@ -140,7 +144,9 @@ describe('SavedCardsService', () => {
         customer: customerId,
       });
 
-      await expect(service.confirmSetup(accountId, 'seti_pending')).rejects.toMatchObject({
+      await expect(
+        service.confirmSetup(accountId, 'seti_pending'),
+      ).rejects.toMatchObject({
         code: ErrorCode.INVALID_PAYLOAD,
       });
     });
@@ -153,7 +159,14 @@ describe('SavedCardsService', () => {
         payment_method: {
           id: 'pm_other',
           type: 'card',
-          card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030, fingerprint: 'fp_other' },
+          customer: customerId,
+          card: {
+            brand: 'visa',
+            last4: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            fingerprint: 'fp_other',
+          },
         },
       });
 
@@ -161,7 +174,9 @@ describe('SavedCardsService', () => {
         { stripe_customer_id: customerId },
       ]);
 
-      await expect(service.confirmSetup(accountId, 'seti_other')).rejects.toMatchObject({
+      await expect(
+        service.confirmSetup(accountId, 'seti_other'),
+      ).rejects.toMatchObject({
         code: ErrorCode.RESOURCE_NOT_FOUND,
       });
     });
@@ -174,13 +189,21 @@ describe('SavedCardsService', () => {
         payment_method: {
           id: 'pm_new_dup',
           type: 'card',
-          card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030, fingerprint: 'fp_existing' },
+          customer: customerId,
+          card: {
+            brand: 'visa',
+            last4: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            fingerprint: 'fp_existing',
+          },
         },
       });
 
       mockDataSource.query
         .mockResolvedValueOnce([{ stripe_customer_id: customerId }]) // customer query
-        .mockResolvedValueOnce([ // duplicate card query
+        .mockResolvedValueOnce([
+          // duplicate card query
           {
             id: 'card-existing-id',
             account_id: accountId,
@@ -200,7 +223,10 @@ describe('SavedCardsService', () => {
       const card = await service.confirmSetup(accountId, 'seti_dup');
 
       expect(card.id).toBe('card-existing-id');
-      expect(mockStripeService.detachPaymentMethod).toHaveBeenCalledWith('pm_new_dup');
+      expect(mockStripeService.detachPaymentMethod).toHaveBeenCalledWith(
+        'pm_new_dup',
+        customerId,
+      );
       expect(mockDataSource.query).not.toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO saved_card'),
         expect.anything(),
@@ -215,6 +241,7 @@ describe('SavedCardsService', () => {
           {
             id: 'card-1',
             account_id: accountId,
+            stripe_customer_id: customerId,
             stripe_payment_method_id: 'pm_stripe_1',
             status: 'active',
           },
@@ -224,7 +251,10 @@ describe('SavedCardsService', () => {
       const success = await service.deleteCard(accountId, 'card-1');
 
       expect(success).toBe(true);
-      expect(mockStripeService.detachPaymentMethod).toHaveBeenCalledWith('pm_stripe_1');
+      expect(mockStripeService.detachPaymentMethod).toHaveBeenCalledWith(
+        'pm_stripe_1',
+        customerId,
+      );
       expect(mockDataSource.query).toHaveBeenCalledWith(
         expect.stringContaining("SET status = 'detached'"),
         ['card-1'],
@@ -234,7 +264,9 @@ describe('SavedCardsService', () => {
     it('throws RESOURCE_NOT_FOUND (404) when deleting another traveller card (BR-09)', async () => {
       mockDataSource.query.mockResolvedValueOnce([]); // Not found for caller
 
-      await expect(service.deleteCard(otherAccountId, 'card-1')).rejects.toMatchObject({
+      await expect(
+        service.deleteCard(otherAccountId, 'card-1'),
+      ).rejects.toMatchObject({
         code: ErrorCode.RESOURCE_NOT_FOUND,
       });
     });
@@ -262,10 +294,19 @@ describe('SavedCardsService', () => {
 
       mockStripeService.retrieveSetupIntent.mockResolvedValue({
         id: 'seti_wh',
+        status: 'succeeded',
+        customer: customerId,
         payment_method: {
           id: 'pm_wh',
           type: 'card',
-          card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030, fingerprint: 'fp_wh' },
+          customer: customerId,
+          card: {
+            brand: 'visa',
+            last4: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            fingerprint: 'fp_wh',
+          },
         },
       });
 

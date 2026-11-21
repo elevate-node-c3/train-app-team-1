@@ -15,6 +15,7 @@ import { RequireAccess } from '@app/common';
 import type { BookingResponse } from '@app/contracts';
 
 import { BookingService } from './booking.service.js';
+import { ContinueToPaymentDto } from './dto/continue-to-payment.dto.js';
 import { BookingRequestGuard } from './booking-request.guard.js';
 import { BookingReferenceParamDto } from './dto/booking-reference.dto.js';
 import {
@@ -67,8 +68,12 @@ export class BookingController {
   @HttpCode(HttpStatus.OK)
   continueToPayment(
     @Param() params: BookingReferenceParamDto,
+    @Body() dto?: ContinueToPaymentDto,
   ): Promise<BookingResponse> {
-    return this.bookings.continueToPayment(params.bookingReference);
+    return this.bookings.continueToPayment({
+      bookingReference: params.bookingReference,
+      savedCardId: dto?.savedCardId,
+    });
   }
 
   /** Releases the seats now rather than waiting for the hold to lapse (BR-25). */

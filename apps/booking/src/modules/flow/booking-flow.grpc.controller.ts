@@ -8,6 +8,7 @@ import { BOOKING_SERVICE_NAME, type BookingResponse } from '@app/contracts';
 
 import {
   ContinueBookingRequestDto,
+  ContinueToPaymentRequestDto,
   SubmitBookingRequestDto,
 } from './dto/booking-flow-request.dto.js';
 
@@ -45,7 +46,7 @@ export class BookingFlowGrpcController {
 
   @GrpcMethod(BOOKING_SERVICE_NAME, 'ContinueToPayment')
   async continueToPayment(
-    request: ContinueBookingRequestDto,
+    request: ContinueToPaymentRequestDto,
   ): Promise<BookingResponse> {
     try {
       return await this.flow.continueToPayment(request);

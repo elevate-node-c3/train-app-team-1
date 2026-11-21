@@ -10,6 +10,7 @@ import {
   ErrorCode,
   type BookingResponse,
   type ContinueBookingRequest,
+  type ContinueToPaymentRequest,
   type QuoteBookingResponse,
   type SubmitBookingRequest,
 } from '@app/contracts';
@@ -105,7 +106,7 @@ export class BookingFlowService {
   }
 
   async continueToPayment(
-    request: ContinueBookingRequest,
+    request: ContinueToPaymentRequest,
   ): Promise<BookingResponse> {
     const draft = await this.ownedDraft(request.bookingReference);
     await this.expireIfDue(draft.id);
@@ -115,7 +116,7 @@ export class BookingFlowService {
       return toBookingResponse(current);
     }
     if (current.flowState === 'payment_starting') {
-      await this.startPayment(current.id);
+      await this.startPayment(current.id, request.savedCardId);
       return this.read(current.id);
     }
     // No recorded acceptance, no charge, and the flow stays where it is.
@@ -131,7 +132,7 @@ export class BookingFlowService {
       throw new BookingFlowError(ErrorCode.CONFLICT);
     }
 
-    await this.startPayment(current.id);
+    await this.startPayment(current.id, request.savedCardId);
     return this.read(current.id);
   }
 
@@ -336,7 +337,7 @@ export class BookingFlowService {
   }
 
   /** Starts the charge, then decides whether the hold still allows paying. */
-  async startPayment(id: string): Promise<void> {
+  async startPayment(id: string, savedCardId?: string): Promise<void> {
     const draft = await this.require(id);
     if (draft.flowState !== 'payment_starting') return;
 
@@ -346,6 +347,8 @@ export class BookingFlowService {
         amountPiastres: draft.totalPiastres ?? 0,
         currency: BOOKING_CURRENCY,
         idempotencyKey: `booking:${draft.id}:charge`,
+        accountId: draft.userId,
+        savedCardId,
       },
       draft.correlationId ?? undefined,
     );
@@ -414,6 +417,7 @@ export class BookingFlowService {
           amountPiastres: draft.totalPiastres ?? 0,
           currency: BOOKING_CURRENCY,
           idempotencyKey: `booking:${draft.id}:charge`,
+          accountId: draft.userId,
         },
         draft.correlationId ?? undefined,
       );

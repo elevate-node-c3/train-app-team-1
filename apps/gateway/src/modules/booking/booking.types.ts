@@ -2,6 +2,7 @@ import type { CallOptions } from '@grpc/grpc-js';
 import type {
   BookingResponse,
   ContinueBookingRequest,
+  ContinueToPaymentRequest,
   SubmitBookingRequest,
 } from '@app/contracts';
 import type { Observable } from 'rxjs';
@@ -23,7 +24,7 @@ export interface BookingGrpcClient {
   ): Observable<BookingResponse>;
 
   continueToPayment(
-    data: ContinueBookingRequest,
+    data: ContinueToPaymentRequest,
     metadata?: unknown,
     options?: CallOptions,
   ): Observable<BookingResponse>;

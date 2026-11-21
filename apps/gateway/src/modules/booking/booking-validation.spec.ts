@@ -23,9 +23,7 @@ const PASSENGER_ONE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 const PASSENGER_TWO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
 
 /** A booking as checkout answers; the gateway only passes it on. */
-function bookingResponse(
-  legs: BookingResponse['legs'] = [],
-): BookingResponse {
+function bookingResponse(legs: BookingResponse['legs'] = []): BookingResponse {
   return {
     bookingReference: '70000000-0000-4000-8000-000000000001',
     state: 'seats_held',
@@ -315,10 +313,34 @@ describe('BookingController & route validation', () => {
       ['acceptTerms', 'acceptTerms'],
       ['continueToPayment', 'continueToPayment'],
       ['abandon', 'abandon'],
-    ] as const)('%s names the booking and nothing else', async (route, call) => {
-      await controller[route]({ bookingReference: reference });
+    ] as const)(
+      '%s names the booking and nothing else',
+      async (route, call) => {
+        await controller[route]({ bookingReference: reference });
 
-      expect(bookings[call]).toHaveBeenCalledWith(reference);
+        if (route === 'continueToPayment') {
+          expect(bookings[call]).toHaveBeenCalledWith({
+            bookingReference: reference,
+            savedCardId: undefined,
+          });
+        } else {
+          expect(bookings[call]).toHaveBeenCalledWith(reference);
+        }
+      },
+    );
+
+    it('passes the selected local saved-card reference to payment', async () => {
+      const savedCardId = '70000000-0000-4000-8000-000000000002';
+
+      await controller.continueToPayment(
+        { bookingReference: reference },
+        { savedCardId },
+      );
+
+      expect(bookings.continueToPayment).toHaveBeenCalledWith({
+        bookingReference: reference,
+        savedCardId,
+      });
     });
   });
 });

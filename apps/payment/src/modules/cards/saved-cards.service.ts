@@ -102,13 +102,17 @@ export class SavedCardsService {
     const last4 = cardData.last4;
     const expMonth = cardData.exp_month;
     const expYear = cardData.exp_year;
-    const fingerprint = cardData.fingerprint ?? '';
+    const fingerprint = cardData.fingerprint;
+    if (!fingerprint) {
+      throw new PaymentError(ErrorCode.INVALID_PAYLOAD);
+    }
     const rawName = paymentMethod.billing_details?.name?.trim();
     const cardholderName = rawName
       ? `${rawName} ****${last4}`
       : `Cardholder ****${last4}`;
 
-    // Check for duplicate card (same fingerprint for this account)
+    // The unique partial index is the final arbiter when webhook and client
+    // confirmation race to persist the same card.
     const existing = (await this.dataSource.query(
       `SELECT * FROM saved_card
        WHERE account_id = $1 AND fingerprint = $2 AND status = 'active'`,
@@ -116,15 +120,29 @@ export class SavedCardsService {
     )) as SavedCardRow[];
 
     if (existing[0]) {
-      // Quiet success: return existing card without creating duplicate row
       if (existing[0].stripe_payment_method_id !== paymentMethod.id) {
-        try {
-          await this.stripeService.detachPaymentMethod(paymentMethod.id);
-        } catch {
-          // Detach failure is non-fatal for idempotent return
+        const paymentMethodCustomerId =
+          typeof paymentMethod.customer === 'string'
+            ? paymentMethod.customer
+            : paymentMethod.customer?.id;
+        if (paymentMethodCustomerId === stripeCustomerId) {
+          await this.stripeService.detachPaymentMethod(
+            paymentMethod.id,
+            stripeCustomerId,
+          );
+        } else if (paymentMethodCustomerId) {
+          throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
         }
       }
       return existing[0];
+    }
+
+    const paymentMethodCustomerId =
+      typeof paymentMethod.customer === 'string'
+        ? paymentMethod.customer
+        : paymentMethod.customer?.id;
+    if (paymentMethodCustomerId !== stripeCustomerId) {
+      throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
     const cardId = uuid();
@@ -133,7 +151,7 @@ export class SavedCardsService {
          (id, account_id, stripe_customer_id, stripe_payment_method_id,
           brand, last4, exp_month, exp_year, cardholder_name, fingerprint, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
-       ON CONFLICT (stripe_payment_method_id) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [
         cardId,
         accountId,
@@ -148,12 +166,39 @@ export class SavedCardsService {
       ],
     );
 
-    const inserted = (await this.dataSource.query(
-      'SELECT * FROM saved_card WHERE stripe_payment_method_id = $1',
-      [paymentMethod.id],
+    const persisted = (await this.dataSource.query(
+      `SELECT * FROM saved_card
+       WHERE account_id = $1 AND fingerprint = $2 AND status = 'active'`,
+      [accountId, fingerprint],
     )) as SavedCardRow[];
 
-    return inserted[0]!;
+    if (persisted[0]) {
+      if (persisted[0].stripe_payment_method_id !== paymentMethod.id) {
+        const paymentMethodCustomerId =
+          typeof paymentMethod.customer === 'string'
+            ? paymentMethod.customer
+            : paymentMethod.customer?.id;
+        if (paymentMethodCustomerId === stripeCustomerId) {
+          await this.stripeService.detachPaymentMethod(
+            paymentMethod.id,
+            stripeCustomerId,
+          );
+        } else if (paymentMethodCustomerId) {
+          throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+      }
+      return persisted[0];
+    }
+
+    const samePaymentMethod = (await this.dataSource.query(
+      `SELECT * FROM saved_card
+       WHERE stripe_payment_method_id = $1 AND account_id = $2
+         AND status = 'active'`,
+      [paymentMethod.id, accountId],
+    )) as SavedCardRow[];
+    if (samePaymentMethod[0]) return samePaymentMethod[0];
+
+    throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
   }
 
   async listCards(accountId: string): Promise<SavedCardItem[]> {
@@ -215,7 +260,10 @@ export class SavedCardsService {
       throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
     }
 
-    await this.stripeService.detachPaymentMethod(card.stripe_payment_method_id);
+    await this.stripeService.detachPaymentMethod(
+      card.stripe_payment_method_id,
+      card.stripe_customer_id,
+    );
 
     await this.dataSource.query(
       `UPDATE saved_card
@@ -260,23 +308,54 @@ export class SavedCardsService {
       const fullIntent = await this.stripeService.retrieveSetupIntent(
         setupIntent.id,
       );
+      const fullCustomerId =
+        typeof fullIntent.customer === 'string'
+          ? fullIntent.customer
+          : fullIntent.customer?.id;
+      const fullPaymentMethodId =
+        typeof fullIntent.payment_method === 'string'
+          ? fullIntent.payment_method
+          : fullIntent.payment_method?.id;
+
+      if (
+        fullIntent.status !== 'succeeded' ||
+        fullCustomerId !== stripeCustomerId ||
+        fullPaymentMethodId !== paymentMethodId
+      ) {
+        this.logger.warn(
+          `Ignoring setup webhook with inconsistent Stripe state: ${setupIntent.id}`,
+        );
+        return;
+      }
+
       if (
         fullIntent.payment_method &&
         typeof fullIntent.payment_method === 'object'
       ) {
+        const paymentMethodCustomerId =
+          typeof fullIntent.payment_method.customer === 'string'
+            ? fullIntent.payment_method.customer
+            : fullIntent.payment_method.customer?.id;
+        if (!paymentMethodCustomerId) {
+          const detachedRows = (await this.dataSource.query(
+            `SELECT id FROM saved_card
+             WHERE account_id = $1 AND stripe_payment_method_id = $2
+               AND status = 'detached'`,
+            [customer.account_id, paymentMethodId],
+          )) as Array<{ id: string }>;
+          if (detachedRows[0]) return;
+        }
+
         await this.recordCardFromStripe(
           customer.account_id,
           stripeCustomerId,
-          fullIntent.payment_method as Stripe.PaymentMethod,
+          fullIntent.payment_method,
         );
       }
     }
   }
 
-  private toSavedCardItem(
-    row: SavedCardRow,
-    isDefault = false,
-  ): SavedCardItem {
+  private toSavedCardItem(row: SavedCardRow, isDefault = false): SavedCardItem {
     const now = new Date();
     const currentYear = now.getUTCFullYear();
     const currentMonth = now.getUTCMonth() + 1;

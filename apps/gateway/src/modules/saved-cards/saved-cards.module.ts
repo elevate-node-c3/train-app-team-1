@@ -10,7 +10,6 @@ import {
   getPaymentProtoPath,
 } from '@app/contracts';
 import { downstreamGrpcUrlsFromEnv } from '../../config/grpc-settings.js';
-import { CardDataSanitizationGuard } from '../../common/guards/card-data-sanitization.guard.js';
 import { SavedCardsController } from './saved-cards.controller.js';
 import { SavedCardsGrpcClientService } from './saved-cards.grpc.client.js';
 import { SavedCardsService } from './saved-cards.service.js';
@@ -42,7 +41,6 @@ const PAYMENT_GRPC = 'PAYMENT_GRPC';
   providers: [
     SavedCardsService,
     SavedCardsGrpcClientService,
-    CardDataSanitizationGuard,
     {
       provide: PAYMENT_GRPC_CLIENT,
       inject: [PAYMENT_GRPC],

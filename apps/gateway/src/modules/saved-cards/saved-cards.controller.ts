@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Param,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
   CurrentCaller,
@@ -20,12 +19,10 @@ import type {
   ListSavedCardsResponse,
   SavedCardResponse,
 } from '@app/contracts';
-import { CardDataSanitizationGuard } from '../../common/guards/card-data-sanitization.guard.js';
 import { SavedCardsService } from './saved-cards.service.js';
 import { ConfirmSetupDto, SavedCardParamDto } from './dto/saved-cards.dto.js';
 
 @RequireAccess('traveller')
-@UseGuards(CardDataSanitizationGuard)
 @Controller('saved-cards')
 export class SavedCardsController {
   constructor(private readonly savedCardsService: SavedCardsService) {}
