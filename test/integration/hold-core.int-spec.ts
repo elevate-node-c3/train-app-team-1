@@ -625,7 +625,7 @@ describe('MT-15 replay and MT-19 release fencing', () => {
   it('releases by key, is retry-safe, and fences an unknown-key late create', async () => {
     const trip = await seedTrip({ departureAt: atIn(120) });
     const req = request([leg(trip)], [passenger('p-1', 'token-1')]);
-    const created = await service.createHold(req);
+    await service.createHold(req);
 
     const released = await service.releaseHold({
       ownerId: req.ownerId,

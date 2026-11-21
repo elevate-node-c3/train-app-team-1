@@ -18,7 +18,7 @@ import type {
   PassengerSegmentRow,
   RouteServedProbe,
   TripSearchRow,
-} from '../trip-search.types.js';
+} from '../types/trip-search.types.js';
 
 interface RawSegmentRow {
   origin_station_id: string;

@@ -20,14 +20,14 @@ import type { ClsService } from 'nestjs-cls';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CatalogGrpcClientService } from './catalog.grpc.client.js';
-import { CatalogService } from './catalog.service.js';
-import type { CatalogGrpcClient } from './catalog.types.js';
+import { CatalogGrpcClientService } from '../catalog.grpc.client.js';
+import { CatalogService } from '../catalog.service.js';
+import type { CatalogGrpcClient } from '../catalog.types.js';
 import {
   CreateStationDto,
   StationIdParamDto,
   UpdateStationDto,
-} from './dto/station-requests.dto.js';
+} from '../dto/station-requests.dto.js';
 import { StationsController } from './stations.controller.js';
 
 const RESULT: ListStationsResponse = {

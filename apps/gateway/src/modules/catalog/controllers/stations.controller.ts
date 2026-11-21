@@ -22,12 +22,12 @@ import {
   type ListStationsResponse,
   type StationResponse,
 } from '@app/contracts';
-import { CatalogService } from './catalog.service.js';
+import { CatalogService } from '../catalog.service.js';
 import {
   CreateStationDto,
   StationIdParamDto,
   UpdateStationDto,
-} from './dto/station-requests.dto.js';
+} from '../dto/station-requests.dto.js';
 
 @Controller('stations')
 export class StationsController {

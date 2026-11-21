@@ -9,11 +9,11 @@ import {
   CatalogService,
   type SearchReturnTripsResult,
   type SearchTripsResult,
-} from './catalog.service.js';
-import { RecentSearchesQueryDto } from './dto/recent-searches.dto.js';
-import { SearchReturnTripsDto } from './dto/search-return-trips.dto.js';
-import { SearchTripsDto } from './dto/search-trips.dto.js';
-import { TripIdParamDto, TripStopsQueryDto } from './dto/trip-stops.dto.js';
+} from '../catalog.service.js';
+import { RecentSearchesQueryDto } from '../dto/recent-searches.dto.js';
+import { SearchReturnTripsDto } from '../dto/search-return-trips.dto.js';
+import { SearchTripsDto } from '../dto/search-trips.dto.js';
+import { TripIdParamDto, TripStopsQueryDto } from '../dto/trip-stops.dto.js';
 
 /**
  * Verified travellers can search before completing their booking profile.

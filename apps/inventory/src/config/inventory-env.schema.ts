@@ -5,6 +5,9 @@ export const inventoryEnvSchema = commonEnvSchema.keys({
   HOLD_CREATION_ENABLED: Joi.boolean().default(false),
   BOOKING_INVENTORY_SERVICE_KEY: Joi.when('HOLD_CREATION_ENABLED', {
     is: true,
+    // Joi's conditional DSL, not a promise: `then` is the branch taken when
+    // `is` matches.
+    // oxlint-disable-next-line unicorn/no-thenable
     then: Joi.string().min(32).required(),
     otherwise: Joi.string().min(32).allow('').optional(),
   }),

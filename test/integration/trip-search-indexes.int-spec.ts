@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   catalogDataSource,
   closeCatalogDataSource,
+  truncateCatalog,
 } from './support/catalog-database.js';
 
 /**
@@ -19,6 +20,7 @@ describe('the trip search indexes', () => {
 
   beforeAll(async () => {
     source = await catalogDataSource();
+    await truncateCatalog(source);
     await seedSearchFixture(source);
   });
 
@@ -82,10 +84,20 @@ describe('the trip search indexes', () => {
       .filter((name): name is string => Boolean(name))
       .sort();
 
+    /**
+     * Only the tables an entity declares. outbox_event and processed_event are
+     * the messaging library's, created by its migrations and owned by no
+     * entity, so their indexes belong to neither side of this comparison.
+     * Reading the list from the metadata keeps a new entity in it by default.
+     */
+    const entityTables = source.entityMetadatas.map((meta) => meta.tableName);
+
     const present: { indexname: string }[] = await source.query(
       `SELECT indexname FROM pg_indexes
         WHERE schemaname = 'public' AND indexname LIKE 'idx_%'
+          AND tablename = ANY($1)
         ORDER BY indexname`,
+      [entityTables],
     );
 
     expect(declared).toEqual(present.map((row) => row.indexname));

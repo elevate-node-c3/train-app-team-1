@@ -25,7 +25,7 @@ import type {
 } from './services/fare-change.service.js';
 import { FareChangeService } from './services/fare-change.service.js';
 import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
-import type { OperationsAuditFilter } from './operations-audit.types.js';
+import type { OperationsAuditFilter } from './types/operations-audit.types.js';
 import { OperationsAuditService } from './services/operations-audit.service.js';
 import { TimetablePublishService } from './services/timetable-publish.service.js';
 

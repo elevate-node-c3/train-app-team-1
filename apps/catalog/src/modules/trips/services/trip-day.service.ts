@@ -13,7 +13,7 @@ import {
   type CachedStaticTrip,
 } from '../trip-search-cache.js';
 import { TripSearchRepository } from '../repositories/trip-search.repository.js';
-import type { TripSearchRow } from '../trip-search.types.js';
+import type { TripSearchRow } from '../types/trip-search.types.js';
 
 /** Both search legs share this route/date/class query. */
 export interface TripDayQuery {

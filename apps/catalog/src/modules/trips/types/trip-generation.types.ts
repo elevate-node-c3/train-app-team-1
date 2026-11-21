@@ -1,6 +1,6 @@
 import { addCivilDays, cairoInstantOf } from '@app/contracts';
 
-import type { TimetableStopEntity } from '../timetables/entities/timetable-stop.entity.js';
+import type { TimetableStopEntity } from '../../timetables/entities/timetable-stop.entity.js';
 
 /** Share resolved stop instants between generation and publish validation. */
 export interface TripStopDraft {

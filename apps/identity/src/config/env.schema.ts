@@ -78,7 +78,8 @@ export const identityEnvSchema = commonEnvSchema
         try {
           const keys = JSON.parse(value) as Record<string, unknown>;
           const env = helpers.state.ancestors[0] as Record<string, unknown>;
-          const active = String(env.NATIONAL_ID_ACTIVE_KEY_VERSION ?? '');
+          const version = env.NATIONAL_ID_ACTIVE_KEY_VERSION;
+          const active = typeof version === 'string' ? version : '';
           if (
             !keys ||
             typeof keys !== 'object' ||

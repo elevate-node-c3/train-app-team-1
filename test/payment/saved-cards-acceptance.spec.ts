@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataSource } from 'typeorm';
 import type Stripe from 'stripe';
 import { ErrorCode } from '@app/contracts';
-import { SavedCardsService } from '../../apps/payment/src/modules/cards/saved-cards.service.js';
-import { StripeService } from '../../apps/payment/src/modules/cards/stripe.service.js';
+import { SavedCardsService } from '../../apps/payment/src/modules/cards/services/saved-cards.service.js';
+import { StripeService } from '../../apps/payment/src/modules/cards/services/stripe.service.js';
 import { redactPii } from '../../libs/common/src/logging/pii-redactor.js';
 
 describe('Saved Cards Acceptance & Security Verification', () => {

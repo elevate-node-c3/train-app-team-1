@@ -10,8 +10,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type Stripe from 'stripe';
-import { StripeService } from './stripe.service.js';
-import { SavedCardsService } from './saved-cards.service.js';
+import { StripeService } from '../services/stripe.service.js';
+import { SavedCardsService } from '../services/saved-cards.service.js';
 
 interface RawBodyRequest extends Request {
   rawBody?: Buffer;

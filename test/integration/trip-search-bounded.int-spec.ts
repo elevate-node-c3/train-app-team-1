@@ -10,6 +10,7 @@ import {
   catalogDataSource,
   closeCatalogDataSource,
   countStatements,
+  truncateCatalog,
 } from './support/catalog-database.js';
 
 /**
@@ -134,6 +135,7 @@ describe('search stays bounded and complete (TA-28)', () => {
 
   beforeAll(async () => {
     source = await catalogDataSource();
+    await truncateCatalog(source);
     await seedSearchFixture(source);
     await removeManyTrips(source);
     repository = new TripSearchRepository(source);

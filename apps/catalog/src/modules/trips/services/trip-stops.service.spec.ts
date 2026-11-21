@@ -5,7 +5,7 @@ import { CatalogSearchError } from '../catalog-search-error.js';
 import type { CachedTripStop } from '../trip-stops-cache.js';
 import { tripStopsCacheKey } from '../trip-stops-cache.js';
 import { TripStopsService } from './trip-stops.service.js';
-import type { TripStopRow } from '../trip-search.types.js';
+import type { TripStopRow } from '../types/trip-search.types.js';
 
 const TRIP = '11111111-1111-4111-8111-111111111111';
 const CAIRO = '22222222-2222-4222-8222-222222222222';

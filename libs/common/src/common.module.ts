@@ -6,6 +6,7 @@ import { CorrelationMiddleware } from './correlation/correlation.middleware.js';
 import { CallerMetadataMiddleware } from './caller/caller-metadata.middleware.js';
 import { ResponseInterceptor } from './envelope/response.interceptor.js';
 import { HttpExceptionFilter } from './envelope/http-exception.filter.js';
+import { ServiceRefusalFilter } from './errors/service-refusal.filter.js';
 import { HealthModule } from './health/health.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { RedisModule } from './cache/redis.module.js';
@@ -32,6 +33,7 @@ import { RedisModule } from './cache/redis.module.js';
     CallerMetadataMiddleware,
     ResponseInterceptor,
     HttpExceptionFilter,
+    ServiceRefusalFilter,
   ],
   exports: [
     PersistenceModule,
@@ -43,6 +45,7 @@ import { RedisModule } from './cache/redis.module.js';
     CallerMetadataMiddleware,
     ResponseInterceptor,
     HttpExceptionFilter,
+    ServiceRefusalFilter,
   ],
 })
 export class CommonModule implements NestModule {

@@ -9,6 +9,7 @@ import {
   catalogDataSource,
   closeCatalogDataSource,
   countStatements,
+  truncateCatalog,
 } from './support/catalog-database.js';
 
 /**
@@ -27,6 +28,7 @@ describe('the trip stops query', () => {
 
   beforeAll(async () => {
     source = await catalogDataSource();
+    await truncateCatalog(source);
     await seedSearchFixture(source);
     stops = new TripStopsRepository(source);
     search = new TripSearchRepository(source);
