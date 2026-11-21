@@ -483,9 +483,8 @@ export async function waitForSnapshot(
   do {
     snapshot = await expirySnapshot(source);
     if (ready(snapshot)) return snapshot;
-    if (performance.now() >= end) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
-  } while (true);
+  } while (performance.now() < end);
   throw new Error(`TA-70 observation timed out: ${JSON.stringify(snapshot)}`);
 }
 
