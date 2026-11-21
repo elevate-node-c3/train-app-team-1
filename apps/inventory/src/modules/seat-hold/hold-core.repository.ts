@@ -25,7 +25,7 @@ import { ErrorCode } from '@app/contracts';
 
 export type DbHoldState = 'held' | 'released' | 'expired' | 'cancelled';
 
-export interface HoldRow {
+export type HoldRow = {
   id: string;
   bookingKey: string;
   ownerId: string;
@@ -37,7 +37,7 @@ export interface HoldRow {
   releasedAt: Date | null;
 }
 
-export interface LegFacts {
+export type LegFacts = {
   leg: HoldLegInput;
   originPosition: number;
   destinationPosition: number;
@@ -45,14 +45,14 @@ export interface LegFacts {
   segment: Segment;
 }
 
-export interface LegLayout {
+export type LegLayout = {
   /** Every seat of the leg's trip and class, occupied or not. */
   seats: AllocatableSeat[];
   /** Seats blocked over the leg's segment. */
   occupiedSeatIds: Set<string>;
 }
 
-export interface PersistedLeg {
+export type PersistedLeg = {
   tripId: string;
   travelClassId: string;
   originStationId: string;
@@ -63,7 +63,7 @@ export interface PersistedLeg {
   outcome: AllocationOutcome;
 }
 
-export interface PersistedAssignment {
+export type PersistedAssignment = {
   passengerRef: string;
   passengerKeyVersion: number;
   tripId: string;
@@ -81,7 +81,7 @@ export interface PersistedAssignment {
   segment: Segment;
 }
 
-export interface NewHold {
+export type NewHold = {
   id: string;
   bookingKey: string;
   ownerId: string;

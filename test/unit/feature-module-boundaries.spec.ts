@@ -241,7 +241,15 @@ describe('Feature module boundaries (§2.5)', () => {
           // imports must be type-only. The next test checks entity cycles.
           const entityToEntity = /\.entity(\.js|\.ts)?$/.test(specifier);
 
-          if (!typeOnly && !entityToEntity) {
+          /**
+           * A column's value transformer is part of its declaration, so it can
+           * only be named here, and it needs key material that only config/
+           * can hold. The rule's purpose still holds: config modules are pure
+           * functions, with no Nest, no services and no entities.
+           */
+          const columnTransformer = /(^|\/)config\//.test(specifier);
+
+          if (!typeOnly && !entityToEntity && !columnTransformer) {
             violations.push(
               `${file} has a runtime import from '${specifier}' — only another *.entity module may be imported at runtime`,
             );

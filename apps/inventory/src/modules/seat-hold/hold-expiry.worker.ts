@@ -5,6 +5,11 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import { MigrationRunnerService, SchemaReadinessGate } from '@app/common';
+import {
+  holdExpiryBatchSize,
+  holdExpiryPollIntervalMs,
+  holdExpiryWorkerEnabled,
+} from '../../config/hold-settings.js';
 import { HoldCoreService } from './hold-core.service.js';
 
 @Injectable()
@@ -28,7 +33,7 @@ export class HoldExpiryWorker
   ) {}
 
   onApplicationBootstrap(): void {
-    if (process.env.HOLD_EXPIRY_WORKER_ENABLED === 'false') return;
+    if (!holdExpiryWorkerEnabled()) return;
     this.running ??= this.loop();
   }
 
@@ -44,9 +49,7 @@ export class HoldExpiryWorker
 
   /** Useful for tests and operations; no broker or cached availability is used. */
   async runOnce(): Promise<number> {
-    const raw = Number(process.env.HOLD_EXPIRY_BATCH_SIZE);
-    const limit = Number.isInteger(raw) && raw > 0 && raw <= 1000 ? raw : 500;
-    return this.holds.expireDueHolds(limit);
+    return this.holds.expireDueHolds(holdExpiryBatchSize());
   }
 
   private async loop(): Promise<void> {
@@ -77,8 +80,7 @@ export class HoldExpiryWorker
 
   /** This idle wake-up schedules a scan, never an individual hold's expiry. */
   private wait(): Promise<void> {
-    const raw = Number(process.env.HOLD_EXPIRY_POLL_INTERVAL_MS);
-    const interval = Number.isInteger(raw) && raw > 0 ? raw : 250;
+    const interval = holdExpiryPollIntervalMs();
     return new Promise<void>((resolve) => {
       this.wake = () => {
         this.wake = null;

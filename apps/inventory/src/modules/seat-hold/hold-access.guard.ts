@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { Metadata } from '@grpc/grpc-js';
 import { ErrorCode } from '@app/contracts';
+import {
+  bookingInventoryServiceKey,
+  holdCreationEnabled,
+} from '../../config/hold-settings.js';
 import { matchesServiceCredential } from '@app/common/grpc/service-credential.js';
 import {
   DataSourceInitializer,
@@ -23,7 +27,7 @@ export class HoldServiceGuard implements CanActivate {
       values.length !== 1 ||
       !matchesServiceCredential(
         values[0],
-        process.env.BOOKING_INVENTORY_SERVICE_KEY,
+        bookingInventoryServiceKey(),
       )
     ) {
       throw refusalException({ code: ErrorCode.FORBIDDEN, details: [] });
@@ -46,7 +50,7 @@ export class HoldCreationGuard implements CanActivate {
     const unavailable = () =>
       refusalException({ code: ErrorCode.SERVICE_UNAVAILABLE, details: [] });
     // Rollback disables new ownership, not release, expiry, or durable publication.
-    if (process.env.HOLD_CREATION_ENABLED !== 'true') throw unavailable();
+    if (!holdCreationEnabled()) throw unavailable();
     await this.schema.whenReady;
     if (!this.migrations.hasCompleted) throw unavailable();
 
