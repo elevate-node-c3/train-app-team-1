@@ -8,8 +8,8 @@ import { TypeOrmUnitOfWork } from '@app/common/persistence/typeorm-unit-of-work.
 import { TypeOrmOutboxRepository } from '@app/messaging';
 
 import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
-import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
-import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/hold-settlement.service.js';
+import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
+import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/services/hold-settlement.service.js';
 import { AvailabilityCountsRepository } from '../../apps/inventory/src/modules/seats/repositories/availability-counts.repository.js';
 import { AvailabilityPublisher } from '../../apps/inventory/src/modules/seats/services/availability-publisher.service.js';
 import {

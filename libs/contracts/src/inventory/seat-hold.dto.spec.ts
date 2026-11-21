@@ -77,7 +77,7 @@ describe('MT-02 hold lifecycle contracts', () => {
     expect(existsSync(protoPath)).toBe(true);
   });
 
-  it('exposes create, get, release and extend as the only hold RPCs', () => {
+  it('exposes create, get, release, extend and settle as the only hold RPCs', () => {
     const service = serviceDefinition({ enums: String });
 
     // Holds are created only through this lifecycle; no legacy
@@ -88,6 +88,7 @@ describe('MT-02 hold lifecycle contracts', () => {
       'GetHold',
       'ReleaseHold',
       'SeatUsageForTrips',
+      'SettleHold',
     ]);
   });
 
@@ -110,6 +111,7 @@ describe('MT-02 hold lifecycle contracts', () => {
       'RELEASED',
       'EXPIRED',
       'CANCELLED',
+      'HOLD_STATE_SOLD',
     ]);
   });
 

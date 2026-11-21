@@ -25,25 +25,25 @@ import {
   calculateHoldExpiry,
   calculateHoldExtension,
   HoldExpiryError,
-} from './hold-expiry.policy.js';
-import { HoldCoreError } from './hold-core.errors.js';
+} from '../hold-expiry.policy.js';
+import { HoldCoreError } from '../hold-core.errors.js';
 import {
   HoldCoreRepository,
   type HoldRow,
   type LegFacts,
   type PersistedAssignment,
   type PersistedLeg,
-} from './hold-core.repository.js';
-import { buildHoldEvent } from './hold-events.factory.js';
-import { allocateGroupSeats } from '../seat-allocation/seat-allocator.js';
-import type { AllocationResult } from '../seat-allocation/seat-allocator.types.js';
+} from '../hold-core.repository.js';
+import { buildHoldEvent } from '../hold-events.factory.js';
+import { allocateGroupSeats } from '../../seat-allocation/seat-allocator.js';
+import type { AllocationResult } from '../../seat-allocation/seat-allocator.types.js';
 import {
   MAX_BOOKING_KEY_LENGTH,
   MAX_LEGS,
   MAX_PASSENGER_REF_LENGTH,
   MAX_PASSENGER_TOKEN_LENGTH,
   MAX_PASSENGERS,
-} from './seat-hold.limits.js';
+} from '../seat-hold.limits.js';
 
 const MAX_ATTEMPTS = 3;
 

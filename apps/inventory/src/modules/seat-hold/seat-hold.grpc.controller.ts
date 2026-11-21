@@ -29,8 +29,8 @@ import {
   SettleHoldRequestDto,
 } from './dto/hold-request.dto.js';
 import { HoldCoreError } from './hold-core.errors.js';
-import { HoldCoreService } from './hold-core.service.js';
-import { HoldSettlementService } from './hold-settlement.service.js';
+import { HoldCoreService } from './services/hold-core.service.js';
+import { HoldSettlementService } from './services/hold-settlement.service.js';
 import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
 
 /** HoldCoreError carries the code and its refs; everything else is masked. */

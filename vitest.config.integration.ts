@@ -17,6 +17,9 @@ export default defineConfig({
       // truncate what they test. `npm run test:holds` runs them.
       'test/integration/hold-*.int-spec.ts',
       'test/integration/booking-hold.int-spec.ts',
+      // TA-107's saga needs the holds tier's RabbitMQ and payment/inventory
+      // database URLs; it has never run under this tier (see its own brief).
+      'test/integration/booking-confirmation.int-spec.ts',
     ],
     // Shared database cleanup requires sequential test files.
     fileParallelism: false,

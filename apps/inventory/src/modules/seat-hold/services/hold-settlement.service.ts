@@ -13,12 +13,12 @@ import type {
   UnitOfWorkPort,
 } from '@app/common/persistence/unit-of-work.port.js';
 
-import { HoldCoreError } from './hold-core.errors.js';
-import { HoldCoreRepository, type LegFacts } from './hold-core.repository.js';
+import { HoldCoreError } from '../hold-core.errors.js';
+import { HoldCoreRepository, type LegFacts } from '../hold-core.repository.js';
 import {
   AvailabilityPublisher,
   WHOLE_TRIP,
-} from '../seats/services/availability-publisher.service.js';
+} from '../../seats/services/availability-publisher.service.js';
 
 /**
  * BR-36: converts a hold into a real sale once its payment has settled. A

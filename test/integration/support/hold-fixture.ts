@@ -28,7 +28,7 @@ import {
   parseEventEnvelope,
 } from '@app/messaging';
 import { HoldCoreRepository } from '../../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
-import { HoldCoreService } from '../../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
+import { HoldCoreService } from '../../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
 import { HoldExpiryWorker } from '../../../apps/inventory/src/modules/seat-hold/hold-expiry.worker.js';
 import { buildHoldEvent } from '../../../apps/inventory/src/modules/seat-hold/hold-events.factory.js';
 import { INVENTORY_DATABASE_URL } from './inventory-database.js';

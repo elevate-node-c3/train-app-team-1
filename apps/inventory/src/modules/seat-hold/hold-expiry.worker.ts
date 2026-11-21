@@ -10,7 +10,7 @@ import {
   holdExpiryPollIntervalMs,
   holdExpiryWorkerEnabled,
 } from '../../config/hold-settings.js';
-import { HoldCoreService } from './hold-core.service.js';
+import { HoldCoreService } from './services/hold-core.service.js';
 
 @Injectable()
 export class HoldExpiryWorker

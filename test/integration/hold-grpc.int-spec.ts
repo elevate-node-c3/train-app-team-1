@@ -33,8 +33,8 @@ import {
   type HoldSnapshot,
 } from '@app/contracts';
 import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
-import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
-import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/hold-settlement.service.js';
+import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
+import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/services/hold-settlement.service.js';
 import { SeatHoldGrpcController } from '../../apps/inventory/src/modules/seat-hold/seat-hold.grpc.controller.js';
 import {
   HoldCreationGuard,
