@@ -56,6 +56,6 @@ export function createProfileCompletedSubscriptions(
     EventFailureRouter,
     EventConsumerService,
   ],
-  exports: [ProfileCompletedConsumer],
+  exports: [ProfileCompletedConsumer, TravellerProfileRepository],
 })
 export class ProfileCompletedModule {}

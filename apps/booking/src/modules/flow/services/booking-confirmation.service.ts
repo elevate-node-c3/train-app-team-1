@@ -109,6 +109,7 @@ export class BookingConfirmationService {
             occurredAt,
             payload: {
               bookingReference: draft.id,
+              accountId: draft.userId,
               seats: (draft.settledSeats ?? []).map((seat) => ({
                 passengerRef: seat.passengerRef,
                 tripId: seat.tripId,
@@ -145,6 +146,7 @@ export class BookingConfirmationService {
           occurredAt: new Date(),
           payload: {
             bookingReference: draft.id,
+            accountId: draft.userId,
             amountPiastres: draft.totalPiastres ?? 0,
             reasonKey: 'REASON_NO_SEATS_AFTER_LATE_PAYMENT',
           },

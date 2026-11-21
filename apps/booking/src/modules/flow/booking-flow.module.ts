@@ -151,6 +151,6 @@ export function paymentGrpcUrl(): string {
         client.getService(INVENTORY_SERVICE_NAME),
     },
   ],
-  exports: [BookingFlowService],
+  exports: [BookingFlowService, BookingFlowRepository],
 })
 export class BookingFlowModule {}

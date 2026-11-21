@@ -89,6 +89,8 @@ export interface BookingSeatsChangedSeatV1 {
 
 export interface BookingSeatsChangedPayloadV1 {
   bookingReference: string;
+  /** Additive: lets notification resolve the traveller's address. */
+  accountId: string;
   seats: BookingSeatsChangedSeatV1[];
 }
 
@@ -107,6 +109,8 @@ export type BookingRefundedReasonKey = 'REASON_NO_SEATS_AFTER_LATE_PAYMENT';
 
 export interface BookingRefundedPayloadV1 {
   bookingReference: string;
+  /** Additive: lets notification resolve the traveller's address. */
+  accountId: string;
   amountPiastres: number;
   reasonKey: BookingRefundedReasonKey;
 }

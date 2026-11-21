@@ -63,6 +63,25 @@ export class BookingFlowRepository {
     return this.drafts.findOne({ where: { id } });
   }
 
+  /**
+   * A saga charged longer ago than `olderThanSeconds` without reaching a
+   * terminal outcome. Uses `idx_booking_draft_charged_unsettled`.
+   */
+  async findChargedWithoutOutcome(
+    olderThanSeconds: number,
+  ): Promise<{ id: string; sagaStep: string }[]> {
+    const rows = (await this.drafts.query(
+      `SELECT id, saga_step AS "sagaStep"
+         FROM booking_draft
+        WHERE payment_succeeded_at IS NOT NULL
+          AND flow_state NOT IN ('confirmed', 'refunded')
+          AND payment_succeeded_at <= now() - ($1 || ' seconds')::interval
+        ORDER BY payment_succeeded_at`,
+      [olderThanSeconds],
+    )) as { id: string; sagaStep: string | null }[];
+    return rows.map((row) => ({ id: row.id, sagaStep: row.sagaStep ?? '' }));
+  }
+
   /** The traveller's tickets, if the confirm step has issued any yet. */
   findTickets(bookingReference: string): Promise<TicketEntity[]> {
     return this.ticketRepository.find({

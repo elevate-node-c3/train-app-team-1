@@ -13,6 +13,9 @@ import { BookingFlowService } from './services/booking-flow.service.js';
 /** How often the worker looks for work. Each pass is bounded by the claim. */
 const SCAN_INTERVAL_MS = 2_000;
 
+/** A charge this old without a settlement outcome is worth a human's attention. */
+const CHARGED_WITHOUT_OUTCOME_THRESHOLD_SECONDS = 60;
+
 /**
  * Drives the flows nobody is waiting on: a step whose remote call failed, a
  * hold that ran out, and a compensation still owed.
@@ -55,6 +58,7 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
       await this.expireDue();
       await this.resumeStalled();
       await this.runCompensations();
+      await this.logChargedWithoutOutcome();
     } catch (error: unknown) {
       this.logger.error(`Booking flow scan failed: ${messageOf(error)}`);
     } finally {
@@ -99,6 +103,16 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
           `Booking ${flow.id} stays at ${flow.flowState}; the step will retry: ${messageOf(error)}`,
         );
       }
+    }
+  }
+
+  /** Charged without a ticket or a refund: the anti-goal §2 forbids silently. */
+  private async logChargedWithoutOutcome(): Promise<void> {
+    const stuck = await this.repository.findChargedWithoutOutcome(
+      CHARGED_WITHOUT_OUTCOME_THRESHOLD_SECONDS,
+    );
+    for (const { id, sagaStep } of stuck) {
+      this.logger.error(`ALERT: booking ${id} was charged and is still ${sagaStep}`);
     }
   }
 

@@ -26,6 +26,27 @@ export class TravellerProfileRepository {
       .execute();
   }
 
+  /** account.registered is the only event carrying the traveller's address. */
+  async upsertEmail(
+    accountId: string,
+    email: string,
+    now: Date = new Date(),
+  ): Promise<void> {
+    await this.dataSource
+      .getRepository(TravellerProfileEntity)
+      .createQueryBuilder()
+      .insert()
+      .into(TravellerProfileEntity)
+      .values({
+        accountId,
+        email,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .orUpdate(['email', 'updated_at'], ['account_id'])
+      .execute();
+  }
+
   async findByAccountId(
     accountId: string,
   ): Promise<TravellerProfileEntity | null> {
