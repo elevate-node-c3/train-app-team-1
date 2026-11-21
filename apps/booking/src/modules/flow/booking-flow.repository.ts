@@ -218,6 +218,31 @@ export class BookingFlowRepository {
     return null;
   }
 
+  /**
+   * One guarded UPDATE both starts the saga and stands its own compensation
+   * down: a late-expiring hold the worker was about to release must not be
+   * released once the saga owns settling it.
+   */
+  async beginConfirming(input: {
+    bookingReference: string;
+    paymentEventId: string;
+  }): Promise<boolean> {
+    return this.transition(
+      input.bookingReference,
+      ['awaiting_payment', 'seats_held', 'payment_starting', 'expired'],
+      {
+        flowState: 'confirming',
+        paymentSucceededAt: () => 'now()',
+        paymentEventId: input.paymentEventId,
+        sagaStep: 'payment_recorded',
+        resumeNextAttemptAt: () => 'now()',
+        compensationStatus: 'none',
+        compensationNextAttemptAt: null,
+      },
+      'payment_succeeded_at IS NULL',
+    );
+  }
+
   async abandon(id: string): Promise<boolean> {
     return this.transition(id, HELD_STATES, {
       flowState: 'abandoned',

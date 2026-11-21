@@ -236,7 +236,7 @@ export class BookingDraftEntity {
   @Column({ name: 'payment_succeeded_at', type: 'timestamptz', nullable: true })
   paymentSucceededAt!: Date | null;
 
-  @Column({ name: 'payment_event_id', type: 'uuid', nullable: true })
+  @Column({ name: 'payment_event_id', type: 'text', nullable: true })
   paymentEventId!: string | null;
 
   @Column({

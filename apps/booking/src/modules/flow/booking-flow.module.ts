@@ -13,12 +13,25 @@ import {
   getCatalogProtoPath,
   getPaymentProtoPath,
 } from '@app/contracts';
-import { MessagingModule, OutboxModule } from '@app/messaging';
+import {
+  EVENT_SUBSCRIPTIONS,
+  EventConsumerService,
+  EventFailureRouter,
+  MessageRepublisher,
+  MessagingModule,
+  OutboxModule,
+  PROCESSED_EVENT_STORE,
+  TypeOrmProcessedEventStore,
+} from '@app/messaging';
 
 import { BookingDraftModule } from '../draft/booking-draft.module.js';
 import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
 import { BookingFlowGrpcController } from './booking-flow.grpc.controller.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
+import {
+  PaymentSucceededConsumer,
+  createPaymentSucceededSubscriptions,
+} from './payment-succeeded.consumer.js';
 import { BookingFlowService } from './services/booking-flow.service.js';
 import { BookingFlowWorker } from './booking-flow.worker.js';
 import {
@@ -80,6 +93,17 @@ export function paymentGrpcUrl(): string {
     BookingFlowService,
     FlowGrpcClientsService,
     BookingFlowWorker,
+    PaymentSucceededConsumer,
+    TypeOrmProcessedEventStore,
+    { provide: PROCESSED_EVENT_STORE, useExisting: TypeOrmProcessedEventStore },
+    {
+      provide: EVENT_SUBSCRIPTIONS,
+      useFactory: createPaymentSucceededSubscriptions,
+      inject: [PaymentSucceededConsumer],
+    },
+    MessageRepublisher,
+    EventFailureRouter,
+    EventConsumerService,
     {
       provide: CATALOG_FLOW_CLIENT,
       inject: [CATALOG_GRPC_CLIENT],

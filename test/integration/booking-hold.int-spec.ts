@@ -203,6 +203,7 @@ describe('TA-70 Booking durable orchestration (real PostgreSQL)', () => {
       'BookingHoldIntent1794764000000',
       'BookingCheckoutFlow1795000000002',
       'BookingConfirmationSaga1797200000001',
+      'PaymentEventIdIsText1797200000002',
     ]);
     await expect(
       service.createDraft({ ...draftInput(), bookingKey: legacyId }),
