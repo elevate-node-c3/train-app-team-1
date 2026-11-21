@@ -526,7 +526,12 @@ export class BookingFlowService {
   }
 
   private async read(id: string): Promise<BookingResponse> {
-    return toBookingResponse(await this.require(id));
+    const draft = await this.require(id);
+    const tickets =
+      draft.flowState === 'confirmed'
+        ? await this.repository.findTickets(id)
+        : [];
+    return toBookingResponse(draft, tickets);
   }
 
   private async require(id: string): Promise<BookingDraftEntity> {

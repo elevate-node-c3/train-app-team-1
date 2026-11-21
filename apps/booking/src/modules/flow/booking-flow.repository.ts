@@ -16,6 +16,7 @@ import {
   type BookingHoldIntent,
   type SettledSeat,
 } from '../draft/entities/booking-draft.entity.js';
+import { TicketEntity } from './entities/ticket.entity.js';
 import type { BookingPrice } from './booking-total.js';
 
 /** A flow the resume worker has leased, with the step it stopped on. */
@@ -54,10 +55,20 @@ export class BookingFlowRepository {
   constructor(
     @InjectRepository(BookingDraftEntity)
     private readonly drafts: Repository<BookingDraftEntity>,
+    @InjectRepository(TicketEntity)
+    private readonly ticketRepository: Repository<TicketEntity>,
   ) {}
 
   findById(id: string): Promise<BookingDraftEntity | null> {
     return this.drafts.findOne({ where: { id } });
+  }
+
+  /** The traveller's tickets, if the confirm step has issued any yet. */
+  findTickets(bookingReference: string): Promise<TicketEntity[]> {
+    return this.ticketRepository.find({
+      where: { bookingReference },
+      order: { ticketNumber: 'ASC' },
+    });
   }
 
   findByIdempotencyKey(

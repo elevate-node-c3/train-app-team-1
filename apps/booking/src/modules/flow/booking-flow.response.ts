@@ -3,11 +3,22 @@ import type {
   BookedLeg,
   BookedPassenger,
   BookingResponse,
-  HoldSeatAssignment,
+  Ticket,
 } from '@app/contracts';
 
 import type { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
+import type { TicketEntity } from './entities/ticket.entity.js';
 import { BOOKING_CURRENCY, BOOKING_FEE_PERCENT } from './booking-total.js';
+
+/** One seat, whichever source it came from. */
+interface SeatView {
+  tripId: string;
+  passengerRef: string;
+  coachNumber: number;
+  seatNumber: string;
+  outcome?: AllocationOutcome;
+  label?: string;
+}
 
 /**
  * Everything the Review Tickets step needs, built only from the stored draft:
@@ -18,9 +29,10 @@ import { BOOKING_CURRENCY, BOOKING_FEE_PERCENT } from './booking-total.js';
  */
 export function toBookingResponse(
   draft: BookingDraftEntity,
+  tickets: readonly TicketEntity[] = [],
   now: Date = new Date(),
 ): BookingResponse {
-  const assignments = draft.holdSnapshot?.assignments ?? [];
+  const assignments = seatsOf(draft);
 
   const legs: BookedLeg[] = (draft.quotedLegs ?? []).map((quoted) => {
     const forLeg = assignments.filter(
@@ -55,13 +67,48 @@ export function toBookingResponse(
     bookingFeePiastres: draft.bookingFeePiastres ?? 0,
     bookingFeePercent: BOOKING_FEE_PERCENT,
     termsAcceptedAt: draft.termsAcceptedAt?.toISOString() ?? '',
+    tickets: tickets.map(ticketViewOf),
+    seatsChanged: draft.seatsChanged ?? false,
   };
 }
 
+function ticketViewOf(ticket: TicketEntity): Ticket {
+  return {
+    ticketNumber: ticket.ticketNumber,
+    passengerRef: ticket.passengerRef,
+    tripId: ticket.tripId,
+    coachNumber: ticket.coachNumber,
+    seatNumber: ticket.seatNumber,
+  };
+}
+
+/**
+ * The seats the traveller actually has. A reallocated booking's
+ * `settled_seats` is preferred over the original hold snapshot, which may
+ * name seats someone else now holds.
+ */
+function seatsOf(draft: BookingDraftEntity): SeatView[] {
+  if (draft.settledSeats) {
+    return draft.settledSeats.map((seat) => ({
+      tripId: seat.tripId,
+      passengerRef: seat.passengerRef,
+      coachNumber: seat.coachNumber,
+      seatNumber: seat.seatNumber,
+    }));
+  }
+
+  return (draft.holdSnapshot?.assignments ?? []).map((assignment) => ({
+    tripId: assignment.tripId,
+    passengerRef: assignment.passengerRef,
+    coachNumber: assignment.coachNumber,
+    seatNumber: assignment.seatNumber,
+    outcome: assignment.outcome,
+    label: assignment.label,
+  }));
+}
+
 /** Every assignment on a leg shares its outcome; empty before the hold. */
-function outcomeOf(
-  assignments: readonly HoldSeatAssignment[],
-): AllocationOutcome | '' {
+function outcomeOf(assignments: readonly SeatView[]): AllocationOutcome | '' {
   return assignments[0]?.outcome ?? '';
 }
 
@@ -80,7 +127,7 @@ function splitNoticeOf(
  */
 function passengersOf(
   draft: BookingDraftEntity,
-  assignments: readonly HoldSeatAssignment[],
+  assignments: readonly SeatView[],
   farePiastres: number,
 ): BookedPassenger[] {
   return (draft.passengerSnapshot ?? []).map((passenger) => {

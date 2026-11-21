@@ -9,6 +9,7 @@ import type {
   BookingFlowState,
   CompensationStatus,
 } from '../draft/entities/booking-draft.entity.js';
+import { TicketEntity } from './entities/ticket.entity.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
 import { PaymentSucceededConsumer } from './payment-succeeded.consumer.js';
 import {
@@ -95,7 +96,10 @@ function paymentSucceeded(
 beforeEach(async () => {
   ds = await bookingDataSource();
   await truncateBooking(ds);
-  repository = new BookingFlowRepository(ds.getRepository(BookingDraftEntity));
+  repository = new BookingFlowRepository(
+    ds.getRepository(BookingDraftEntity),
+    ds.getRepository(TicketEntity),
+  );
   consumer = new PaymentSucceededConsumer(repository);
 });
 

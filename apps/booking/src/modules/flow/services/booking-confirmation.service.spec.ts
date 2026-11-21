@@ -7,6 +7,7 @@ import { TypeOrmOutboxRepository } from '@app/messaging';
 import type { SettlementSnapshot } from '@app/contracts';
 
 import { BookingDraftEntity } from '../../draft/entities/booking-draft.entity.js';
+import { TicketEntity } from '../entities/ticket.entity.js';
 import { BookingFlowRepository } from '../booking-flow.repository.js';
 import type { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
 import { TicketIssuerService } from './ticket-issuer.service.js';
@@ -136,7 +137,10 @@ beforeEach(async () => {
     [BOOKING, OWNER, randomUUID()],
   );
 
-  repository = new BookingFlowRepository(ds.getRepository(BookingDraftEntity));
+  repository = new BookingFlowRepository(
+    ds.getRepository(BookingDraftEntity),
+    ds.getRepository(TicketEntity),
+  );
   const initializer = new DataSourceInitializer(ds);
   const unitOfWork = new TypeOrmUnitOfWork(initializer);
   const outbox = new TypeOrmOutboxRepository(initializer);
