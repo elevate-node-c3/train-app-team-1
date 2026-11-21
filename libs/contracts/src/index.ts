@@ -32,3 +32,4 @@ export * from './events/catalog-events.js';
 export * from './events/trip-events.js';
 export * from './events/inventory-events.js';
 export * from './events/hold-events.js';
+export * from './events/payment-events.js';

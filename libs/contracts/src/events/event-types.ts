@@ -25,6 +25,8 @@ export const EVENT_TYPES = {
   bookingExpired: 'booking.expired-before-payment',
   /** Reconciliation (Sprint 5) and the drop-off KPI read this. */
   bookingAbandoned: 'booking.abandoned',
+  paymentSucceeded: 'payment.charge.succeeded',
+  paymentFailed: 'payment.charge.failed',
 } as const;
 
 export type EventTypeName = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
