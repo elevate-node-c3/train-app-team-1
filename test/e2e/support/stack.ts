@@ -410,7 +410,25 @@ export function psql(
  * Revocation travels through outbox, broker and gateway asynchronously.
  * Wait for the Redis marker instead of sleeping.
  */
-export function redisGet(key: string): string {
+/**
+ * The stored value, or null when the key is absent.
+ *
+ * `redis-cli --raw GET` prints an empty line for a missing key, so returning
+ * its output alone cannot tell "absent" from "empty" -- and an assertion that
+ * a key is gone could never pass. EXISTS answers that first.
+ */
+export function redisGet(key: string): string | null {
+  const exists = compose(
+    'exec',
+    '-T',
+    'redis',
+    'redis-cli',
+    '--raw',
+    'EXISTS',
+    key,
+  ).trim();
+  if (exists !== '1') return null;
+
   return compose(
     'exec',
     '-T',

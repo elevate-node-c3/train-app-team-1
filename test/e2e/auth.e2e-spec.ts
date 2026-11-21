@@ -338,7 +338,7 @@ describe('Authentication edge to identity', () => {
 
     await waitFor(
       'the gateway to apply the account-wide reset revocation',
-      () => redisGet(`auth:revoked:account:${account.accountId}`).length > 0,
+      () => (redisGet(`auth:revoked:account:${account.accountId}`) ?? '').length > 0,
       30_000,
     );
     const revokedAt = Number(
