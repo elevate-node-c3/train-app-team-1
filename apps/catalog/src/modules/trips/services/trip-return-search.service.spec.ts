@@ -5,7 +5,7 @@ import { CatalogSearchError } from '../catalog-search-error.js';
 import { SeatAvailabilityService } from './seat-availability.service.js';
 import { TripDayService } from './trip-day.service.js';
 import { TripReturnSearchService } from './trip-return-search.service.js';
-import type { TripSearchRow } from '../trip-search.types.js';
+import type { TripSearchRow } from '../types/trip-search.types.js';
 
 /**
  * Returns use server-read outbound arrival bounds and the same cached day

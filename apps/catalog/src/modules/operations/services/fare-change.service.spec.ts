@@ -6,7 +6,7 @@ import type { TransactionContext } from '@app/common/persistence/unit-of-work.po
 import { DETAIL_MESSAGE } from '@app/common/envelope/detail-messages.js';
 
 import type { OperationsAuditEntity } from '../entities/operations-audit.entity.js';
-import type { StoredOperationsRequest } from '../operations-request.types.js';
+import type { StoredOperationsRequest } from '../types/operations-request.types.js';
 import { OperationsAuditService } from './operations-audit.service.js';
 import {
   FareChangeService,

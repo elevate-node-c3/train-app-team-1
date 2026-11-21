@@ -6,7 +6,7 @@ import { SeatAvailabilityService } from './seat-availability.service.js';
 import { TripDayService } from './trip-day.service.js';
 import { TripSearchService } from './trip-search.service.js';
 import { searchCacheKey, type CachedStaticTrip } from '../trip-search-cache.js';
-import type { TripSearchRow } from '../trip-search.types.js';
+import type { TripSearchRow } from '../types/trip-search.types.js';
 
 const CAIRO = '11111111-1111-4111-8111-111111111111';
 const ALEX = '22222222-2222-4222-8222-222222222222';

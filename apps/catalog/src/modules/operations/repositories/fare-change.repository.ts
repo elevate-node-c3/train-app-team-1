@@ -13,7 +13,7 @@ import { TimetableStopEntity } from '../../timetables/entities/timetable-stop.en
 import { TrainEntity } from '../../trains/entities/train.entity.js';
 import { TravelClassEntity } from '../../trains/entities/travel-class.entity.js';
 import { pickEffectiveTimetable } from '../services/timetable-version.service.js';
-import type { FareChangeReferences } from '../fare-change.types.js';
+import type { FareChangeReferences } from '../types/fare-change.types.js';
 
 /** Every read and write a fare change needs, and nothing else (TA-20). */
 @Injectable()

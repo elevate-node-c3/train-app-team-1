@@ -1,8 +1,8 @@
 import type { ValidationIssueRef } from '@app/contracts';
 
 import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js';
-import type { FareIndex } from '../trips/trip-generation.types.js';
-import { fareKey, resolveStopTimes } from '../trips/trip-generation.types.js';
+import type { FareIndex } from '../trips/types/trip-generation.types.js';
+import { fareKey, resolveStopTimes } from '../trips/types/trip-generation.types.js';
 import { isChargeableFare } from '../../config/operations-settings.js';
 
 /** Timetable stops use HH:mm wall-clock times, not dated instants. */

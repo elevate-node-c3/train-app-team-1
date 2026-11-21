@@ -8,7 +8,7 @@ import {
   OperationsAuditService,
   type AppendAuditInput,
 } from './operations-audit.service.js';
-import type { OperationsAuditFilter } from '../operations-audit.types.js';
+import type { OperationsAuditFilter } from '../types/operations-audit.types.js';
 
 interface FakeContext extends TransactionContext {
   staging: OperationsAuditEntity[];

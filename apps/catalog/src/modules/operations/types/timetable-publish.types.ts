@@ -1,6 +1,6 @@
-import type { CoachLayoutEntity } from '../trains/entities/coach-layout.entity.js';
-import type { TrainEntity } from '../trains/entities/train.entity.js';
-import type { TravelClassEntity } from '../trains/entities/travel-class.entity.js';
+import type { CoachLayoutEntity } from '../../trains/entities/coach-layout.entity.js';
+import type { TrainEntity } from '../../trains/entities/train.entity.js';
+import type { TravelClassEntity } from '../../trains/entities/travel-class.entity.js';
 
 /**
  * Resolve known IDs from catalog, not the request, so existence checks are real.

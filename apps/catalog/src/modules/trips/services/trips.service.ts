@@ -43,7 +43,7 @@ import {
   resolveStopTimes,
   type FareIndex,
   type TripStopDraft,
-} from '../trip-generation.types.js';
+} from '../types/trip-generation.types.js';
 import { UNIT_OF_WORK } from '@app/common/persistence/unit-of-work.port.js';
 import type { UnitOfWorkPort } from '@app/common/persistence/unit-of-work.port.js';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';

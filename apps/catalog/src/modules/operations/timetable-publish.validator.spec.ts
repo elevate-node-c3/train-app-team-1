@@ -4,7 +4,7 @@ import type { TrainCoachEntity } from '../trains/entities/train-coach.entity.js'
 import {
   resolveStopTimes,
   type FareIndex,
-} from '../trips/trip-generation.types.js';
+} from '../trips/types/trip-generation.types.js';
 import {
   validateCapacityIssues,
   validateFareFloor,

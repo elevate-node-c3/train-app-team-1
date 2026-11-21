@@ -18,7 +18,7 @@ import { emptyReasonFor } from '../trip-search-empty-reason.js';
 import { filterOptionsFor, validateFilters } from '../trip-search-filters.js';
 import { isUuid, validateReturnDate } from '../trip-search-validation.js';
 import { applyDynamicEligibility } from '../trip-sellability.js';
-import type { PassengerSegmentRow } from '../trip-search.types.js';
+import type { PassengerSegmentRow } from '../types/trip-search.types.js';
 
 /**
  * Bound returns strictly after server-read outbound arrival; never trust client times.

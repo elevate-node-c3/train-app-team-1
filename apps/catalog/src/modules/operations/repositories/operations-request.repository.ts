@@ -6,7 +6,7 @@ import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
 
 import { OperationsRequestEntity } from '../entities/operations-request.entity.js';
-import type { StoredOperationsRequest } from '../operations-request.types.js';
+import type { StoredOperationsRequest } from '../types/operations-request.types.js';
 
 /** Record keys in the caller's transaction so they commit with their changes. */
 @Injectable()

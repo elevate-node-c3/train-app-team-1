@@ -8,7 +8,7 @@ import { OperationsAuditEntity } from '../entities/operations-audit.entity.js';
 import type {
   OperationsAuditFilter,
   OperationsAuditPage,
-} from '../operations-audit.types.js';
+} from '../types/operations-audit.types.js';
 
 /** append joins the caller's transaction; list reads independently. */
 @Injectable()

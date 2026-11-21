@@ -1,4 +1,4 @@
-import type { OperationsAuditEntity } from './entities/operations-audit.entity.js';
+import type { OperationsAuditEntity } from '../entities/operations-audit.entity.js';
 
 export interface OperationsAuditFilter {
   trainId?: string;

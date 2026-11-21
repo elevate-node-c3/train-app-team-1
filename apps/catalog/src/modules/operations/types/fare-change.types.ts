@@ -1,5 +1,5 @@
-import type { TrainEntity } from '../trains/entities/train.entity.js';
-import type { TravelClassEntity } from '../trains/entities/travel-class.entity.js';
+import type { TrainEntity } from '../../trains/entities/train.entity.js';
+import type { TravelClassEntity } from '../../trains/entities/travel-class.entity.js';
 
 /** Resolve knownStationIds from catalog, not the request. */
 export interface FareChangeReferences {
