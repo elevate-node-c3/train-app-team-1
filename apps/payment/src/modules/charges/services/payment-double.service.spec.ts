@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataSource } from 'typeorm';
+import { ErrorCode } from '@app/contracts';
 import { PaymentIntentService } from './payment-intent.service.js';
-import { PaymentDoubleService } from './payment-double.service.js';
+import { PaymentDoubleService, type ChargeRow } from './payment-double.service.js';
 
 describe('PaymentDoubleService', () => {
   let chargeStatus: 'started' | 'succeeded' | 'cancelled';
@@ -259,5 +260,85 @@ describe('PaymentDoubleService', () => {
         savedCardId: '00000000-0000-4000-8000-000000000005',
       }),
     ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+  });
+});
+
+describe('PaymentDoubleService.refund', () => {
+  const BOOKING = '00000000-0000-4000-8000-000000000010';
+  const CHARGE = '00000000-0000-4000-8000-000000000011';
+  const STARTED_ONLY = '00000000-0000-4000-8000-000000000012';
+  const STARTED_CHARGE = '00000000-0000-4000-8000-000000000013';
+
+  let charges: ChargeRow[];
+  let query: ReturnType<typeof vi.fn>;
+  let service: PaymentDoubleService;
+
+  beforeEach(() => {
+    charges = [
+      {
+        id: CHARGE,
+        booking_reference: BOOKING,
+        idempotency_key: 'booking:test:charge',
+        amount_piastres: 6955,
+        currency: 'EGP',
+        status: 'succeeded',
+        stripe_payment_method_id: null,
+      },
+      {
+        id: STARTED_CHARGE,
+        booking_reference: STARTED_ONLY,
+        idempotency_key: 'booking:started-only:charge',
+        amount_piastres: 6955,
+        currency: 'EGP',
+        status: 'started',
+        stripe_payment_method_id: null,
+      },
+    ];
+    query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('SELECT * FROM payment_charge WHERE id')) {
+        return charges.filter(
+          (charge) =>
+            charge.id === params[0] && charge.booking_reference === params[1],
+        );
+      }
+      if (sql.includes("SET status = 'refunded'")) {
+        const charge = charges.find((c) => c.id === params[0]);
+        if (charge && charge.status === 'succeeded') charge.status = 'refunded' as ChargeRow['status'];
+        return [];
+      }
+      return [];
+    });
+    service = new PaymentDoubleService(
+      { query } as unknown as DataSource,
+      {} as unknown as PaymentIntentService,
+    );
+  });
+
+  const refundRequest = (overrides: { bookingReference?: string } = {}) => ({
+    bookingReference: overrides.bookingReference ?? BOOKING,
+    paymentReference: overrides.bookingReference === STARTED_ONLY ? STARTED_CHARGE : CHARGE,
+    idempotencyKey: `booking:${overrides.bookingReference ?? BOOKING}:refund`,
+  });
+
+  it('refunds the whole locked total, booking fee included', async () => {
+    const result = await service.refund({
+      bookingReference: BOOKING,
+      paymentReference: CHARGE,
+      idempotencyKey: `booking:${BOOKING}:refund`,
+    });
+    expect(result.status).toBe('REFUNDED');
+    expect(result.amountPiastres).toBe(6955);
+    expect(charges.find((c) => c.id === CHARGE)?.status).toBe('refunded');
+  });
+
+  it('is safe to call twice', async () => {
+    await service.refund(refundRequest());
+    expect((await service.refund(refundRequest())).status).toBe('ALREADY_REFUNDED');
+  });
+
+  it('refuses to refund a charge that never succeeded', async () => {
+    await expect(
+      service.refund(refundRequest({ bookingReference: STARTED_ONLY })),
+    ).rejects.toMatchObject({ code: ErrorCode.CONFLICT });
   });
 });

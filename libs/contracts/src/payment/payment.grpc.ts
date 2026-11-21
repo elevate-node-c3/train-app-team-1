@@ -35,6 +35,19 @@ export interface CancelChargeResponse {
   status: string;
 }
 
+export interface RefundChargeRequest {
+  bookingReference: string;
+  paymentReference: string;
+  idempotencyKey: string;
+}
+
+/** status is REFUNDED, ALREADY_REFUNDED, or NOT_REFUNDABLE. */
+export interface RefundChargeResponse {
+  status: string;
+  refundReference: string;
+  amountPiastres: number;
+}
+
 export interface CreateSetupIntentRequest {
   accountId: string;
 }
@@ -95,6 +108,11 @@ export interface PaymentGrpcService {
     metadata?: Metadata,
     options?: Record<string, unknown>,
   ): Observable<CancelChargeResponse>;
+  refundCharge(
+    request: RefundChargeRequest,
+    metadata?: Metadata,
+    options?: Record<string, unknown>,
+  ): Observable<RefundChargeResponse>;
   createSetupIntent(
     request: CreateSetupIntentRequest,
     metadata?: Metadata,

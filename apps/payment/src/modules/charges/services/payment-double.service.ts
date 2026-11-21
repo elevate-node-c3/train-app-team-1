@@ -6,6 +6,8 @@ import {
   ErrorCode,
   type CancelChargeRequest,
   type CancelChargeResponse,
+  type RefundChargeRequest,
+  type RefundChargeResponse,
   type StartChargeRequest,
   type StartChargeResponse,
 } from '@app/contracts';
@@ -18,7 +20,7 @@ export interface ChargeRow {
   idempotency_key: string;
   amount_piastres: number;
   currency: string;
-  status: 'started' | 'succeeded' | 'cancelled';
+  status: 'started' | 'succeeded' | 'cancelled' | 'refunded';
   stripe_payment_method_id: string | null;
   stripe_customer_id?: string | null;
   stripe_payment_intent_id?: string | null;
@@ -208,5 +210,42 @@ export class PaymentDoubleService {
       return { status: 'CANCELLED' };
     }
     throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+  }
+
+  // TODO(TA-110, Youssef Mostafa): replace this body with stripe.refunds.create
+  // against the booking's PaymentIntent. The request and response shapes are the
+  // contract and should not change; the refund's lifecycle is TA-110's own work.
+  async refund(request: RefundChargeRequest): Promise<RefundChargeResponse> {
+    const rows = (await this.dataSource.query(
+      'SELECT * FROM payment_charge WHERE id = $1 AND booking_reference = $2',
+      [request.paymentReference, request.bookingReference],
+    )) as ChargeRow[];
+    const charge = rows[0];
+    if (!charge) {
+      throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    const refundReference = `refund_${charge.id}`;
+    if (charge.status === 'refunded') {
+      return {
+        status: 'ALREADY_REFUNDED',
+        refundReference,
+        amountPiastres: charge.amount_piastres,
+      };
+    }
+    if (charge.status !== 'succeeded') {
+      throw new PaymentError(ErrorCode.CONFLICT);
+    }
+
+    await this.dataSource.query(
+      `UPDATE payment_charge SET status = 'refunded' WHERE id = $1 AND status = 'succeeded'`,
+      [charge.id],
+    );
+
+    return {
+      status: 'REFUNDED',
+      refundReference,
+      amountPiastres: charge.amount_piastres,
+    };
   }
 }

@@ -19,7 +19,7 @@ export class PaymentChargeEntity {
   currency!: string;
 
   @Column({ type: 'varchar', length: 16 })
-  status!: 'started' | 'succeeded' | 'cancelled';
+  status!: 'started' | 'succeeded' | 'cancelled' | 'refunded';
 
   @Column({ name: 'card_brand', type: 'varchar', length: 32, nullable: true })
   cardBrand?: string | null;

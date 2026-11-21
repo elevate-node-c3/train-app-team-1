@@ -7,6 +7,8 @@ service PaymentService {
   rpc StartCharge (StartChargeRequest) returns (StartChargeResponse);
   // Cancellation compensation applies an 1800ms deadline and retries with the same key.
   rpc CancelCharge (CancelChargeRequest) returns (CancelChargeResponse);
+  // Refund compensation applies an 1800ms deadline and retries with the same key.
+  rpc RefundCharge (RefundChargeRequest) returns (RefundChargeResponse);
 
   // Saved Cards
   rpc CreateSetupIntent (CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
@@ -38,6 +40,18 @@ message CancelChargeRequest {
 
 message CancelChargeResponse {
   string status = 1;
+}
+
+message RefundChargeRequest {
+  string bookingReference = 1;
+  string paymentReference = 2;
+  string idempotencyKey = 3;
+}
+
+message RefundChargeResponse {
+  string status = 1;
+  string refundReference = 2;
+  int32 amountPiastres = 3;
 }
 
 message CreateSetupIntentRequest {
