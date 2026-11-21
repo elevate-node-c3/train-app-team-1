@@ -20,6 +20,8 @@ message StartChargeRequest {
   int32 amountPiastres = 2;
   string currency = 3;
   string idempotencyKey = 4;
+  string accountId = 5;
+  string savedCardId = 6;
 }
 
 message StartChargeResponse {

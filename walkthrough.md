@@ -31,11 +31,13 @@ This document records the verification evidence for the **Platform Skeleton**, *
 ## 2. Test Suite Execution Evidence
 
 Command run:
+
 ```bash
 npm test
 ```
 
 Output:
+
 ```text
 > train-app-team-1@0.0.1 test
 > vitest run
@@ -61,11 +63,13 @@ Lint is also clean:
 ### Demo 1: Happy Path — Unified Envelope & Health Reporting
 
 **Command (Arabic default fallback):**
+
 ```bash
 curl -i http://localhost:3000/health
 ```
 
 **HTTP Response:**
+
 ```http
 HTTP/1.1 200 OK
 x-correlation-id: 340177b6-4297-4e20-bf5d-7596ab5b081b
@@ -103,9 +107,11 @@ Content-Type: application/json; charset=utf-8
 ```
 
 **Command (English via `Accept-Language`):**
+
 ```bash
 curl -i -H "Accept-Language: en" http://localhost:3000/health
 ```
+
 ```json
 {
   "success": true,
@@ -124,11 +130,13 @@ curl -i -H "Accept-Language: en" http://localhost:3000/health
 Invoking the gateway aggregation endpoint (`/api/v1/ping-all`) generates a correlation ID (`8f84e497-03cc-41e4-af42-fe42d83e5840`) which is forwarded across gRPC metadata to all downstream services.
 
 **Command:**
+
 ```bash
 docker compose logs --no-color | Select-String "8f84e497-03cc-41e4-af42-fe42d83e5840"
 ```
 
 **Log Output:**
+
 ```json
 gateway-1       | {"level":"info","time":"2026-10-23T18:23:08.852Z","service":"gateway","correlationId":"8f84e497-03cc-41e4-af42-fe42d83e5840","context":"GatewayHealthService","msg":"Dispatching gRPC health check to catalog"}
 catalog-1       | {"level":"info","time":"2026-10-23T18:23:08.858Z","service":"catalog","correlationId":"8f84e497-03cc-41e4-af42-fe42d83e5840","context":"HealthGrpcController","msg":"Received health check for service: catalog"}
@@ -144,6 +152,7 @@ gateway-1       | {"level":"info","time":"2026-10-23T18:23:09.120Z","service":"g
 notification-1  | {"level":"info","time":"2026-10-23T18:23:09.123Z","service":"notification","correlationId":"8f84e497-03cc-41e4-af42-fe42d83e5840","context":"HealthGrpcController","msg":"Received health check for service: notification"}
 gateway-1       | {"level":"info","time":"2026-10-23T18:23:09.171Z","service":"gateway","correlationId":"8f84e497-03cc-41e4-af42-fe42d83e5840","res":{"statusCode":null},"responseTime":363,"msg":"request completed"}
 ```
+
 All seven services participate in a single coherent trace.
 
 ---
@@ -151,15 +160,19 @@ All seven services participate in a single coherent trace.
 ### Demo 3: Unhappy Path — Fail-Fast Configuration Validation
 
 **Command:**
+
 ```bash
 docker compose run --rm -e DATABASE_URL="" identity
 ```
 
 **Output:**
+
 ```text
 [identity] Configuration error: Invalid variable 'DATABASE_URL' ([REDACTED]): [REDACTED] is not allowed to be empty
 ```
+
 **Exit Code:** `1`
+
 - Names the missing/invalid variable (`DATABASE_URL`).
 - Masks all secret values (`[REDACTED]`).
 - Exits immediately with non-zero status.
@@ -173,17 +186,21 @@ docker compose run --rm -e DATABASE_URL="" identity
    docker compose stop postgres
    ```
 2. Check health probe:
+
    ```bash
    curl -i http://localhost:3000/health
    ```
+
    **Output:**
+
    ```http
    HTTP/1.1 503 Service Unavailable
    x-correlation-id: 68ad35b3-96f1-4b27-913c-f6e055f8dc4a
 
    {"success":false,"data":null,"message":"الخدمة غير متوفرة حالياً، يرجى المحاولة لاحقاً","error":{"code":"SERVICE_UNAVAILABLE","message":"الخدمة غير متوفرة حالياً، يرجى المحاولة لاحقاً"},"correlationId":"68ad35b3-96f1-4b27-913c-f6e055f8dc4a","timestamp":"2026-10-23T18:23:37.994Z"}
    ```
-   *No internal SQL errors or credentials leaked to the client.*
+
+   _No internal SQL errors or credentials leaked to the client._
 
 3. Start PostgreSQL back:
    ```bash
@@ -198,7 +215,7 @@ docker compose run --rm -e DATABASE_URL="" identity
    HTTP/1.1 200 OK
    {"success":true,"data":{"status":"ready", ...},"message":"تمت العملية بنجاح","error":null, ...}
    ```
-   *Services automatically reconnect and restore `ready` status.*
+   _Services automatically reconnect and restore `ready` status._
 
 ---
 
@@ -209,10 +226,13 @@ docker compose run --rm -e DATABASE_URL="" identity
    docker compose stop redis
    ```
 2. Query health probe:
+
    ```bash
    curl -i http://localhost:3000/health
    ```
+
    **Output:**
+
    ```http
    HTTP/1.1 200 OK
    x-correlation-id: 5e2976fb-8bf5-476f-a1ec-1886525ee84f
@@ -240,13 +260,14 @@ docker compose run --rm -e DATABASE_URL="" identity
      "error": null
    }
    ```
-   *Probe remains 200 OK. Cache failure is marked degraded, not dead.*
+
+   _Probe remains 200 OK. Cache failure is marked degraded, not dead._
 
 3. Restart Redis:
    ```bash
    docker compose start redis
    ```
-   *Probe seamlessly returns to `ready`.*
+   _Probe seamlessly returns to `ready`._
 
 ---
 
@@ -266,18 +287,20 @@ docker compose run --rm -e DATABASE_URL="" identity
    {"level":"info","time":"2026-10-23T18:24:22.693Z","service":"identity","context":"GracefulShutdownService","msg":"Received shutdown signal: SIGTERM; completing graceful shutdown"}
    {"level":"warn","time":"2026-10-23T18:24:22.693Z","service":"identity","context":"GracefulShutdownService","msg":"Service has entered graceful shutdown mode; rejecting new traffic"}
    ```
-   *In-flight work is drained, new traffic rejected, and connections closed cleanly with exit code 0.*
+   _In-flight work is drained, new traffic rejected, and connections closed cleanly with exit code 0._
 
 ---
 
 ### Demo 7: Happy Path — Authentication Lifecycle and Revocation (e2e)
 
 **Command:**
+
 ```bash
 npm run test:e2e -- test/e2e/auth.e2e-spec.ts
 ```
 
 **Output:**
+
 ```text
  Test Files  1 passed (1)
       Tests  4 passed (4)
@@ -326,11 +349,13 @@ The same suite without the file filter runs all five e2e specs:
 ### Demo 8: Happy Path — Operator Publishes, Changes a Fare and Reads the Audit (e2e)
 
 **Command:**
+
 ```bash
 npm run test:e2e -- test/e2e/operations-api.e2e-spec.ts
 ```
 
 **Output (2026-11-12):**
+
 ```text
  Test Files  1 passed (1)
       Tests  3 passed (3)
@@ -342,7 +367,7 @@ The spec starts the search slice plus inventory, seeds the operator through iden
 
 1. **Operator sign-in and first publish:** `operator@train.local` signs in and receives an access token with the `operator` role. `POST /api/v1/operations/timetables` publishes fixture train 916 on Ramsis (Cairo) -> Alexandria, daily from today, with one first-class coach and a 15,000-piastre fare. The response is `201` with `created > 0` and `version: 1`.
 2. **The published trip is on sale:** a traveller search for Ramsis -> Alexandria three days out finds train 916 at 15,000 piastres. This proves the publish wrote real dated trips and stops, not just a timetable row.
-3. **Fare change:** `POST /api/v1/operations/fares` adds a 17,500-piastre first-class row effective five seconds out. The response reports `previousAmountPiastres: 15000` and echoes the effective instant. After that instant, the same search reports 17,500. The wait is deliberate: search resolves the fare against *now*, so asking before `effectiveFrom` correctly answers with the old amount; the outbox's route-version invalidation has already happened, and the new fare is visible as soon as it is in force.
+3. **Fare change:** `POST /api/v1/operations/fares` adds a 17,500-piastre first-class row effective five seconds out. The response reports `previousAmountPiastres: 15000` and echoes the effective instant. After that instant, the same search reports 17,500. The wait is deliberate: search resolves the fare against _now_, so asking before `effectiveFrom` correctly answers with the old amount; the outbox's route-version invalidation has already happened, and the new fare is visible as soon as it is in force.
 4. **Audit trail:** `GET /api/v1/operations/audit?trainId=<train 916>` returns both actions. Each entry names the operator account and the correlation id the gateway stamped on that write response; the two ids differ, so the entries are not sharing an ambient request by accident.
 5. **Traveller refusal:** the same three routes with a verified traveller token all return `403 FORBIDDEN`.
 6. **Idempotent publish:** a fresh publish for train 917 is sent twice with one `Idempotency-Key`. Both calls return `201` with the identical body, and the audit holds exactly one `timetable.published` entry for that train. A replay does not write a second version.
@@ -388,29 +413,66 @@ date.
 
 ## 4. Verification Check-off Matrix
 
-| Requirement | Implementation Component | Status |
-|---|---|---|
-| Single command boot (`docker compose up`) | Root `Dockerfile` & `docker-compose.yml` | Verified |
-| 7 microservices + 3 shared libs | `apps/` module-first feature modules & `libs/` | Verified |
-| TypeORM persistence layer | `@nestjs/typeorm` with `manualInitialization: true` in every service | Verified |
-| Joi fail-fast env validation & secret masking | `libs/common/src/config/env.validator.ts` | Verified |
-| Bilingual response & error envelope (Arabic fallback) | `HttpExceptionFilter` & `ResponseInterceptor` | Verified |
-| Structured JSON logs with PII redaction | `nestjs-pino`, `ClsService`, `pii-redactor.ts` | Verified |
-| Correlation ID propagation (HTTP -> gRPC -> AMQP) | `CorrelationMiddleware` & `GrpcCorrelationInterceptor` | Verified |
-| gRPC Health aggregation | `libs/contracts/src/proto/health.proto`, `GatewayHealthService` | Verified |
-| Identity gRPC contract | `libs/contracts/src/proto/identity.proto` (`train.identity.v1`, `IdentityService`) | Verified |
-| Redis degraded mode (§2.3 rule 7) | `RedisHealthService` | Verified |
-| Postgres outage auto-recovery | Dynamic connection polling in `HealthService` | Verified |
-| Graceful shutdown (SIGTERM / code 0) | `GracefulShutdownService` | Verified |
-| RS256 access tokens, `kid` rotation, no `alg` confusion | Identity `IdentityJwtSigner`, gateway `TokenVerifierService` | Verified |
-| Deny-by-default gateway authorization | `JwtAuthGuard`, explicit `@Public()` / `@RequireAccess()` metadata | Verified |
-| Refresh rotation + 10-second replay grace | `SessionsService`, `SessionIssuer`, sealed successor payload | Verified |
-| Prompt, durable session revocation | Outbox event, `SessionRevokedConsumer`, Redis + memory revocation stores | Verified |
-| Password recovery without enumeration (BR-09) | `PasswordsService`, account-level revocation marker | Verified |
-| Auth lifecycle and staff isolation against the real stack | `test/e2e/auth.e2e-spec.ts` (4 tests) | Verified |
-| Staff seed outside migrations | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot `seeder` Compose service | Verified |
-| Operator-only timetable, fare and audit routes | Gateway `modules/operations` and catalog `modules/operations` over gRPC | Verified |
-| Required idempotency on both writes | Gateway `Idempotency-Key` guard and catalog `operations_request` replay store | Verified |
-| Operator flow, refusal and replay against the real stack | `test/e2e/operations-api.e2e-spec.ts` (3 tests) | Verified |
-| Runnable operator flow for reviewers | `postman/train-app-platform.postman_collection.json` -> **Operations (Gateway)** | Added |
-| 100% Passing automated tests | Vitest unit & regression suites (1141 passed, 1 skipped) | Verified |
+| Requirement                                               | Implementation Component                                                                            | Status   |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------- |
+| Single command boot (`docker compose up`)                 | Root `Dockerfile` & `docker-compose.yml`                                                            | Verified |
+| 7 microservices + 3 shared libs                           | `apps/` module-first feature modules & `libs/`                                                      | Verified |
+| TypeORM persistence layer                                 | `@nestjs/typeorm` with `manualInitialization: true` in every service                                | Verified |
+| Joi fail-fast env validation & secret masking             | `libs/common/src/config/env.validator.ts`                                                           | Verified |
+| Bilingual response & error envelope (Arabic fallback)     | `HttpExceptionFilter` & `ResponseInterceptor`                                                       | Verified |
+| Structured JSON logs with PII redaction                   | `nestjs-pino`, `ClsService`, `pii-redactor.ts`                                                      | Verified |
+| Correlation ID propagation (HTTP -> gRPC -> AMQP)         | `CorrelationMiddleware` & `GrpcCorrelationInterceptor`                                              | Verified |
+| gRPC Health aggregation                                   | `libs/contracts/src/proto/health.proto`, `GatewayHealthService`                                     | Verified |
+| Identity gRPC contract                                    | `libs/contracts/src/proto/identity.proto` (`train.identity.v1`, `IdentityService`)                  | Verified |
+| Redis degraded mode (§2.3 rule 7)                         | `RedisHealthService`                                                                                | Verified |
+| Postgres outage auto-recovery                             | Dynamic connection polling in `HealthService`                                                       | Verified |
+| Graceful shutdown (SIGTERM / code 0)                      | `GracefulShutdownService`                                                                           | Verified |
+| RS256 access tokens, `kid` rotation, no `alg` confusion   | Identity `IdentityJwtSigner`, gateway `TokenVerifierService`                                        | Verified |
+| Deny-by-default gateway authorization                     | `JwtAuthGuard`, explicit `@Public()` / `@RequireAccess()` metadata                                  | Verified |
+| Refresh rotation + 10-second replay grace                 | `SessionsService`, `SessionIssuer`, sealed successor payload                                        | Verified |
+| Prompt, durable session revocation                        | Outbox event, `SessionRevokedConsumer`, Redis + memory revocation stores                            | Verified |
+| Password recovery without enumeration (BR-09)             | `PasswordsService`, account-level revocation marker                                                 | Verified |
+| Auth lifecycle and staff isolation against the real stack | `test/e2e/auth.e2e-spec.ts` (4 tests)                                                               | Verified |
+| Staff seed outside migrations                             | `apps/identity/src/database/seeds/staff-accounts.seed.ts` and the one-shot `seeder` Compose service | Verified |
+| Operator-only timetable, fare and audit routes            | Gateway `modules/operations` and catalog `modules/operations` over gRPC                             | Verified |
+| Required idempotency on both writes                       | Gateway `Idempotency-Key` guard and catalog `operations_request` replay store                       | Verified |
+| Operator flow, refusal and replay against the real stack  | `test/e2e/operations-api.e2e-spec.ts` (3 tests)                                                     | Verified |
+| Runnable operator flow for reviewers                      | `postman/train-app-platform.postman_collection.json` -> **Operations (Gateway)**                    | Added    |
+| 100% Passing automated tests                              | Vitest unit & regression suites (1141 passed, 1 skipped)                                            | Verified |
+
+---
+
+## 5. Saved Cards (TA-105)
+
+- The gateway exposes `POST /api/v1/saved-cards/setup`, `POST /api/v1/saved-cards/confirm`,
+  `GET /api/v1/saved-cards`, and `DELETE /api/v1/saved-cards/:cardId`. Every route
+  uses the authenticated traveller account; callers cannot supply an account ID.
+- Card number, expiry, and CVV are collected by Stripe.js/Stripe's mobile SDK and
+  sent directly to Stripe. ENR accepts only the SetupIntent ID on confirmation.
+  The SetupIntent client secret is returned in the setup response body only; it is
+  not accepted as a request field, put in a URL, or written to logs.
+- Payment serializes first-customer creation with a PostgreSQL transaction-scoped
+  advisory lock and also uses an account-derived SHA-256 Stripe idempotency key.
+  The account ID (not email) is the key input.
+- Payment stores Stripe customer/payment-method references, fingerprint, brand,
+  last four, expiry, and a masked holder name. Fingerprint uniqueness is enforced
+  by a partial database index and repeated saves quietly return the existing card.
+- Cards remain in the shared list when expired, marked `isExpired: true` and
+  `canPay: false`; they are never selected as default. The default is the most
+  recently used usable card, or the newest usable card if none has been used.
+  Ordering is most-recently-used first, then newest; expiry does not remove a row.
+- Delete detaches the Stripe PaymentMethod before marking the record detached.
+  Historical payment records keep their own brand and last four. Stripe webhook
+  processing failures are allowed to fail the request so Stripe retries them;
+  invalid signatures receive a 400 response.
+- The PAY-2 payment request may include the local `savedCardId` from this list.
+  Payment checks ownership and expiry before starting the charge, snapshots the
+  Stripe PaymentMethod reference/brand/last four on the charge, and records the
+  card as recently used. A foreign or deleted card is a 404; an expired card is
+  refused. Replaying a charge that already started still returns that charge if
+  its card is subsequently deleted.
+- Listing is served only from payment's database. Add/delete/confirm Stripe calls
+  share the payment service's circuit breaker and short timeout. Stripe secret,
+  publishable, and webhook keys are validated before payment boots; only the
+  publishable key is returned to the client.
+- Saved-card mutations publish no domain events; no other service consumes them.

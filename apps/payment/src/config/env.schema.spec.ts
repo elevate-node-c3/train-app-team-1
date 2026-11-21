@@ -35,6 +35,17 @@ describe('paymentEnvSchema', () => {
     ).toThrowError(/STRIPE_SECRET_KEY/);
   });
 
+  it('refuses boot when no Stripe publishable key is configured', () => {
+    const {
+      STRIPE_PUBLISHABLE_KEY: _unused,
+      PUBLISHABLE_KEY: _legacy,
+      ...invalid
+    } = validBase;
+    expect(() =>
+      validateEnvOrThrow(paymentEnvSchema, invalid, 'payment'),
+    ).toThrowError(/STRIPE_PUBLISHABLE_KEY/);
+  });
+
   it('refuses boot when STRIPE_WEBHOOK_SECRET is missing and names the variable', () => {
     const { STRIPE_WEBHOOK_SECRET: _unused, ...invalid } = validBase;
     expect(() =>

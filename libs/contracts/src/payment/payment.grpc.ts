@@ -14,6 +14,8 @@ export interface StartChargeRequest {
   amountPiastres: number;
   currency: string;
   idempotencyKey: string;
+  accountId: string;
+  savedCardId?: string;
 }
 
 export interface StartChargeResponse {

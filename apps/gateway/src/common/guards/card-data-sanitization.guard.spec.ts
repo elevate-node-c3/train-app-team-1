@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { HttpException, HttpStatus, type ExecutionContext } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { ErrorCode } from '@app/contracts';
 import { CardDataSanitizationGuard } from './card-data-sanitization.guard.js';
 
@@ -50,5 +54,54 @@ describe('CardDataSanitizationGuard', () => {
     expect(() => guard.canActivate(mockContext({ pan: '1234' }))).toThrow();
     expect(() => guard.canActivate(mockContext({ exp_month: 12 }))).toThrow();
     expect(() => guard.canActivate(mockContext({ expiry: '12/28' }))).toThrow();
+  });
+
+  it('rejects card-data aliases and Stripe secrets without echoing their values', () => {
+    const secret = 'seti_123_secret_client_secret';
+    const cases = [
+      { expiryMonth: 12 },
+      { security_code: '123' },
+      { card_number: 4242424242424242 },
+      { clientSecret: secret },
+      { setupIntentId: secret },
+      { setupIntentId: '4242424242424242' },
+    ];
+
+    for (const body of cases) {
+      try {
+        guard.canActivate(mockContext(body));
+        expect.fail('Expected sensitive payload to be rejected');
+      } catch (error) {
+        expect(error).toBeInstanceOf(HttpException);
+        expect(
+          JSON.stringify((error as HttpException).getResponse()),
+        ).not.toContain(secret);
+        expect(
+          JSON.stringify((error as HttpException).getResponse()).includes(
+            '4242424242424242',
+          ),
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('rejects Stripe client secrets used as query, path, or header values', () => {
+    const secret = 'seti_123_secret_client_secret';
+    for (const request of [
+      { body: {}, query: { setupIntentId: secret } },
+      { body: {}, query: {}, params: { setupIntentId: secret } },
+      {
+        body: {},
+        query: {},
+        params: {},
+        headers: { 'x-client-secret': secret },
+      },
+    ]) {
+      expect(() =>
+        guard.canActivate({
+          switchToHttp: () => ({ getRequest: () => request }),
+        } as unknown as ExecutionContext),
+      ).toThrow(HttpException);
+    }
   });
 });

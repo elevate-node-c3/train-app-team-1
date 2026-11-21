@@ -12,6 +12,7 @@ import {
   GRPC_STATUS,
   type BookingResponse,
   type ContinueBookingRequest,
+  type ContinueToPaymentRequest,
   type SubmitBookingRequest,
 } from '@app/contracts';
 
@@ -51,7 +52,9 @@ export class BookingGrpcClientService {
     );
   }
 
-  continueToPayment(request: ContinueBookingRequest): Promise<BookingResponse> {
+  continueToPayment(
+    request: ContinueToPaymentRequest,
+  ): Promise<BookingResponse> {
     return this.call((metadata, options) =>
       this.client.continueToPayment(request, metadata, options),
     );

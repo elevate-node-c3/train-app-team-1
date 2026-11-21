@@ -19,6 +19,7 @@ function startRequest(overrides: Record<string, unknown> = {}) {
     amountPiastres: 12_500,
     currency: 'EGP',
     idempotencyKey: 'charge-key-1',
+    accountId: '42000000-0000-4000-8000-000000000001',
     ...overrides,
   };
 }

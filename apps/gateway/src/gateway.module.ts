@@ -10,6 +10,7 @@ import { migrations } from './database/migrations/index.js';
 import { SecurityModule } from './common/security/security.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
+import { CardDataSanitizationGuard } from './common/guards/card-data-sanitization.guard.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
@@ -40,6 +41,7 @@ import { ServiceInfoController } from './service-info.controller.js';
     { provide: APP_GUARD, useClass: RateLimitGuard },
     // Deny-by-default: every route must declare `@Public()` or an access level.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: CardDataSanitizationGuard },
   ],
 })
 export class GatewayModule {}

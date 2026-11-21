@@ -6,6 +6,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  IsOptional,
 } from 'class-validator';
 import type { CancelChargeRequest, StartChargeRequest } from '@app/contracts';
 
@@ -37,6 +38,13 @@ export class StartChargeRequestDto implements StartChargeRequest {
   @IsNotEmpty()
   @MaxLength(MAX_IDEMPOTENCY_KEY_LENGTH)
   idempotencyKey!: string;
+
+  @IsUUID()
+  accountId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  savedCardId?: string;
 }
 
 export class CancelChargeRequestDto implements CancelChargeRequest {

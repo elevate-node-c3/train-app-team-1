@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -12,6 +13,7 @@ import {
 import type {
   BookingLeg,
   ContinueBookingRequest,
+  ContinueToPaymentRequest,
   SubmitBookingRequest,
 } from '@app/contracts';
 
@@ -65,4 +67,13 @@ export class SubmitBookingRequestDto implements SubmitBookingRequest {
 export class ContinueBookingRequestDto implements ContinueBookingRequest {
   @IsUUID()
   bookingReference!: string;
+}
+
+export class ContinueToPaymentRequestDto implements ContinueToPaymentRequest {
+  @IsUUID()
+  bookingReference!: string;
+
+  @IsOptional()
+  @IsUUID()
+  savedCardId?: string;
 }

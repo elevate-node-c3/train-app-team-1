@@ -28,6 +28,11 @@ export interface ContinueBookingRequest {
   bookingReference: string;
 }
 
+export interface ContinueToPaymentRequest {
+  bookingReference: string;
+  savedCardId?: string;
+}
+
 /** A passenger as reviewed at the hold; the National ID never leaves booking. */
 export interface BookedPassenger {
   passengerId: string;
