@@ -4,19 +4,19 @@ import type { DataSource } from 'typeorm';
 import type { EventEnvelope } from '@app/contracts';
 import { PermanentEventError } from '@app/messaging/event-errors.js';
 
-import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
+import { BookingDraftEntity } from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
 import type {
   BookingFlowState,
   CompensationStatus,
-} from '../draft/entities/booking-draft.entity.js';
-import { TicketEntity } from './entities/ticket.entity.js';
-import { BookingFlowRepository } from './booking-flow.repository.js';
-import { PaymentSucceededConsumer } from './payment-succeeded.consumer.js';
+} from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
+import { TicketEntity } from '../../apps/booking/src/modules/flow/entities/ticket.entity.js';
+import { BookingFlowRepository } from '../../apps/booking/src/modules/flow/booking-flow.repository.js';
+import { PaymentSucceededConsumer } from '../../apps/booking/src/modules/flow/payment-succeeded.consumer.js';
 import {
   bookingDataSource,
   closeBookingDataSource,
   truncateBooking,
-} from '../../../../../test/integration/support/booking-database.js';
+} from './support/booking-database.js';
 
 const BOOKING = randomUUID();
 const UNKNOWN = randomUUID();
@@ -109,7 +109,10 @@ afterAll(async () => {
 
 describe('BookingFlowRepository.beginConfirming', () => {
   it('moves an awaiting_payment booking to confirming and stands compensation down', async () => {
-    await seed(ds, { flowState: 'awaiting_payment', compensationStatus: 'none' });
+    await seed(ds, {
+      flowState: 'awaiting_payment',
+      compensationStatus: 'none',
+    });
     expect(
       await repository.beginConfirming({
         bookingReference: BOOKING,
@@ -154,7 +157,10 @@ describe('PaymentSucceededConsumer', () => {
     const result = await consumer.handle(
       paymentSucceeded({ bookingReference: UNKNOWN }),
     );
-    expect(result).toEqual({ status: 'skipped', skipReason: 'unknown_booking' });
+    expect(result).toEqual({
+      status: 'skipped',
+      skipReason: 'unknown_booking',
+    });
   });
 
   it('handles a verified payment for a known booking', async () => {

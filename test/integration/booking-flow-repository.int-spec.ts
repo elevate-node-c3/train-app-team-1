@@ -2,15 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { DataSource } from 'typeorm';
 
-import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
-import type { BookingFlowState } from '../draft/entities/booking-draft.entity.js';
-import { TicketEntity } from './entities/ticket.entity.js';
-import { BookingFlowRepository } from './booking-flow.repository.js';
+import { BookingDraftEntity } from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
+import type { BookingFlowState } from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
+import { TicketEntity } from '../../apps/booking/src/modules/flow/entities/ticket.entity.js';
+import { BookingFlowRepository } from '../../apps/booking/src/modules/flow/booking-flow.repository.js';
 import {
   bookingDataSource,
   closeBookingDataSource,
   truncateBooking,
-} from '../../../../../test/integration/support/booking-database.js';
+} from './support/booking-database.js';
 
 const BOOKING = randomUUID();
 const OTHER = randomUUID();
@@ -34,7 +34,13 @@ async function seed(
     `INSERT INTO booking_draft
        (id, user_id, flow_state, payment_succeeded_at, saga_step)
      VALUES ($1, $2, $3, $4, $5)`,
-    [id, randomUUID(), props.flowState, props.paymentSucceededAt, props.sagaStep ?? null],
+    [
+      id,
+      randomUUID(),
+      props.flowState,
+      props.paymentSucceededAt,
+      props.sagaStep ?? null,
+    ],
   );
 }
 

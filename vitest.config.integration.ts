@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    include: ['**/*.int-spec.ts'],
+    include: ['test/integration/**/*.int-spec.ts'],
     // Replacing exclude also replaces Vitest's defaults.
     exclude: [
       '**/node_modules/**',
@@ -20,6 +20,9 @@ export default defineConfig({
       // TA-107's saga needs the holds tier's RabbitMQ and payment/inventory
       // database URLs; it has never run under this tier (see its own brief).
       'test/integration/booking-confirmation.int-spec.ts',
+      'test/integration/booking-confirmation-service.int-spec.ts',
+      'test/integration/booking-flow-repository.int-spec.ts',
+      'test/integration/payment-succeeded-consumer.int-spec.ts',
     ],
     // Shared database cleanup requires sequential test files.
     fileParallelism: false,

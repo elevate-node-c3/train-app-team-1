@@ -6,17 +6,17 @@ import { TypeOrmUnitOfWork } from '@app/common/persistence/typeorm-unit-of-work.
 import { TypeOrmOutboxRepository } from '@app/messaging';
 import type { SettlementSnapshot } from '@app/contracts';
 
-import { BookingDraftEntity } from '../../draft/entities/booking-draft.entity.js';
-import { TicketEntity } from '../entities/ticket.entity.js';
-import { BookingFlowRepository } from '../booking-flow.repository.js';
-import type { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
-import { TicketIssuerService } from './ticket-issuer.service.js';
-import { BookingConfirmationService } from './booking-confirmation.service.js';
+import { BookingDraftEntity } from '../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
+import { TicketEntity } from '../../apps/booking/src/modules/flow/entities/ticket.entity.js';
+import { BookingFlowRepository } from '../../apps/booking/src/modules/flow/booking-flow.repository.js';
+import type { FlowGrpcClientsService } from '../../apps/booking/src/modules/flow/services/flow-grpc-clients.service.js';
+import { TicketIssuerService } from '../../apps/booking/src/modules/flow/services/ticket-issuer.service.js';
+import { BookingConfirmationService } from '../../apps/booking/src/modules/flow/services/booking-confirmation.service.js';
 import {
   bookingDataSource,
   closeBookingDataSource,
   truncateBooking,
-} from '../../../../../../test/integration/support/booking-database.js';
+} from './support/booking-database.js';
 
 const BOOKING = randomUUID();
 const OWNER = randomUUID();
