@@ -6,7 +6,11 @@ import {
   EVENTS_EXCHANGE,
   EventPublisherService,
   injectCorrelationId,
+  OutboxRelayService,
+  appendParams,
+  rowFrom,
 } from '@app/messaging';
+import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 
 const EVENT: EventEnvelope = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -92,12 +96,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('EventPublisherService mandatory hold publication', () => {
+describe('EventPublisherService mandatory lifecycle publication', () => {
   it.each([
     EVENT_TYPES.holdHeld,
     EVENT_TYPES.holdReleased,
     EVENT_TYPES.holdExpired,
     EVENT_TYPES.holdExtended,
+    EVENT_TYPES.paymentSucceeded,
+    EVENT_TYPES.bookingConfirmed,
+    EVENT_TYPES.bookingSeatsChanged,
+    EVENT_TYPES.bookingRefunded,
   ])(
     'requires routing and confirms for %s without declaring consumer queues',
     async (type) => {
@@ -144,18 +152,27 @@ describe('EventPublisherService mandatory hold publication', () => {
     await publication;
   });
 
-  it('rejects an unroutable hold even if the broker subsequently acknowledges it', async () => {
-    const h = harness();
-    const publication = h.publisher.publishConfirmed(EVENT);
-    const rejected = expect(publication).rejects.toThrow(
-      'AMQP mandatory return 312 NO_ROUTE',
-    );
-    await flush();
-    h.channel.returnMessage(0);
-    h.channel.confirm(0);
-    await rejected;
-    expect(h.channel.listenerCount('return')).toBe(0);
-  });
+  it.each([
+    EVENT_TYPES.holdExpired,
+    EVENT_TYPES.paymentSucceeded,
+    EVENT_TYPES.bookingConfirmed,
+    EVENT_TYPES.bookingSeatsChanged,
+    EVENT_TYPES.bookingRefunded,
+  ])(
+    'rejects unroutable %s even if the broker acknowledges it',
+    async (type) => {
+      const h = harness();
+      const publication = h.publisher.publishConfirmed({ ...EVENT, type });
+      const rejected = expect(publication).rejects.toThrow(
+        'AMQP mandatory return 312 NO_ROUTE',
+      );
+      await flush();
+      h.channel.returnMessage(0);
+      h.channel.confirm(0);
+      await rejected;
+      expect(h.channel.listenerCount('return')).toBe(0);
+    },
+  );
 
   it('correlates concurrent returns by message ID rather than rejecting other events', async () => {
     const h = harness();
@@ -181,6 +198,56 @@ describe('EventPublisherService mandatory hold publication', () => {
       }),
     });
     expect(h.channel.assertExchange).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    EVENT_TYPES.paymentSucceeded,
+    EVENT_TYPES.bookingConfirmed,
+    EVENT_TYPES.bookingSeatsChanged,
+    EVENT_TYPES.bookingRefunded,
+  ])('leaves unroutable %s pending for relay recovery', async (type) => {
+    const h = harness();
+    const event = { ...EVENT, type };
+    const row = rowFrom(appendParams(event));
+    let published = false;
+    const outbox = {
+      claimBatch: vi.fn(async () => (published ? [] : [row])),
+      recordFailure: vi.fn(async () => {}),
+      markPublishedBatch: vi.fn(async () => {
+        published = true;
+      }),
+    };
+    const relay = () =>
+      new OutboxRelayService(
+        {
+          withTransaction: async (
+            work: (ctx: { driver: string }) => Promise<unknown>,
+          ) => work({ driver: 'fake' }),
+        } as never,
+        outbox as never,
+        h.publisher,
+        {
+          run: async (work: () => Promise<unknown>) => work(),
+          set: vi.fn(),
+        } as never,
+        new SchemaReadinessGate(),
+      );
+    const first = relay().runOnce();
+    await flush();
+    h.channel.returnMessage(0);
+    h.channel.confirm(0);
+    await expect(first).resolves.toBe(0);
+    expect(outbox.recordFailure).toHaveBeenCalled();
+    expect(outbox.markPublishedBatch).not.toHaveBeenCalled();
+
+    // A later relay instance retries the same envelope after routing recovers.
+    const retry = relay().runOnce();
+    await flush();
+    expect(h.channel.pending[1].options.messageId).toBe(event.id);
+    expect(JSON.parse(h.channel.pending[1].body.toString())).toEqual(event);
+    h.channel.confirm(1);
+    await expect(retry).resolves.toBe(1);
+    expect(outbox.markPublishedBatch).toHaveBeenCalledTimes(1);
   });
 
   it('multiplexes 64 pending confirms without adding a listener per message', async () => {

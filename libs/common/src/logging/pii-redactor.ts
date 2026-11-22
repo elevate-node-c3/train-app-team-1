@@ -26,20 +26,11 @@ export function redactPii<T>(
         /(?<![0-9\u0660-\u0669])[0-9\u0660-\u0669]{14}(?![0-9\u0660-\u0669])/g,
         '[REDACTED]',
       )
+      .replace(/\*{10}[0-9]{4}|\b[a-f0-9]{64}\b/gi, '[REDACTED]')
+      .replace(/sk_(?:test|live)_[a-zA-Z0-9]+/g, '[REDACTED]')
+      .replace(/whsec_[a-zA-Z0-9]+/g, '[REDACTED]')
       .replace(
-        /\*{10}[0-9]{4}|\b[a-f0-9]{64}\b/gi,
-        '[REDACTED]',
-      )
-      .replace(
-        /sk_(?:test|live)_[a-zA-Z0-9]+/g,
-        '[REDACTED]',
-      )
-      .replace(
-        /whsec_[a-zA-Z0-9]+/g,
-        '[REDACTED]',
-      )
-      .replace(
-        /seti_[a-zA-Z0-9]+_secret_[a-zA-Z0-9]+/g,
+        /(?:seti|pi)_[a-zA-Z0-9]+_secret_[a-zA-Z0-9]+/g,
         '[REDACTED]',
       ) as unknown as T;
   }
