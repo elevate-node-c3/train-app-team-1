@@ -19,6 +19,24 @@ function defaultOf(key: string): unknown {
 }
 
 describe('Notification environment schema', () => {
+  it('validates the private identity recovery seam without a default credential', () => {
+    const env = { ...validCommonEnv, SMTP_HOST: 'mailpit', SMTP_PORT: '1025' };
+    expect(() =>
+      validateEnvOrThrow(notificationEnvSchema, {
+        ...env,
+        NOTIFICATION_IDENTITY_SERVICE_KEY: '',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateEnvOrThrow(notificationEnvSchema, {
+        ...env,
+        NOTIFICATION_IDENTITY_SERVICE_KEY: 'short',
+      }),
+    ).toThrow(/NOTIFICATION_IDENTITY_SERVICE_KEY/);
+    expect(defaultOf('IDENTITY_GRPC_URL')).toBe('identity:50051');
+    expect(defaultOf('NOTIFICATION_IDENTITY_SERVICE_KEY')).toBeUndefined();
+  });
+
   it('coerces SMTP settings and requires the host', () => {
     const validated = validateEnvOrThrow(
       notificationEnvSchema,

@@ -4,10 +4,6 @@ import {
   BOOKING_SEATS_CHANGED_VERSION,
   type EventEnvelope,
 } from '@app/contracts';
-import type {
-  ClaimEvent,
-  ProcessedEventStorePort,
-} from '@app/messaging/consumer/processed-event.port.js';
 import { SeatsChangedConsumer } from './seats-changed.consumer.js';
 
 const BOOKING = 'booking-1';
@@ -38,79 +34,63 @@ function seatsChanged(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   };
 }
 
-/** Mirrors EventConsumerService's claim-then-handle sequence, without AMQP. */
-class InMemoryProcessedEventStore implements ProcessedEventStorePort {
-  private readonly claimed = new Set<string>();
-
-  async claim(event: ClaimEvent): Promise<number | null> {
-    if (this.claimed.has(event.eventId)) return null;
-    this.claimed.add(event.eventId);
-    return 1;
-  }
-
-  async markHandled(): Promise<void> {}
-  async markSkipped(): Promise<void> {}
-  async markFailed(): Promise<void> {}
-}
-
 describe('SeatsChangedConsumer', () => {
   it('emails the traveller which seats they now have', async () => {
-    const travellers = {
-      findByAccountId: vi.fn().mockResolvedValue({ email: TRAVELLER_EMAIL }),
+    const recipients = {
+      emailFor: vi.fn().mockResolvedValue(TRAVELLER_EMAIL),
     };
     const sender = { send: vi.fn().mockResolvedValue(undefined) };
     const consumer = new SeatsChangedConsumer(
-      travellers as never,
+      recipients as never,
       sender as never,
     );
 
     const result = await consumer.handle(seatsChanged());
 
     expect(result).toEqual({ status: 'handled' });
+    expect(recipients.emailFor).toHaveBeenCalledWith(ACCOUNT);
     expect(sender.send).toHaveBeenCalledWith(
       expect.objectContaining({ to: TRAVELLER_EMAIL }),
     );
   });
 
-  it('skips when no address is on file, rather than failing the event', async () => {
-    const travellers = { findByAccountId: vi.fn().mockResolvedValue(null) };
+  it('keeps missing recipient data retryable rather than marking the event skipped', async () => {
+    const recipients = {
+      emailFor: vi
+        .fn()
+        .mockRejectedValue(new Error('Recipient not available yet')),
+    };
     const sender = { send: vi.fn() };
     const consumer = new SeatsChangedConsumer(
-      travellers as never,
+      recipients as never,
       sender as never,
     );
 
-    const result = await consumer.handle(seatsChanged());
-
-    expect(result).toEqual({
-      status: 'skipped',
-      skipReason: 'no_email_on_file',
-    });
+    await expect(consumer.handle(seatsChanged())).rejects.toThrow(
+      'Recipient not available yet',
+    );
     expect(sender.send).not.toHaveBeenCalled();
   });
 
-  it('handles the same event twice without sending twice', async () => {
-    const travellers = {
-      findByAccountId: vi.fn().mockResolvedValue({ email: TRAVELLER_EMAIL }),
+  it('propagates SMTP failure so a later delivery can retry the email', async () => {
+    const recipients = {
+      emailFor: vi.fn().mockResolvedValue(TRAVELLER_EMAIL),
     };
-    const sender = { send: vi.fn().mockResolvedValue(undefined) };
+    const sender = {
+      send: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('SMTP unavailable'))
+        .mockResolvedValue(undefined),
+    };
     const consumer = new SeatsChangedConsumer(
-      travellers as never,
+      recipients as never,
       sender as never,
     );
-    const store = new InMemoryProcessedEventStore();
     const envelope = seatsChanged({ id: 'evt_1' });
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const claimed = await store.claim({
-        eventId: envelope.id,
-        eventType: envelope.type,
-        redelivered: attempt > 0,
-        leaseSeconds: 60,
-      });
-      if (claimed !== null) await consumer.handle(envelope);
-    }
-
-    expect(sender.send).toHaveBeenCalledTimes(1);
+    await expect(consumer.handle(envelope)).rejects.toThrow('SMTP unavailable');
+    await expect(consumer.handle(envelope)).resolves.toEqual({
+      status: 'handled',
+    });
+    expect(sender.send).toHaveBeenCalledTimes(2);
   });
 });

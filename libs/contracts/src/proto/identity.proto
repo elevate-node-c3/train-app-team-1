@@ -20,6 +20,8 @@ service IdentityService {
   rpc DeletePassenger (DeletePassengerRequest) returns (DeletePassengerResponse);
   // Private Booking-to-Identity RPC; requires x-booking-identity-key metadata.
   rpc ResolveHoldPassengers (ResolveHoldPassengersRequest) returns (ResolveHoldPassengersResponse);
+  // Private Notification-to-Identity RPC; requires x-notification-identity-key.
+  rpc ResolveNotificationRecipient (ResolveNotificationRecipientRequest) returns (ResolveNotificationRecipientResponse);
 }
 
 message TokenPair {
@@ -239,4 +241,12 @@ message ResolvedHoldPassenger {
 
 message ResolveHoldPassengersResponse {
   repeated ResolvedHoldPassenger passengers = 1;
+}
+
+message ResolveNotificationRecipientRequest {
+  string accountId = 1;
+}
+
+message ResolveNotificationRecipientResponse {
+  string email = 1; // Empty when no authoritative recipient exists.
 }

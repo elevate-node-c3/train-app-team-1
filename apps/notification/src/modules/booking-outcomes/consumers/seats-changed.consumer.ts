@@ -5,7 +5,7 @@ import type {
   EventHandlerPort,
   EventHandlingResult,
 } from '@app/messaging/consumer/event-handler.port.js';
-import { TravellerProfileRepository } from '../../profile-completed/traveller-profile.repository.js';
+import { NotificationRecipientService } from '../notification-recipient.service.js';
 import { NodemailerEmailSender } from '../../verification-emails/email-sender.js';
 import { parseBookingSeatsChangedEvent } from '../booking-outcomes.parser.js';
 import { renderSeatsChangedEmail } from '../booking-outcome.template.js';
@@ -16,32 +16,24 @@ export class SeatsChangedConsumer implements EventHandlerPort {
   private readonly logger = new Logger(SeatsChangedConsumer.name);
 
   constructor(
-    private readonly travellers: TravellerProfileRepository,
+    private readonly recipients: NotificationRecipientService,
     private readonly emails: NodemailerEmailSender,
   ) {}
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {
     const payload = parseBookingSeatsChangedEvent(envelope);
-    const traveller = await this.travellers.findByAccountId(
-      payload.accountId,
-    );
-    if (!traveller?.email) {
-      this.logger.warn(
-        `No address on file for account ${payload.accountId}; skipping (event ${envelope.id})`,
-      );
-      return { status: 'skipped', skipReason: 'no_email_on_file' };
-    }
+    const email = await this.recipients.emailFor(payload.accountId);
 
     const content = renderSeatsChangedEmail(payload);
     await this.emails.send({
-      to: traveller.email,
+      to: email,
       subject: content.subject,
       text: content.text,
       html: content.html,
     });
 
     this.logger.log(
-      `Seats-changed email sent to ${maskEmail(traveller.email)} for booking ${payload.bookingReference} (event ${envelope.id})`,
+      `Seats-changed email sent to ${maskEmail(email)} for booking ${payload.bookingReference} (event ${envelope.id})`,
     );
     return { status: 'handled' };
   }

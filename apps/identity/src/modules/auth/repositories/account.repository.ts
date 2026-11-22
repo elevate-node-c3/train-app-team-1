@@ -54,6 +54,13 @@ export class AccountRepository {
       .findOne({ where: { id } });
   }
 
+  async findNotificationEmail(id: string): Promise<string | null> {
+    const account = await this.dataSource
+      .getRepository(AccountEntity)
+      .findOne({ where: { id }, select: { email: true } });
+    return account?.email ?? null;
+  }
+
   async findByEmailForUpdate(
     ctx: TransactionContext,
     email: string,

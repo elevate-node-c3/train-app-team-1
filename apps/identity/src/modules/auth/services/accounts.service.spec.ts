@@ -180,6 +180,7 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     findByEmail: async () => foundAccount,
     findById: async () => foundAccount,
+    findNotificationEmail: async () => foundAccount?.email ?? null,
     findByEmailForUpdate: async (
       received: TransactionContext,
       email: string,
@@ -378,6 +379,21 @@ async function authErrorOf(promise: Promise<unknown>): Promise<AuthError> {
 }
 
 describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
+  it('resolves a historical account email without registration replay', async () => {
+    const h = harness({ account: account('active', 'historic@example.com') });
+    await expect(
+      h.service.resolveNotificationRecipient('account-1'),
+    ).resolves.toEqual({ email: 'historic@example.com' });
+    expect(h.events()).toEqual([]);
+  });
+
+  it('returns an empty authoritative recipient for an unknown account', async () => {
+    const h = harness({ account: null });
+    await expect(
+      h.service.resolveNotificationRecipient('account-1'),
+    ).resolves.toEqual({ email: '' });
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

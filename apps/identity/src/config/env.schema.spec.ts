@@ -32,6 +32,27 @@ function defaultOf(key: string): unknown {
 }
 
 describe('Identity environment schema', () => {
+  it('keeps the private notification credential optional but rejects weak configured keys', () => {
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, {
+        ...validIdentityEnv,
+        NOTIFICATION_IDENTITY_SERVICE_KEY: '',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, {
+        ...validIdentityEnv,
+        NOTIFICATION_IDENTITY_SERVICE_KEY: 'short',
+      }),
+    ).toThrow(/NOTIFICATION_IDENTITY_SERVICE_KEY/);
+    expect(() =>
+      validateEnvOrThrow(identityEnvSchema, {
+        ...validIdentityEnv,
+        NOTIFICATION_IDENTITY_SERVICE_KEY: 'a'.repeat(32),
+      }),
+    ).not.toThrow();
+  });
+
   it('caps the verification code TTL at ten minutes', () => {
     expect(() =>
       validateEnvOrThrow(

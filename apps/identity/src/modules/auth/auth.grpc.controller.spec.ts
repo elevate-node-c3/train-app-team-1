@@ -38,7 +38,7 @@ describe('AuthGrpcController - Passengers', () => {
   };
 
   beforeEach(() => {
-    mockAccounts = {};
+    mockAccounts = { resolveNotificationRecipient: vi.fn() };
     mockSessions = {};
     mockPasswords = {};
     mockProfiles = {};
@@ -336,6 +336,117 @@ describe('AuthGrpcController - Passengers', () => {
       const payload = (error as RpcException).getError() as { code: number };
       expect(payload.code).toBe(grpc.status.INTERNAL);
       expect(JSON.stringify(payload)).not.toContain('Database connection');
+    });
+  });
+
+  describe('private ResolveNotificationRecipient RPC', () => {
+    const serviceKey = 'notification-identity-test-only-private-key';
+    const request = { accountId: '11111111-1111-4111-8111-111111111111' };
+
+    it('round-trips the private wire contract with only an account id and email', () => {
+      const definition = loadSync(getIdentityProtoPath(), { defaults: true })[
+        'train.identity.v1.IdentityService'
+      ] as grpc.ServiceDefinition;
+      const method = definition.ResolveNotificationRecipient;
+      expect(method.path).toBe(
+        '/train.identity.v1.IdentityService/ResolveNotificationRecipient',
+      );
+      expect(
+        method.requestDeserialize(method.requestSerialize(request)),
+      ).toEqual(request);
+      const response = { email: 'traveller@example.com' };
+      expect(
+        method.responseDeserialize(
+          method.responseSerialize({
+            ...response,
+            passwordHash: 'must-not-leave-identity',
+            nationalId: '28505150101235',
+          }),
+        ),
+      ).toEqual(response);
+      expect(
+        method.responseDeserialize(method.responseSerialize({ email: '' })),
+      ).toEqual({ email: '' });
+    });
+
+    it.each([
+      'missing-metadata',
+      'missing-key',
+      'wrong-key',
+      'duplicate-key',
+      'unconfigured',
+      'short-configuration',
+    ])('fails closed before looking up a recipient (%s)', async (mode) => {
+      vi.stubEnv(
+        'NOTIFICATION_IDENTITY_SERVICE_KEY',
+        mode === 'unconfigured'
+          ? undefined
+          : mode === 'short-configuration'
+            ? 'short'
+            : serviceKey,
+      );
+      const metadata = new grpc.Metadata();
+      if (mode !== 'missing-key')
+        metadata.set(
+          'x-notification-identity-key',
+          mode === 'wrong-key'
+            ? 'wrong'
+            : mode === 'short-configuration'
+              ? 'short'
+              : serviceKey,
+        );
+      if (mode === 'duplicate-key')
+        metadata.add('x-notification-identity-key', serviceKey);
+      await expect(
+        controller.resolveNotificationRecipient(
+          request,
+          mode === 'missing-metadata' ? undefined : metadata,
+        ),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(error).toBeInstanceOf(RpcException);
+        expect((error as RpcException).getError()).toMatchObject({
+          code: grpc.status.UNAUTHENTICATED,
+        });
+        return true;
+      });
+      expect(mockAccounts.resolveNotificationRecipient).not.toHaveBeenCalled();
+    });
+
+    it.each(['traveller@example.com', ''])(
+      'returns only the authoritative recipient (%j)',
+      async (email) => {
+        vi.stubEnv('NOTIFICATION_IDENTITY_SERVICE_KEY', serviceKey);
+        const metadata = new grpc.Metadata();
+        metadata.set('x-notification-identity-key', serviceKey);
+        vi.mocked(mockAccounts.resolveNotificationRecipient!).mockResolvedValue(
+          { email },
+        );
+        await expect(
+          controller.resolveNotificationRecipient(request, metadata),
+        ).resolves.toEqual({ email });
+        expect(mockAccounts.resolveNotificationRecipient).toHaveBeenCalledWith(
+          request.accountId,
+        );
+      },
+    );
+
+    it('sanitizes unexpected directory failures', async () => {
+      vi.stubEnv('NOTIFICATION_IDENTITY_SERVICE_KEY', serviceKey);
+      const metadata = new grpc.Metadata();
+      metadata.set('x-notification-identity-key', serviceKey);
+      vi.mocked(mockAccounts.resolveNotificationRecipient!).mockRejectedValue(
+        new Error(`private ${serviceKey} traveller@example.com`),
+      );
+      await expect(
+        controller.resolveNotificationRecipient(request, metadata),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect((error as RpcException).getError()).toEqual({
+          code: grpc.status.UNAVAILABLE,
+          details: JSON.stringify({ code: ErrorCode.SERVICE_UNAVAILABLE }),
+          message: ErrorCode.SERVICE_UNAVAILABLE,
+        });
+        return true;
+      });
     });
   });
 

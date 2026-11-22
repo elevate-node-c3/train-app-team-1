@@ -7,3 +7,9 @@ export function bookingIdentityServiceKey(
 ): string | undefined {
   return env.BOOKING_IDENTITY_SERVICE_KEY;
 }
+
+export function notificationIdentityServiceKey(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return env.NOTIFICATION_IDENTITY_SERVICE_KEY;
+}

@@ -42,6 +42,8 @@ const retryDelays = Joi.string()
   .messages({ 'any.custom': '{{#message}}' });
 
 export const notificationEnvSchema = commonEnvSchema.keys({
+  IDENTITY_GRPC_URL: Joi.string().empty('').default('identity:50051'),
+  NOTIFICATION_IDENTITY_SERVICE_KEY: Joi.string().empty('').min(32).optional(),
   SMTP_HOST: Joi.string().required().messages({
     'any.required': "Missing required environment variable 'SMTP_HOST'",
   }),
@@ -65,3 +67,7 @@ export const notificationEnvSchema = commonEnvSchema.keys({
     .min(1)
     .default(NOTIFICATION_DEFAULTS.claimLeaseSeconds),
 });
+
+export function notificationIdentityServiceKey(): string | undefined {
+  return process.env.NOTIFICATION_IDENTITY_SERVICE_KEY;
+}

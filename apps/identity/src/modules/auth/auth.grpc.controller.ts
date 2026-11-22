@@ -9,6 +9,7 @@ import {
   type ForgotPasswordResponseDto,
   type PassengerDto,
   type ResolveHoldPassengersResponse,
+  type ResolveNotificationRecipientResponse,
   type ResendVerificationResponseDto,
   type ResetPasswordResponseDto,
   type SignInResponseDto,
@@ -36,13 +37,17 @@ import {
   ResendVerificationRequestBodyDto,
   ResetPasswordRequestBodyDto,
   ResolveHoldPassengersRequestBodyDto,
+  ResolveNotificationRecipientRequestBodyDto,
   SignInRequestBodyDto,
   SignOutRequestBodyDto,
   SignUpRequestBodyDto,
   UpdatePassengerRequestBodyDto,
   VerifyEmailRequestBodyDto,
 } from './dto/identity-request.dto.js';
-import { bookingIdentityServiceKey } from '../../config/service-keys.js';
+import {
+  bookingIdentityServiceKey,
+  notificationIdentityServiceKey,
+} from '../../config/service-keys.js';
 import { AuthError } from './auth-error.js';
 import { AccountsService } from './services/accounts.service.js';
 import { PasswordsService } from './services/passwords.service.js';
@@ -343,10 +348,7 @@ export class AuthGrpcController {
       const keys = metadata?.get('x-booking-identity-key');
       if (
         keys?.length !== 1 ||
-        !matchesServiceCredential(
-          keys[0],
-          bookingIdentityServiceKey(),
-        )
+        !matchesServiceCredential(keys[0], bookingIdentityServiceKey())
       ) {
         throw new AuthError(ErrorCode.UNAUTHORIZED);
       }
@@ -358,6 +360,29 @@ export class AuthGrpcController {
             ? error.code
             : ErrorCode.SERVICE_UNAVAILABLE,
         );
+      }
+    });
+  }
+
+  @GrpcMethod(IDENTITY_SERVICE_NAME, 'ResolveNotificationRecipient')
+  async resolveNotificationRecipient(
+    request: ResolveNotificationRecipientRequestBodyDto,
+    metadata?: grpc.Metadata,
+  ): Promise<ResolveNotificationRecipientResponse> {
+    return this.run(async () => {
+      const keys = metadata?.get('x-notification-identity-key');
+      if (
+        keys?.length !== 1 ||
+        !matchesServiceCredential(keys[0], notificationIdentityServiceKey())
+      ) {
+        throw new AuthError(ErrorCode.UNAUTHORIZED);
+      }
+      try {
+        return await this.accounts.resolveNotificationRecipient(
+          request.accountId,
+        );
+      } catch {
+        throw new AuthError(ErrorCode.SERVICE_UNAVAILABLE);
       }
     });
   }
