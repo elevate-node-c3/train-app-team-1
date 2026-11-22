@@ -52,6 +52,7 @@ export default defineConfig({
       'test/integration/hold-*.int-spec.ts',
       'test/integration/booking-hold.int-spec.ts',
       'test/integration/booking-confirmation.int-spec.ts',
+      'test/integration/booking-confirmation-recovery.int-spec.ts',
       'test/integration/booking-confirmation-service.int-spec.ts',
       'test/integration/booking-flow-repository.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
