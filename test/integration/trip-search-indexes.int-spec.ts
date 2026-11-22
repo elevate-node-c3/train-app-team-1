@@ -12,8 +12,9 @@ import {
 
 /**
  * The small fixture favors sequential scans, so disable them to check index
- * coverage. This proves the indexes can serve the predicates, not that Postgres
- * will choose them on production data.
+ * coverage. The station-only index is also excluded for the composite probes
+ * inside a rolled-back transaction. This proves the indexes can serve the
+ * predicates, not that Postgres will choose them on production data.
  */
 describe('the trip search indexes', () => {
   let source: DataSource;
@@ -30,15 +31,22 @@ describe('the trip search indexes', () => {
 
   /**
    * SET LOCAL and EXPLAIN must share one connection and transaction;
-   * pooled DataSource.query calls may not. Rollback keeps the setting local.
+   * pooled DataSource.query calls may not. Rollback restores settings and indexes.
    */
-  async function planFor(sql: string, parameters: unknown[]): Promise<string> {
+  async function planFor(
+    sql: string,
+    parameters: unknown[],
+    excludeStationOnlyIndex = false,
+  ): Promise<string> {
     const runner = source.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
 
     try {
       await runner.query('SET LOCAL enable_seqscan = off');
+      if (excludeStationOnlyIndex) {
+        await runner.query('DROP INDEX "idx_trip_stop_station"');
+      }
       const rows: Record<string, string>[] = await runner.query(
         `EXPLAIN ${sql}`,
         parameters,
@@ -156,6 +164,7 @@ describe('the trip search indexes', () => {
         WHERE station_id = $1 AND departure_at >= $2 AND departure_at < $3
           AND departure_at IS NOT NULL`,
       [IDS.stations.alexandria, startUtc, endUtc],
+      true,
     );
 
     expect(plan).toContain('idx_trip_stop_station_departure');
@@ -166,6 +175,7 @@ describe('the trip search indexes', () => {
       `SELECT position, arrival_at FROM trip_stop
         WHERE trip_id = $1 AND station_id = $2`,
       [IDS.trips.mainLine, IDS.stations.ramsis],
+      true,
     );
 
     expect(plan).toContain('idx_trip_stop_trip_station');
@@ -200,5 +210,12 @@ describe('the trip search indexes', () => {
     );
 
     expect(plan).toContain('uq_fare_effective_version');
+  });
+
+  it('restores the competing station index after the plan probes', async () => {
+    const [row]: { name: string | null }[] = await source.query(
+      "SELECT to_regclass('public.idx_trip_stop_station')::text AS name",
+    );
+    expect(row.name).toBe('idx_trip_stop_station');
   });
 });
