@@ -4,7 +4,7 @@ import type Stripe from 'stripe';
 import { StripeWebhookController } from './controllers/stripe-webhook.controller.js';
 import type { SavedCardsService } from './services/saved-cards.service.js';
 import type { StripeService } from './services/stripe.service.js';
-import type { ChargeWebhookService } from '../modules/charges/services/charge-webhook.service.js';
+import type { ChargeWebhookService } from '../charges/services/charge-webhook.service.js';
 
 describe('StripeWebhookController', () => {
   const event = {

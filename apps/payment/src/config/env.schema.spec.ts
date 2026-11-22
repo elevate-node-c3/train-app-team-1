@@ -36,11 +36,7 @@ describe('paymentEnvSchema', () => {
   });
 
   it('refuses boot when no Stripe publishable key is configured', () => {
-    const {
-      STRIPE_PUBLISHABLE_KEY: _unused,
-      PUBLISHABLE_KEY: _legacy,
-      ...invalid
-    } = validBase;
+    const { STRIPE_PUBLISHABLE_KEY: _unused, ...invalid } = validBase;
     expect(() =>
       validateEnvOrThrow(paymentEnvSchema, invalid, 'payment'),
     ).toThrowError(/STRIPE_PUBLISHABLE_KEY/);

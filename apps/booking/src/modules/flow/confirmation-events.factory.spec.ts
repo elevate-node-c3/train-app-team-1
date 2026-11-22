@@ -41,12 +41,19 @@ describe('confirmation-events.factory', () => {
       occurredAt: OCCURRED_AT,
       payload: {
         bookingReference: 'booking-1',
+        accountId: 'account-1',
         seats: [
-          { passengerRef: 'p1', tripId: 'trip-1', coachNumber: 2, seatNumber: '3B' },
+          {
+            passengerRef: 'p1',
+            tripId: 'trip-1',
+            coachNumber: 2,
+            seatNumber: '3B',
+          },
         ],
       },
     });
     expect(event.type).toBe('booking.seats-changed');
+    expect(event.payload.accountId).toBe('account-1');
     expect(event.payload.seats[0].seatNumber).toBe('3B');
   });
 
@@ -57,11 +64,13 @@ describe('confirmation-events.factory', () => {
       occurredAt: OCCURRED_AT,
       payload: {
         bookingReference: 'booking-1',
+        accountId: 'account-1',
         amountPiastres: 6955,
         reasonKey: 'REASON_NO_SEATS_AFTER_LATE_PAYMENT',
       },
     });
     expect(event.type).toBe('booking.refunded');
+    expect(event.payload.accountId).toBe('account-1');
     expect(event.payload.reasonKey).toBe('REASON_NO_SEATS_AFTER_LATE_PAYMENT');
   });
 });

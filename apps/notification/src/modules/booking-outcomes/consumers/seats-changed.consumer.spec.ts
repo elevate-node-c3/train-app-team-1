@@ -4,16 +4,17 @@ import {
   BOOKING_SEATS_CHANGED_VERSION,
   type EventEnvelope,
 } from '@app/contracts';
-import type { ProcessedEventStorePort } from '@app/messaging/consumer/processed-event.port.js';
+import type {
+  ClaimEvent,
+  ProcessedEventStorePort,
+} from '@app/messaging/consumer/processed-event.port.js';
 import { SeatsChangedConsumer } from './seats-changed.consumer.js';
 
 const BOOKING = 'booking-1';
 const ACCOUNT = 'account-1';
 const TRAVELLER_EMAIL = 'traveller@example.com';
 
-function seatsChanged(
-  overrides: Partial<EventEnvelope> = {},
-): EventEnvelope {
+function seatsChanged(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {
     id: 'evt_1',
     type: BOOKING_SEATS_CHANGED_EVENT_TYPE,
@@ -24,7 +25,14 @@ function seatsChanged(
     payload: {
       bookingReference: BOOKING,
       accountId: ACCOUNT,
-      seats: [{ passengerRef: 'p1', tripId: 'trip-1', coachNumber: 7, seatNumber: '12' }],
+      seats: [
+        {
+          passengerRef: 'p1',
+          tripId: 'trip-1',
+          coachNumber: 7,
+          seatNumber: '12',
+        },
+      ],
     },
     ...overrides,
   };
@@ -34,7 +42,7 @@ function seatsChanged(
 class InMemoryProcessedEventStore implements ProcessedEventStorePort {
   private readonly claimed = new Set<string>();
 
-  async claim(event: { eventId: string }): Promise<number | null> {
+  async claim(event: ClaimEvent): Promise<number | null> {
     if (this.claimed.has(event.eventId)) return null;
     this.claimed.add(event.eventId);
     return 1;
@@ -74,7 +82,10 @@ describe('SeatsChangedConsumer', () => {
 
     const result = await consumer.handle(seatsChanged());
 
-    expect(result).toEqual({ status: 'skipped', skipReason: 'no_email_on_file' });
+    expect(result).toEqual({
+      status: 'skipped',
+      skipReason: 'no_email_on_file',
+    });
     expect(sender.send).not.toHaveBeenCalled();
   });
 
