@@ -1,7 +1,7 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('payment_charge')
-/** Persisted idempotency record for the payment contract test double. */
+/** Durable charge state, remote-intent correlation, and recovery claims. */
 export class PaymentChargeEntity {
   @PrimaryColumn('uuid')
   id!: string;
@@ -27,9 +27,54 @@ export class PaymentChargeEntity {
   @Column({ name: 'card_last4', type: 'varchar', length: 4, nullable: true })
   cardLast4?: string | null;
 
-  @Column({ name: 'stripe_payment_method_id', type: 'varchar', length: 128, nullable: true })
+  @Column({
+    name: 'stripe_payment_method_id',
+    type: 'varchar',
+    length: 128,
+    nullable: true,
+  })
   stripePaymentMethodId?: string | null;
 
-  @Column({ name: 'stripe_payment_intent_id', type: 'varchar', length: 128, nullable: true })
+  @Column({
+    name: 'stripe_payment_intent_id',
+    type: 'varchar',
+    length: 128,
+    nullable: true,
+  })
   stripePaymentIntentId?: string | null;
+
+  @Column({
+    name: 'intent_creation_started_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  intentCreationStartedAt?: Date | null;
+
+  @Column({ name: 'intent_creation_claim', type: 'uuid', nullable: true })
+  intentCreationClaim?: string | null;
+
+  @Column({
+    name: 'intent_creation_lease_until',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  intentCreationLeaseUntil?: Date | null;
+
+  @Column({ name: 'intent_creation_last_error', type: 'text', nullable: true })
+  intentCreationLastError?: string | null;
+
+  @Column({
+    name: 'stripe_customer_id',
+    type: 'varchar',
+    length: 128,
+    nullable: true,
+  })
+  stripeCustomerId?: string | null;
+
+  @Column({
+    name: 'cancellation_requested_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  cancellationRequestedAt?: Date | null;
 }

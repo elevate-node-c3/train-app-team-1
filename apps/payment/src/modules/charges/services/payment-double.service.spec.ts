@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { ErrorCode } from '@app/contracts';
 import type { PaymentIntentService } from './payment-intent.service.js';
 import { PaymentDoubleService } from './payment-double.service.js';
 import type { PaymentChargeRepository } from '../repositories/payment-charge.repository.js';
@@ -17,12 +16,16 @@ describe('PaymentDoubleService', () => {
     markStartedSucceeded: Mock<PaymentChargeRepository['markStartedSucceeded']>;
     cancelStarted: Mock<PaymentChargeRepository['cancelStarted']>;
     findStatus: Mock<PaymentChargeRepository['findStatus']>;
+    findByReference: Mock<PaymentChargeRepository['findByReference']>;
   };
   let cards: {
     findOwned: Mock<ChargeCardRepository['findOwned']>;
     markUsed: Mock<ChargeCardRepository['markUsed']>;
   };
-  let intents: { startFor: Mock<PaymentIntentService['startFor']> };
+  let intents: {
+    startFor: Mock<PaymentIntentService['startFor']>;
+    cancelFor: Mock<PaymentIntentService['cancelFor']>;
+  };
   let payment: PaymentDoubleService;
   let savedCards: Array<
     ChargeCard & {
@@ -38,6 +41,13 @@ describe('PaymentDoubleService', () => {
     savedCards = [];
     savedCharge = undefined;
     charges = {
+      findByReference: vi.fn<PaymentChargeRepository['findByReference']>(
+        async (id, bookingReference) =>
+          savedCharge?.id === id &&
+          savedCharge.bookingReference === bookingReference
+            ? { ...savedCharge }
+            : undefined,
+      ),
       findByBookingOrKey: vi.fn<PaymentChargeRepository['findByBookingOrKey']>(
         async (bookingReference, idempotencyKey) =>
           savedCharge &&
@@ -103,6 +113,11 @@ describe('PaymentDoubleService', () => {
         .mockResolvedValue(undefined),
     };
     intents = {
+      cancelFor: vi.fn<PaymentIntentService['cancelFor']>(async (charge) => {
+        if (charge.status === 'succeeded') return 'ALREADY_SUCCEEDED';
+        await charges.cancelStarted(charge.id, charge.bookingReference);
+        return 'CANCELLED';
+      }),
       startFor: vi.fn<PaymentIntentService['startFor']>().mockResolvedValue({
         paymentIntentId: 'pi_new',
         clientSecret: 'pi_new_secret',
@@ -130,8 +145,8 @@ describe('PaymentDoubleService', () => {
 
     expect(second).toEqual(first);
     expect(first.paymentReference).toBe('00000000-0000-4000-8000-000000000001');
-    expect(charges.createStarted).toHaveBeenCalledTimes(2);
-    expect(charges.findByBookingOrKey).toHaveBeenCalledTimes(2);
+    expect(charges.createStarted).toHaveBeenCalledTimes(1);
+    expect(charges.findByBookingOrKey).toHaveBeenCalledTimes(3);
     expect(charges.findByBookingOrKey).toHaveBeenCalledWith(
       startRequest.bookingReference,
       startRequest.idempotencyKey,
@@ -154,23 +169,12 @@ describe('PaymentDoubleService', () => {
       charge.paymentReference,
       startRequest.bookingReference,
     );
-    expect(charges.findStatus).toHaveBeenCalledWith(
-      charge.paymentReference,
-      startRequest.bookingReference,
-    );
+    expect(intents.cancelFor).toHaveBeenCalledTimes(2);
   });
 
   it('reports an already-succeeded charge rather than cancelling it', async () => {
-    vi.stubEnv(
-      'PAYMENT_DOUBLE_SUCCEEDED_BOOKINGS',
-      startRequest.bookingReference,
-    );
-    payment = new PaymentDoubleService(
-      charges as unknown as PaymentChargeRepository,
-      cards as unknown as ChargeCardRepository,
-      intents as unknown as PaymentIntentService,
-    );
     const charge = await payment.start(startRequest);
+    savedCharge!.status = 'succeeded';
 
     expect(
       await payment.cancel({
@@ -179,10 +183,41 @@ describe('PaymentDoubleService', () => {
         idempotencyKey: 'booking:test:cancel',
       }),
     ).toEqual({ status: 'ALREADY_SUCCEEDED' });
-    expect(charges.markStartedSucceeded).toHaveBeenCalledWith(
-      charge.paymentReference,
-    );
+    expect(charges.markStartedSucceeded).not.toHaveBeenCalled();
     expect(savedCharge?.status).toBe('succeeded');
+  });
+
+  it('does not let the old test-double environment forge success', async () => {
+    vi.stubEnv(
+      'PAYMENT_DOUBLE_SUCCEEDED_BOOKINGS',
+      startRequest.bookingReference,
+    );
+    expect((await payment.start(startRequest)).status).toBe('STARTED');
+    expect(charges.markStartedSucceeded).not.toHaveBeenCalled();
+    expect(savedCharge?.status).toBe('started');
+  });
+
+  it.each(['cancelled', 'refunded', 'succeeded'] as const)(
+    'replays %s without exposing a secret or starting an intent',
+    async (status) => {
+      await payment.start(startRequest);
+      savedCharge!.status = status;
+      intents.startFor.mockClear();
+      expect(await payment.start(startRequest)).toMatchObject({
+        status: status.toUpperCase(),
+        clientSecret: '',
+      });
+      expect(intents.startFor).not.toHaveBeenCalled();
+    },
+  );
+
+  it('suppresses the secret while cancellation is durable but not yet complete', async () => {
+    await payment.start(startRequest);
+    savedCharge!.cancellationRequestedAt = new Date();
+    expect(await payment.start(startRequest)).toMatchObject({
+      status: 'STARTED',
+      clientSecret: '',
+    });
   });
 
   it('charges only an owned, active saved card and snapshots its payment details', async () => {
@@ -379,7 +414,9 @@ describe('PaymentDoubleService.refund', () => {
       refundSucceeded: vi.fn<PaymentChargeRepository['refundSucceeded']>(
         async (id) => {
           const charge = charges.find((c) => c.id === id);
-          if (charge?.status === 'succeeded') charge.status = 'refunded';
+          if (charge?.status !== 'succeeded') return false;
+          charge.status = 'refunded';
+          return true;
         },
       ),
     };
@@ -421,7 +458,26 @@ describe('PaymentDoubleService.refund', () => {
   it('refuses to refund a charge that never succeeded', async () => {
     await expect(
       service.refund(refundRequest({ bookingReference: STARTED_ONLY })),
-    ).rejects.toMatchObject({ code: ErrorCode.CONFLICT });
+    ).resolves.toEqual({
+      status: 'NOT_REFUNDABLE',
+      refundReference: '',
+      amountPiastres: 0,
+    });
     expect(repository.refundSucceeded).not.toHaveBeenCalled();
+  });
+
+  it('reports a concurrent winner as already refunded and returns the whole amount', async () => {
+    const results = await Promise.all([
+      service.refund(refundRequest()),
+      service.refund(refundRequest()),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([
+      'ALREADY_REFUNDED',
+      'REFUNDED',
+    ]);
+    expect(results.every((result) => result.amountPiastres === 6955)).toBe(
+      true,
+    );
+    expect(results[0].refundReference).toBe(results[1].refundReference);
   });
 });

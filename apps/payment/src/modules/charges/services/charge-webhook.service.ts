@@ -5,6 +5,7 @@ import { OUTBOX, type OutboxPort } from '@app/messaging';
 import {
   UNIT_OF_WORK,
   type UnitOfWorkPort,
+  type TransactionContext,
 } from '@app/common/persistence/unit-of-work.port.js';
 import { buildPaymentSucceeded } from '../payment-events.factory.js';
 import { PaymentChargeRepository } from '../repositories/payment-charge.repository.js';
@@ -13,6 +14,8 @@ import type {
   ChargeIntentPayload,
   ChargeWebhookResult,
 } from '../types/stripe-event.types.js';
+import type { StripeEventRecord } from '../types/stripe-event.types.js';
+import type { PaymentIntentSnapshot } from '../types/payment-intent.types.js';
 
 /** Only charge events move a booking; setup intents stay the saved-cards' concern. */
 const CHARGE_EVENT_PREFIX = 'payment_intent.';
@@ -32,84 +35,166 @@ export class ChargeWebhookService {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
   ) {}
 
+  async recoveryInfo(): Promise<{
+    pendingStripeEvents: number;
+    rejectedStripeEvents: number;
+    intentRecoveryProblems: number;
+  }> {
+    const [events, intentRecoveryProblems] = await Promise.all([
+      this.events.recoveryCounts(),
+      this.charges.countRecoveryProblems(),
+    ]);
+    return { ...events, intentRecoveryProblems };
+  }
+
   async record(event: Stripe.Event): Promise<ChargeWebhookResult> {
     if (!event.type.startsWith(CHARGE_EVENT_PREFIX)) {
-      return 'duplicate';
+      return 'ignored';
     }
 
+    const payload = { ...event.data.object } as Record<string, unknown>;
+    delete payload.client_secret;
     const inserted = await this.events.record({
       id: event.id,
       type: event.type,
       objectId: (event.data.object as { id: string }).id,
-      payload: event.data.object,
+      payload,
     });
 
     return inserted ? 'recorded' : 'duplicate';
   }
 
+  /** A successful authenticated Stripe retrieve is also recoverable evidence. */
+  async recordVerifiedIntent(intent: PaymentIntentSnapshot): Promise<void> {
+    if (intent.status !== 'succeeded') return;
+    await this.events.record({
+      id: `reconciled:${intent.id}:succeeded`,
+      type: 'payment_intent.succeeded',
+      objectId: intent.id,
+      payload: {
+        id: intent.id,
+        status: intent.status,
+        amount: intent.amount,
+        amount_received: intent.amountReceived,
+        currency: intent.currency,
+        metadata: intent.metadata,
+      },
+    });
+  }
+
   /** Settles every unhandled charge event, one transaction per confirmation. */
   async processPending(limit = 50): Promise<number> {
-    const events = await this.events.findPending(limit);
-
     let settled = 0;
-    for (const event of events) {
-      const charge = await this.charges.findByPaymentIntentId(event.objectId);
-
-      if (event.type === 'payment_intent.succeeded') {
-        const intent = (event.payload ?? {}) as ChargeIntentPayload;
-        const amountPiastres = Number(intent.amount ?? 0);
-        const currency = String(intent.currency ?? '');
-
-        if (
-          !charge ||
-          amountPiastres !== charge.amountPiastres ||
-          currency.toLowerCase() !== charge.currency.toLowerCase()
-        ) {
-          // Stripe reported an amount that is not the locked total: an alarm,
-          // never a confirmation. Nothing is published and the charge is left alone.
-          await this.events.markRejected(
-            event.id,
-            `amount ${amountPiastres} does not match the locked ${charge?.amountPiastres ?? 0} piastres`,
-          );
-          this.logger.error(
-            `Stripe amount ${amountPiastres} does not match the locked total for ${event.objectId}`,
-          );
-          settled += 1;
-          continue;
-        }
-
-        await this.unitOfWork.withTransaction(async (ctx) => {
-          await this.charges.markSucceeded(charge.id, ctx);
-          await this.outbox.append(
-            ctx,
-            buildPaymentSucceeded({
-              eventId: randomUUID(),
-              correlationId: event.id,
-              occurredAt: new Date(),
-              payload: {
-                bookingReference: charge.bookingReference,
-                paymentReference: charge.id,
-                amountPiastres: charge.amountPiastres,
-                currency: charge.currency,
-                stripeEventId: event.id,
-              },
-            }),
-          );
-          await this.events.markProcessed(event.id, ctx);
+    for (let index = 0; index < limit; index += 1) {
+      let claimed: StripeEventRecord | undefined;
+      try {
+        const result = await this.unitOfWork.withTransaction(async (ctx) => {
+          claimed = await this.events.claimPending(ctx);
+          if (!claimed) return undefined;
+          return this.process(claimed, ctx);
         });
-
-        settled += 1;
-        continue;
-      }
-
-      if (event.type === 'payment_intent.failed') {
-        // Forward only: a late failure for an earlier attempt never overwrites a
-        // recorded success, and a succeeded charge is never moved backwards.
-        await this.events.markProcessed(event.id);
-        settled += 1;
+        if (result === undefined) break;
+        if (result) settled += 1;
+      } catch (error: unknown) {
+        if (!claimed) throw error;
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Stripe event processing failed';
+        await this.events.retry(claimed.id, message);
+        this.logger.error(
+          `Stripe inbox event ${claimed.id} will retry: ${message}`,
+        );
       }
     }
-
     return settled;
+  }
+
+  private async process(
+    event: StripeEventRecord,
+    ctx: TransactionContext,
+  ): Promise<boolean> {
+    // payment_failed is an attempt outcome, not a backwards charge transition.
+    // created/processing/canceled and other irrelevant events must also drain.
+    if (event.type !== 'payment_intent.succeeded') {
+      await this.events.markProcessed(event.id, ctx);
+      return true;
+    }
+
+    const intent = (event.payload ?? {}) as ChargeIntentPayload;
+    let charge = await this.charges.findByPaymentIntentId(event.objectId, ctx);
+    if (!charge) {
+      const { bookingReference, paymentReference } = intent.metadata ?? {};
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (
+        bookingReference &&
+        paymentReference &&
+        uuid.test(bookingReference) &&
+        uuid.test(paymentReference)
+      ) {
+        const correlated = await this.charges.findByReference(
+          paymentReference,
+          bookingReference,
+          ctx,
+        );
+        if (
+          correlated?.intentCreationStartedAt &&
+          intent.amount === correlated.amountPiastres &&
+          intent.currency?.toLowerCase() ===
+            correlated.currency.toLowerCase() &&
+          (await this.charges.bindPaymentIntent(
+            correlated,
+            event.objectId,
+            ctx,
+          ))
+        ) {
+          charge = correlated;
+        }
+      }
+    }
+    if (!charge) {
+      await this.events.retry(
+        event.id,
+        `No durable charge mapping for ${event.objectId}; reconciliation required`,
+        ctx,
+      );
+      this.logger.error(
+        `Unmapped verified Stripe success ${event.objectId} remains recoverable`,
+      );
+      return false;
+    }
+
+    if (
+      intent.status !== 'succeeded' ||
+      intent.amount !== charge.amountPiastres ||
+      intent.amount_received !== charge.amountPiastres ||
+      intent.currency?.toLowerCase() !== charge.currency.toLowerCase()
+    ) {
+      const message = `Stripe ${event.objectId}: requested ${intent.amount}, received ${intent.amount_received} ${intent.currency}; locked ${charge.amountPiastres} ${charge.currency}`;
+      await this.events.markRejected(event.id, message, ctx);
+      this.logger.error(`ALERT: ${message}`);
+      return true;
+    }
+
+    if (await this.charges.markSucceeded(charge.id, ctx)) {
+      await this.outbox.append(
+        ctx,
+        buildPaymentSucceeded({
+          eventId: randomUUID(),
+          correlationId: event.id,
+          occurredAt: new Date(),
+          payload: {
+            bookingReference: charge.bookingReference,
+            paymentReference: charge.id,
+            amountPiastres: charge.amountPiastres,
+            currency: charge.currency,
+            stripeEventId: event.id,
+          },
+        }),
+      );
+    }
+    await this.events.markProcessed(event.id, ctx);
+    return true;
   }
 }

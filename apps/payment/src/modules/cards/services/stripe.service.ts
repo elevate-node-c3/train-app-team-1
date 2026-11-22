@@ -5,6 +5,7 @@ import { v4 as uuid } from 'uuid';
 import { DataSource } from 'typeorm';
 import { ErrorCode } from '@app/contracts';
 import { PaymentError } from '../../charges/payment-error.js';
+import type { PaymentIntentSnapshot } from '../../charges/types/payment-intent.types.js';
 import {
   stripeSettingsFromEnv,
   type StripeSettings,
@@ -43,6 +44,8 @@ export class StripeService {
       }
       this.stripe = new Stripe(this.settings.secretKey, {
         apiVersion: '2026-11-18.endive',
+        timeout: TIMEOUT_MS,
+        maxNetworkRetries: 1,
       });
     }
     return this.stripe;
@@ -193,29 +196,32 @@ export class StripeService {
   }
 
   /**
-   * One PaymentIntent per booking, keyed by the booking-derived idempotency
-   * key, so a retry after a decline or a restart creates (or retrieves) the
-   * same intent instead of a second charge.
+   * Replay a creation request using the booking-derived key. The durable
+   * PaymentIntentService owns recovery once Stripe's key may have expired.
    */
   async createOrRetrievePaymentIntent(input: {
     bookingReference: string;
+    paymentReference: string;
     amountPiastres: number;
     currency: string;
     customerId: string;
     paymentMethodId: string;
     idempotencyKey: string;
-  }): Promise<{
-    id: string;
-    clientSecret: string;
-    status: string;
-    amountReceived: number | null;
-  }> {
+  }): Promise<PaymentIntentSnapshot> {
     const intent = await this.executeWithBreaker(async () => {
       const created = await this.stripeClient.paymentIntents.create(
         {
           amount: input.amountPiastres,
           currency: input.currency.toLowerCase(),
-          customer: input.customerId,
+          ...(input.customerId ? { customer: input.customerId } : {}),
+          metadata: {
+            bookingReference: input.bookingReference,
+            paymentReference: input.paymentReference,
+          },
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: 'never',
+          },
           ...(input.paymentMethodId
             ? { payment_method: input.paymentMethodId }
             : {}),
@@ -225,37 +231,61 @@ export class StripeService {
       return created;
     });
 
-    if (!intent.client_secret) {
-      throw new PaymentError(ErrorCode.DEPENDENCY_UNAVAILABLE, 30);
-    }
-
-    return {
-      id: intent.id,
-      clientSecret: intent.client_secret,
-      status: intent.status ?? 'requires_payment_method',
-      amountReceived: intent.amount_received ?? null,
-    };
+    return this.paymentIntentSnapshot(intent);
   }
 
-  async retrievePaymentIntent(intentId: string): Promise<{
-    id: string;
-    clientSecret: string;
-    status: string;
-    amountReceived: number | null;
-  }> {
-    const intent = await this.executeWithBreaker(async () =>
-      await this.stripeClient.paymentIntents.retrieve(intentId),
+  async retrievePaymentIntent(
+    intentId: string,
+  ): Promise<PaymentIntentSnapshot> {
+    const intent = await this.executeWithBreaker(
+      async () => await this.stripeClient.paymentIntents.retrieve(intentId),
     );
 
-    if (!intent.client_secret) {
-      throw new PaymentError(ErrorCode.DEPENDENCY_UNAVAILABLE, 30);
-    }
+    return this.paymentIntentSnapshot(intent);
+  }
 
+  async findPaymentIntentsForBooking(
+    bookingReference: string,
+  ): Promise<PaymentIntentSnapshot[]> {
+    const result = await this.executeWithBreaker(() =>
+      this.stripeClient.paymentIntents.search({
+        query: `metadata['bookingReference']:'${bookingReference}'`,
+        limit: 2,
+      }),
+    );
+    return result.data.map((intent) => this.paymentIntentSnapshot(intent));
+  }
+
+  async cancelPaymentIntent(
+    intentId: string,
+    bookingReference: string,
+  ): Promise<PaymentIntentSnapshot> {
+    const intent = await this.executeWithBreaker(() =>
+      this.stripeClient.paymentIntents.cancel(
+        intentId,
+        {},
+        { idempotencyKey: `booking:${bookingReference}:cancel` },
+      ),
+    );
+    return this.paymentIntentSnapshot(intent);
+  }
+
+  private paymentIntentSnapshot(
+    intent: Stripe.PaymentIntent,
+  ): PaymentIntentSnapshot {
+    const active = [
+      'requires_payment_method',
+      'requires_confirmation',
+      'requires_action',
+    ].includes(intent.status);
     return {
       id: intent.id,
-      clientSecret: intent.client_secret,
-      status: intent.status ?? 'requires_payment_method',
-      amountReceived: intent.amount_received ?? null,
+      clientSecret: active ? (intent.client_secret ?? '') : '',
+      status: intent.status,
+      amount: intent.amount,
+      currency: intent.currency,
+      amountReceived: intent.amount_received,
+      metadata: intent.metadata ?? {},
     };
   }
 

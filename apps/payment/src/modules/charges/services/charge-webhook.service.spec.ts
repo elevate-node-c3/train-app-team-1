@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { Logger } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type Stripe from 'stripe';
 import { ChargeWebhookService } from './charge-webhook.service.js';
 import type {
@@ -13,330 +12,306 @@ import type { Charge } from '../types/charge.types.js';
 import type { StripeEventRecord } from '../types/stripe-event.types.js';
 
 const BOOKING = '22222222-2222-4222-8222-222222222222';
-
-interface PendingStripeEvent extends StripeEventRecord {
-  processedAt: string | null;
-  lastError: string | null;
-}
-
-function succeededEvent(
-  id: string,
-  objectId: string,
-  amountPiastres = 6955,
-  currency = 'egp',
-): Stripe.Event {
-  return {
+const CHARGE = '00000000-0000-4000-8000-000000000001';
+const success = (
+  id = 'evt_1',
+  overrides: Record<string, unknown> = {},
+): Stripe.Event =>
+  ({
     id,
     type: 'payment_intent.succeeded',
     data: {
       object: {
-        id: objectId,
-        amount: amountPiastres,
-        currency,
-        metadata: { bookingReference: BOOKING },
+        id: 'pi_1',
+        status: 'succeeded',
+        amount: 6955,
+        amount_received: 6955,
+        currency: 'egp',
+        metadata: { bookingReference: BOOKING, paymentReference: CHARGE },
+        ...overrides,
       },
     },
-  } as unknown as Stripe.Event;
-}
+  }) as unknown as Stripe.Event;
 
-function failedEvent(id: string, objectId: string): Stripe.Event {
-  return {
-    id,
-    type: 'payment_intent.failed',
-    data: { object: { id: objectId } },
-  } as unknown as Stripe.Event;
-}
-
-function setupIntentEvent(id: string, objectId: string): Stripe.Event {
-  return {
-    id,
-    type: 'setup_intent.created',
-    data: { object: { id: objectId } },
-  } as unknown as Stripe.Event;
-}
-
-function createRepositories() {
-  const events: PendingStripeEvent[] = [];
-  const charges: Charge[] = [];
-
-  const eventRepository = {
-    record: vi.fn<StripeEventRepository['record']>(async (event) => {
-      const duplicate = events.some(
-        (e) =>
-          e.id === event.id ||
-          (e.objectId === event.objectId && e.type === event.type),
-      );
-      if (duplicate) return false;
-      events.push({
-        ...event,
-        processedAt: null,
-        lastError: null,
-      });
-      return true;
-    }),
-    findPending: vi.fn<StripeEventRepository['findPending']>(async (limit) =>
-      events
-        .filter((e) => e.processedAt === null)
-        .slice(0, limit)
-        .map(({ id, type, objectId, payload }) => ({
-          id,
-          type,
-          objectId,
-          payload,
-        })),
-    ),
-    markRejected: vi.fn<StripeEventRepository['markRejected']>(
-      async (id, error) => {
-        const event = events.find((e) => e.id === id);
-        if (event) {
-          event.processedAt = new Date().toISOString();
-          event.lastError = error;
-        }
-      },
-    ),
-    markProcessed: vi.fn<StripeEventRepository['markProcessed']>(async (id) => {
-      const event = events.find((e) => e.id === id);
-      if (event) event.processedAt = new Date().toISOString();
-    }),
-  };
-  const chargeRepository = {
-    findByPaymentIntentId: vi.fn<
-      PaymentChargeRepository['findByPaymentIntentId']
-    >(async (intentId) =>
-      charges.find((charge) => charge.stripePaymentIntentId === intentId),
-    ),
-    markSucceeded: vi.fn<PaymentChargeRepository['markSucceeded']>(
-      async (id) => {
-        const charge = charges.find((c) => c.id === id);
-        if (charge) charge.status = 'succeeded';
-      },
-    ),
-  };
-
-  return { eventRepository, chargeRepository, events, charges };
-}
-
-describe('ChargeWebhookService', () => {
-  let repositories: ReturnType<typeof createRepositories>;
+describe('ChargeWebhookService durable inbox', () => {
+  let rows: (StripeEventRecord & {
+    processed: boolean;
+    deferred: boolean;
+    error: string | null;
+    owner?: TransactionContext;
+  })[];
+  let charge: Charge | undefined;
+  let published: unknown[];
+  let events: ReturnType<typeof eventRepository>;
+  let charges: ReturnType<typeof chargeRepository>;
   let outbox: {
-    append: Mock<OutboxPort['append']>;
-    appendBatch: Mock<OutboxPort['appendBatch']>;
+    append: ReturnType<typeof vi.fn>;
+    appendBatch: ReturnType<typeof vi.fn>;
   };
   let service: ChargeWebhookService;
-  let published: unknown[];
-  let unitOfWork: { withTransaction: Mock<UnitOfWorkPort['withTransaction']> };
-  let transactionContext: TransactionContext;
 
-  const processedAt = (id: string) =>
-    repositories.events.find((e) => e.id === id)?.processedAt ?? null;
+  function eventRepository() {
+    return {
+      record: vi.fn(async (event: StripeEventRecord) => {
+        if (rows.some((row) => row.id === event.id)) return false;
+        rows.push({ ...event, processed: false, deferred: false, error: null });
+        return true;
+      }),
+      claimPending: vi.fn(async (ctx: TransactionContext) => {
+        const row = rows.find(
+          (candidate) =>
+            !candidate.processed && !candidate.deferred && !candidate.owner,
+        );
+        if (row) row.owner = ctx;
+        return row;
+      }),
+      markProcessed: vi.fn(async (id: string) => {
+        rows.find((row) => row.id === id)!.processed = true;
+      }),
+      markRejected: vi.fn(async (id: string, error: string) => {
+        Object.assign(
+          rows.find((row) => row.id === id)!,
+          { processed: true, error },
+        );
+      }),
+      retry: vi.fn(async (id: string, error: string) => {
+        Object.assign(
+          rows.find((row) => row.id === id)!,
+          { deferred: true, error },
+        );
+      }),
+    };
+  }
 
-  const chargeStatus = (booking: string) =>
-    repositories.charges.find((c) => c.bookingReference === booking)?.status ??
-    null;
+  function chargeRepository() {
+    return {
+      findByPaymentIntentId: vi.fn(async (id: string) =>
+        charge?.stripePaymentIntentId === id ? { ...charge } : undefined,
+      ),
+      findByReference: vi.fn(async (id: string, bookingReference: string) =>
+        charge?.id === id && charge.bookingReference === bookingReference
+          ? { ...charge }
+          : undefined,
+      ),
+      bindPaymentIntent: vi.fn(async (_charge: Charge, id: string) => {
+        if (
+          !charge ||
+          (charge.stripePaymentIntentId && charge.stripePaymentIntentId !== id)
+        )
+          return false;
+        charge.stripePaymentIntentId = id;
+        return true;
+      }),
+      markSucceeded: vi.fn(async () => {
+        if (!charge || !['started', 'cancelled'].includes(charge.status))
+          return false;
+        charge.status = 'succeeded';
+        return true;
+      }),
+    };
+  }
 
-  const lastError = (id: string) =>
-    repositories.events.find((e) => e.id === id)?.lastError ?? null;
-
-  const seedCharge = () => {
-    repositories.charges.push({
-      id: '00000000-0000-4000-8000-000000000001',
+  beforeEach(() => {
+    rows = [];
+    published = [];
+    charge = {
+      id: CHARGE,
       bookingReference: BOOKING,
-      idempotencyKey: `booking:${BOOKING}:charge`,
+      idempotencyKey: 'charge_key',
       amountPiastres: 6955,
       currency: 'EGP',
       status: 'started',
-      stripePaymentMethodId: null,
       stripePaymentIntentId: 'pi_1',
-    });
-  };
-
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-    repositories = createRepositories();
-    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-
-    published = [];
+    };
+    events = eventRepository();
+    charges = chargeRepository();
     outbox = {
-      append: vi.fn<OutboxPort['append']>(async (_ctx, envelope) => {
+      append: vi.fn(async (_ctx, envelope) => {
         published.push(envelope);
       }),
-      appendBatch: vi
-        .fn<OutboxPort['appendBatch']>()
-        .mockResolvedValue(undefined),
+      appendBatch: vi.fn(),
     };
-
-    transactionContext = { driver: 'unit-test' };
-    const withTransaction = async <T>(
-      work: (ctx: TransactionContext) => Promise<T>,
-    ) => work(transactionContext);
-    unitOfWork = {
-      withTransaction: vi.fn(withTransaction),
+    const uow = {
+      withTransaction: async <T>(
+        work: (ctx: TransactionContext) => Promise<T>,
+      ) => {
+        const ctx = { driver: 'test' };
+        const savedCharge = charge && { ...charge };
+        const count = published.length;
+        try {
+          return await work(ctx);
+        } catch (error) {
+          charge = savedCharge;
+          published.splice(count);
+          for (const row of rows.filter((row) => row.owner === ctx))
+            row.processed = false;
+          throw error;
+        } finally {
+          for (const row of rows.filter((row) => row.owner === ctx))
+            row.owner = undefined;
+        }
+      },
     };
     service = new ChargeWebhookService(
-      repositories.chargeRepository as unknown as PaymentChargeRepository,
-      repositories.eventRepository as unknown as StripeEventRepository,
-      outbox,
-      unitOfWork as unknown as UnitOfWorkPort,
+      charges as unknown as PaymentChargeRepository,
+      events as unknown as StripeEventRepository,
+      outbox as OutboxPort,
+      uow as UnitOfWorkPort,
     );
   });
 
-  it('records the event and returns before any processing happens', async () => {
-    const event = succeededEvent('evt_1', 'pi_1');
-    expect(await service.record(event)).toBe('recorded');
+  it('ignores an event belonging to another concern, and records nothing', async () => {
+    const setupIntent = {
+      id: 'evt_setup',
+      type: 'setup_intent.succeeded',
+      data: { object: { id: 'seti_1' } },
+    } as unknown as Stripe.Event;
 
-    expect(processedAt('evt_1')).toBeNull();
-    expect(repositories.eventRepository.record).toHaveBeenCalledWith({
-      id: 'evt_1',
-      type: 'payment_intent.succeeded',
-      objectId: 'pi_1',
-      payload: event.data.object,
-    });
-    expect(
-      repositories.chargeRepository.findByPaymentIntentId,
-    ).not.toHaveBeenCalled();
-    expect(repositories.eventRepository.markProcessed).not.toHaveBeenCalled();
-    expect(outbox.append).not.toHaveBeenCalled();
+    expect(await service.record(setupIntent)).toBe('ignored');
+    expect(rows).toHaveLength(0);
   });
 
-  it('calls the same event id a duplicate', async () => {
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'recorded',
-    );
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'duplicate',
-    );
-  });
-
-  it('calls a second event id for the same object and type a duplicate', async () => {
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'recorded',
-    );
-    expect(await service.record(succeededEvent('evt_2', 'pi_1'))).toBe(
-      'duplicate',
-    );
-  });
-
-  it('ignores a setup_intent event', async () => {
-    expect(await service.record(setupIntentEvent('evt_3', 'si_1'))).toBe(
-      'duplicate',
-    );
-    expect(repositories.eventRepository.record).not.toHaveBeenCalled();
-  });
-
-  it('publishes payment.charge.succeeded in the transaction that marks the charge succeeded', async () => {
-    seedCharge();
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'recorded',
-    );
-
-    expect(await service.processPending()).toBe(1);
-    expect(published).toHaveLength(1);
-
-    const envelope = published[0] as {
-      type: string;
-      payload: { amountPiastres: number };
-    };
-    expect(envelope.type).toBe('payment.charge.succeeded');
-    expect(envelope.payload.amountPiastres).toBe(6955);
-    expect(chargeStatus(BOOKING)).toBe('succeeded');
-    expect(processedAt('evt_1')).not.toBeNull();
-    expect(repositories.eventRepository.findPending).toHaveBeenCalledWith(50);
-    expect(
-      repositories.chargeRepository.findByPaymentIntentId,
-    ).toHaveBeenCalledWith('pi_1');
-    expect(unitOfWork.withTransaction).toHaveBeenCalledTimes(1);
-    expect(repositories.chargeRepository.markSucceeded).toHaveBeenCalledWith(
-      repositories.charges[0].id,
-      transactionContext,
-    );
-    expect(outbox.append).toHaveBeenCalledWith(transactionContext, envelope);
-    expect(repositories.eventRepository.markProcessed).toHaveBeenCalledWith(
-      'evt_1',
-      transactionContext,
-    );
-    expect(repositories.chargeRepository.markSucceeded.mock.calls[0][1]).toBe(
-      transactionContext,
-    );
-    expect(outbox.append.mock.calls[0][0]).toBe(transactionContext);
-    expect(repositories.eventRepository.markProcessed.mock.calls[0][1]).toBe(
-      transactionContext,
-    );
-  });
-
-  it('treats an amount that is not the locked total as an alarm, not a confirmation', async () => {
-    seedCharge();
-    expect(await service.record(succeededEvent('evt_1', 'pi_1', 7000))).toBe(
-      'recorded',
-    );
-    expect(await service.processPending()).toBe(1);
-
+  it('durably records without settling during the HTTP acknowledgement', async () => {
+    expect(await service.record(success())).toBe('recorded');
+    expect(rows[0].processed).toBe(false);
+    expect(charges.findByPaymentIntentId).not.toHaveBeenCalled();
     expect(published).toHaveLength(0);
-    expect(chargeStatus(BOOKING)).not.toBe('succeeded');
-    expect(lastError('evt_1')).toMatch(/amount/i);
-    expect(repositories.eventRepository.markRejected).toHaveBeenCalledWith(
-      'evt_1',
-      expect.stringMatching(/amount/i),
-    );
-    expect(repositories.chargeRepository.markSucceeded).not.toHaveBeenCalled();
-    expect(unitOfWork.withTransaction).not.toHaveBeenCalled();
+    expect(await service.record(success())).toBe('duplicate');
   });
 
-  it('keeps a succeeded charge succeeded when a late failure for an earlier attempt arrives', async () => {
-    seedCharge();
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'recorded',
-    );
-    expect(await service.processPending()).toBe(1);
-    expect(chargeStatus(BOOKING)).toBe('succeeded');
-
-    expect(await service.record(failedEvent('evt_2', 'pi_1'))).toBe('recorded');
-    expect(await service.processPending()).toBe(1);
-
-    expect(chargeStatus(BOOKING)).toBe('succeeded');
+  it('retains different events for the same object/type instead of losing attempts', async () => {
+    await service.record(success());
+    expect(await service.record(success('evt_2'))).toBe('recorded');
+    expect(await service.processPending()).toBe(2);
     expect(published).toHaveLength(1);
-    expect(repositories.eventRepository.markProcessed).toHaveBeenLastCalledWith(
-      'evt_2',
-    );
-    expect(repositories.chargeRepository.markSucceeded).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(unitOfWork.withTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it('publishes once when the same event is processed twice', async () => {
-    seedCharge();
-    expect(await service.record(succeededEvent('evt_1', 'pi_1'))).toBe(
-      'recorded',
+  it('never persists a browser client secret in the durable inbox payload', async () => {
+    await service.record(
+      success('evt_1', { client_secret: 'pi_1_secret_sensitive' }),
     );
+    expect(events.record.mock.calls[0][0].payload).not.toHaveProperty(
+      'client_secret',
+    );
+  });
+
+  it('claims and settles charge, outbox and inbox in the same transaction', async () => {
+    await service.record(success());
+    expect(await service.processPending()).toBe(1);
+    expect(charge?.status).toBe('succeeded');
+    expect(rows[0].processed).toBe(true);
+    const ctx = events.claimPending.mock.calls[0][0];
+    expect(charges.findByPaymentIntentId).toHaveBeenCalledWith('pi_1', ctx);
+    expect(charges.markSucceeded).toHaveBeenCalledWith(CHARGE, ctx);
+    expect(outbox.append).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        type: 'payment.charge.succeeded',
+        payload: expect.objectContaining({ amountPiastres: 6955 }),
+      }),
+    );
+    expect(events.markProcessed).toHaveBeenCalledWith('evt_1', ctx);
+  });
+
+  it('drains 50 irrelevant events and then reaches success rather than starving it', async () => {
+    for (let index = 0; index < 50; index += 1) {
+      await service.record({
+        id: `evt_created_${index}`,
+        type: 'payment_intent.created',
+        data: { object: { id: `pi_${index}` } },
+      } as unknown as Stripe.Event);
+    }
+    await service.record(success());
+    expect(await service.processPending()).toBe(50);
     expect(await service.processPending()).toBe(1);
     expect(published).toHaveLength(1);
+  });
 
+  it('drains the real payment_failed event without regressing a success', async () => {
+    await service.record(success());
+    await service.processPending();
+    await service.record({
+      id: 'evt_failed',
+      type: 'payment_intent.payment_failed',
+      data: { object: { id: 'pi_1' } },
+    } as unknown as Stripe.Event);
+    expect(await service.processPending()).toBe(1);
+    expect(charge?.status).toBe('succeeded');
+    expect(published).toHaveLength(1);
+  });
+
+  it.each([
+    { amount: 7000 },
+    { amount_received: 3000 },
+    { currency: 'usd' },
+    { status: 'processing' },
+  ])(
+    'rejects mismatched evidence %j durably without confirming',
+    async (overrides) => {
+      await service.record(success('evt_1', overrides));
+      await service.processPending();
+      expect(charge?.status).toBe('started');
+      expect(published).toHaveLength(0);
+      expect(rows[0]).toMatchObject({
+        processed: true,
+        error: expect.stringContaining('locked'),
+      });
+    },
+  );
+
+  it('keeps an unmapped verified success retryable and recovers after the mapping appears', async () => {
+    charge!.stripePaymentIntentId = null;
+    await service.record(success('evt_1', { metadata: {} }));
     expect(await service.processPending()).toBe(0);
+    expect(rows[0]).toMatchObject({ processed: false, deferred: true });
+    charge!.stripePaymentIntentId = 'pi_1';
+    rows[0].deferred = false;
+    expect(await service.processPending()).toBe(1);
     expect(published).toHaveLength(1);
-    expect(repositories.chargeRepository.markSucceeded).toHaveBeenCalledTimes(
-      1,
-    );
-    expect(repositories.eventRepository.markProcessed).toHaveBeenCalledTimes(1);
   });
 
-  it('propagates an outbox failure and leaves the event pending for retry', async () => {
-    seedCharge();
-    await service.record(succeededEvent('evt_1', 'pi_1'));
-    const error = new Error('Outbox unavailable');
-    outbox.append.mockRejectedValueOnce(error);
+  it('recovers a crash-before-mapping using the durable creation correlation', async () => {
+    charge!.stripePaymentIntentId = null;
+    charge!.intentCreationStartedAt = new Date();
+    await service.record(success());
+    await service.processPending();
+    expect(charge?.stripePaymentIntentId).toBe('pi_1');
+    expect(charge?.status).toBe('succeeded');
+  });
 
-    await expect(service.processPending()).rejects.toBe(error);
+  it('does not bind arbitrary metadata to a booking that never attempted creation', async () => {
+    charge!.stripePaymentIntentId = null;
+    await service.record(success());
+    await service.processPending();
+    expect(charges.bindPaymentIntent).not.toHaveBeenCalled();
+    expect(rows[0].processed).toBe(false);
+  });
 
-    expect(processedAt('evt_1')).toBeNull();
-    expect(lastError('evt_1')).toBeNull();
-    expect(repositories.eventRepository.markProcessed).not.toHaveBeenCalled();
-    expect(repositories.eventRepository.markRejected).not.toHaveBeenCalled();
+  it('exclusive claims prevent concurrent duplicate outbox appends', async () => {
+    await service.record(success());
+    await Promise.all([service.processPending(), service.processPending()]);
+    expect(published).toHaveLength(1);
+    expect(charges.markSucceeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resurrect refunded state when a distinct success delivery arrives later', async () => {
+    charge!.status = 'refunded';
+    await service.record(success());
+    await service.processPending();
+    expect(charge?.status).toBe('refunded');
+    expect(rows[0].processed).toBe(true);
     expect(published).toHaveLength(0);
+  });
 
+  it('rolls back settlement on outbox failure and recovers on a later scan', async () => {
+    await service.record(success());
+    outbox.append.mockRejectedValueOnce(new Error('outbox unavailable'));
+    expect(await service.processPending()).toBe(0);
+    expect(charge?.status).toBe('started');
+    expect(rows[0]).toMatchObject({ processed: false, deferred: true });
+    expect(published).toHaveLength(0);
+    rows[0].deferred = false;
     expect(await service.processPending()).toBe(1);
-    expect(processedAt('evt_1')).not.toBeNull();
     expect(published).toHaveLength(1);
   });
 });

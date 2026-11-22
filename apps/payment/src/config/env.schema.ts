@@ -3,6 +3,7 @@ import { commonEnvSchema } from '@app/common/config/env.schema.js';
 
 export const paymentEnvSchema = commonEnvSchema
   .keys({
+    PAYMENT_RECOVERY_ENABLED: Joi.string().valid('true', 'false').optional(),
     STRIPE_SECRET_KEY: Joi.string()
       .pattern(/^sk_(test|live)_[a-zA-Z0-9]+$/)
       .required()
@@ -33,3 +34,7 @@ export const paymentEnvSchema = commonEnvSchema
     'object.missing':
       "Missing required environment variable 'STRIPE_PUBLISHABLE_KEY'",
   });
+
+export function paymentRecoveryEnabled(): boolean {
+  return process.env.PAYMENT_RECOVERY_ENABLED !== 'false';
+}

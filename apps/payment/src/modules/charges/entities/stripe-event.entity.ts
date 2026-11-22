@@ -1,13 +1,6 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  PrimaryColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('stripe_event')
-@Index('uq_stripe_event_object_type', ['objectId', 'type'], { unique: true })
 export class StripeEventEntity {
   @PrimaryColumn('text')
   id!: string;
@@ -33,4 +26,11 @@ export class StripeEventEntity {
 
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null;
+
+  @Column({
+    name: 'next_attempt_at',
+    type: 'timestamptz',
+    default: () => 'now()',
+  })
+  nextAttemptAt!: Date;
 }

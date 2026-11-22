@@ -1,8 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreatePaymentOutboxAndStripeEvent1797000000001
-  implements MigrationInterface
-{
+export class CreatePaymentOutboxAndStripeEvent1797000000001 implements MigrationInterface {
   name = 'CreatePaymentOutboxAndStripeEvent1797000000001';
 
   async up(queryRunner: QueryRunner): Promise<void> {
@@ -54,6 +52,10 @@ export class CreatePaymentOutboxAndStripeEvent1797000000001
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      ALTER TABLE payment_charge
+        DROP COLUMN stripe_payment_intent_id
+    `);
     await queryRunner.query('DROP TABLE stripe_event');
     await queryRunner.query('DROP TABLE outbox_event');
   }

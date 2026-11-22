@@ -9,6 +9,7 @@ import { ChargeCardRepository } from '../../apps/payment/src/modules/charges/rep
 import { PaymentChargeRepository } from '../../apps/payment/src/modules/charges/repositories/payment-charge.repository.js';
 import { StripeEventRepository } from '../../apps/payment/src/modules/charges/repositories/stripe-event.repository.js';
 import { ChargeWebhookService } from '../../apps/payment/src/modules/charges/services/charge-webhook.service.js';
+import { PaymentDoubleService } from '../../apps/payment/src/modules/charges/services/payment-double.service.js';
 import { PaymentChargeEntity } from '../../apps/payment/src/modules/charges/entities/payment-charge.entity.js';
 import { StripeEventEntity } from '../../apps/payment/src/modules/charges/entities/stripe-event.entity.js';
 import { SavedCardEntity } from '../../apps/payment/src/modules/cards/entities/saved-card.entity.js';
@@ -46,7 +47,15 @@ function succeededEvent(amount = 6955): Stripe.Event {
   return {
     id: 'evt_1',
     type: 'payment_intent.succeeded',
-    data: { object: { id: 'pi_1', amount, currency: 'egp' } },
+    data: {
+      object: {
+        id: 'pi_1',
+        status: 'succeeded',
+        amount,
+        amount_received: amount,
+        currency: 'egp',
+      },
+    },
   } as unknown as Stripe.Event;
 }
 
@@ -100,7 +109,7 @@ describe('payment schema', () => {
     );
   });
 
-  it('refuses a second stripe_event row for the same object and type', async () => {
+  it('retains different event IDs for the same object and type', async () => {
     await source.query(
       `INSERT INTO stripe_event (id, type, object_id, payload)
        VALUES ('evt_1', 'payment_intent.succeeded', 'pi_1', '{}'::jsonb)`,
@@ -110,7 +119,8 @@ describe('payment schema', () => {
         `INSERT INTO stripe_event (id, type, object_id, payload)
          VALUES ('evt_2', 'payment_intent.succeeded', 'pi_1', '{}'::jsonb)`,
       ),
-    ).rejects.toThrow(/unique/i);
+    ).resolves.toBeDefined();
+    expect(await source.query('SELECT id FROM stripe_event')).toHaveLength(2);
   });
 
   it('persists and finds charges by booking, key, reference and payment intent', async () => {
@@ -200,6 +210,32 @@ describe('payment schema', () => {
     );
   });
 
+  it('refunds the whole amount exactly once under concurrent dummy refund requests', async () => {
+    const charge = await givenCharge();
+    await charges.markStartedSucceeded(charge.id);
+    const service = new PaymentDoubleService(charges, cards, {} as never);
+    const request = {
+      bookingReference: charge.bookingReference,
+      paymentReference: charge.id,
+      idempotencyKey: `booking:${charge.bookingReference}:refund`,
+    };
+    const responses = await Promise.all([
+      service.refund(request),
+      service.refund(request),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      'ALREADY_REFUNDED',
+      'REFUNDED',
+    ]);
+    expect(responses.map((response) => response.amountPiastres)).toEqual([
+      6955, 6955,
+    ]);
+    expect(responses[0].refundReference).toBe(responses[1].refundReference);
+    expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
+      'refunded',
+    );
+  });
+
   it('scopes card reads and usage updates to the owner and resolves Stripe customers', async () => {
     const accountId = randomUUID();
     const cardId = randomUUID();
@@ -250,7 +286,7 @@ describe('payment schema', () => {
     };
     expect(await events.record(event)).toBe(true);
     expect(await events.record(event)).toBe(false);
-    expect(await events.record({ ...event, id: 'evt_2' })).toBe(false);
+    expect(await events.record({ ...event, id: 'evt_2' })).toBe(true);
     expect(
       await events.record({ ...event, id: 'evt_3', objectId: 'pi_2' }),
     ).toBe(true);
@@ -258,6 +294,7 @@ describe('payment schema', () => {
     expect(await events.findPending(1)).toEqual([event]);
 
     await events.markProcessed('evt_1');
+    await events.markProcessed('evt_2');
     await events.markRejected('evt_3', 'wrong amount');
     expect(await events.findPending(50)).toEqual([]);
     const [rejected]: { last_error: string }[] = await source.query(
@@ -315,11 +352,147 @@ describe('payment schema', () => {
       unitOfWork,
     );
     await service.record(succeededEvent());
-    await expect(service.processPending()).rejects.toThrow('processing failed');
+    expect(await service.processPending()).toBe(0);
     expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
       'started',
     );
     expect(await events.findPending(50)).toHaveLength(1);
     expect(await source.query('SELECT id FROM outbox_event')).toEqual([]);
+  });
+
+  it('claims concurrent inbox processors exclusively and never duplicates the outbox event', async () => {
+    const charge = await givenCharge();
+    await charges.savePaymentIntent(charge.bookingReference, 'pi_1');
+    const first = new ChargeWebhookService(charges, events, outbox, unitOfWork);
+    const second = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    await first.record(succeededEvent());
+    await Promise.all([first.processPending(), second.processPending()]);
+    expect(await source.query('SELECT id FROM outbox_event')).toHaveLength(1);
+    expect(await events.findPending(50)).toEqual([]);
+  });
+
+  it('does not regress refunded state when another success event is received', async () => {
+    const charge = await givenCharge();
+    await charges.savePaymentIntent(charge.bookingReference, 'pi_1');
+    const service = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    await service.record(succeededEvent());
+    await service.processPending();
+    await charges.refundSucceeded(charge.id);
+    await service.record({ ...succeededEvent(), id: 'evt_later_success' });
+    await service.processPending();
+    expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
+      'refunded',
+    );
+    expect(await source.query('SELECT id FROM outbox_event')).toHaveLength(1);
+  });
+
+  it('keeps an unknown mapping pending and recovers once its durable ID appears', async () => {
+    const charge = await givenCharge();
+    const service = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    await service.record(succeededEvent());
+    expect(await service.processPending()).toBe(0);
+    expect(await events.findPending(50)).toHaveLength(1);
+    await charges.savePaymentIntent(charge.bookingReference, 'pi_1');
+    await source.query(
+      `UPDATE stripe_event SET next_attempt_at = now() WHERE id = 'evt_1'`,
+    );
+    expect(await service.processPending()).toBe(1);
+    expect(await source.query('SELECT id FROM outbox_event')).toHaveLength(1);
+    expect(await events.recoveryCounts()).toMatchObject({
+      rejectedStripeEvents: 0,
+    });
+  });
+
+  it('binds verified creation metadata when a crash lost the intent mapping', async () => {
+    const charge = await givenCharge();
+    await source.query(
+      'UPDATE payment_charge SET intent_creation_started_at = now() WHERE id = $1',
+      [charge.id],
+    );
+    const event = succeededEvent();
+    Object.assign(event.data.object, {
+      metadata: {
+        bookingReference: charge.bookingReference,
+        paymentReference: charge.id,
+      },
+    });
+    const service = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    await service.record(event);
+    expect(await service.processPending()).toBe(1);
+    expect(
+      (await charges.findByReference(charge.id, charge.bookingReference))
+        ?.stripePaymentIntentId,
+    ).toBe('pi_1');
+    expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
+      'succeeded',
+    );
+  });
+
+  it('rejects a short capture with durable evidence and no full-payment outcome', async () => {
+    const charge = await givenCharge();
+    await charges.savePaymentIntent(charge.bookingReference, 'pi_1');
+    const event = succeededEvent();
+    Object.assign(event.data.object, { amount_received: 3000 });
+    const service = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    await service.record(event);
+    await service.processPending();
+    expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
+      'started',
+    );
+    expect(await source.query('SELECT id FROM outbox_event')).toHaveLength(0);
+    expect(await events.recoveryCounts()).toMatchObject({
+      rejectedStripeEvents: 1,
+    });
+  });
+
+  it('drains ordinary created/payment_failed events before processing a later success', async () => {
+    const charge = await givenCharge();
+    await charges.savePaymentIntent(charge.bookingReference, 'pi_1');
+    const service = new ChargeWebhookService(
+      charges,
+      events,
+      outbox,
+      unitOfWork,
+    );
+    for (let index = 0; index < 50; index += 1) {
+      await events.record({
+        id: `evt_created_${index}`,
+        type:
+          index % 2
+            ? 'payment_intent.created'
+            : 'payment_intent.payment_failed',
+        objectId: `pi_${index}`,
+        payload: {},
+      });
+    }
+    await service.record(succeededEvent());
+    expect(await service.processPending()).toBe(50);
+    expect(await service.processPending()).toBe(1);
+    expect(await source.query('SELECT id FROM outbox_event')).toHaveLength(1);
   });
 });

@@ -8,6 +8,11 @@ service PaymentService {
   // Cancellation compensation applies an 1800ms deadline and retries with the same key.
   rpc CancelCharge (CancelChargeRequest) returns (CancelChargeResponse);
   // Refund compensation applies an 1800ms deadline and retries with the same key.
+  // The whole locked total, booking fee included; never a partial amount.
+  // TA-110 owns the server side. Until it lands, payment marks the charge
+  // refunded in its own database and returns a synthetic reference without
+  // calling Stripe. This request and response are the contract and do not
+  // change; delete these four lines with the stub.
   rpc RefundCharge (RefundChargeRequest) returns (RefundChargeResponse);
 
   // Saved Cards
@@ -49,8 +54,10 @@ message RefundChargeRequest {
 }
 
 message RefundChargeResponse {
+  // REFUNDED, ALREADY_REFUNDED, or NOT_REFUNDABLE.
   string status = 1;
   string refundReference = 2;
+  // What was actually returned, for booking to check against the locked total.
   int32 amountPiastres = 3;
 }
 

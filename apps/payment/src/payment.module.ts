@@ -10,6 +10,7 @@ import { ServiceInfoController } from './service-info.controller.js';
 import { migrations } from './database/migrations/index.js';
 import { ChargesModule } from './modules/charges/charges.module.js';
 import { CardsModule } from './modules/cards/cards.module.js';
+import { ChargesPersistenceModule } from './modules/charges/charges-persistence.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CardsModule } from './modules/cards/cards.module.js';
     MigrationModule,
     ChargesModule,
     CardsModule,
+    ChargesPersistenceModule,
   ],
   controllers: [ServiceInfoController],
 })

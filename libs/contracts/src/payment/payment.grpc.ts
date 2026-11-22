@@ -35,6 +35,11 @@ export interface CancelChargeResponse {
   status: string;
 }
 
+/**
+ * The whole locked total, booking fee included; never a partial amount.
+ * TA-110 owns the server side; until it lands payment marks the charge refunded
+ * without calling Stripe. These shapes are the contract and do not change.
+ */
 export interface RefundChargeRequest {
   bookingReference: string;
   paymentReference: string;

@@ -18,6 +18,6 @@ import { ChargesPersistenceModule } from '../charges/charges-persistence.module.
   ],
   controllers: [SavedCardsGrpcController, StripeWebhookController],
   providers: [StripeService, SavedCardsService, ChargeWebhookService],
-  exports: [SavedCardsService, StripeService],
+  exports: [SavedCardsService, StripeService, ChargeWebhookService],
 })
 export class CardsModule {}

@@ -11,6 +11,12 @@ export type Charge = Pick<
   | 'status'
   | 'stripePaymentMethodId'
   | 'stripePaymentIntentId'
+  | 'intentCreationStartedAt'
+  | 'intentCreationClaim'
+  | 'intentCreationLeaseUntil'
+  | 'intentCreationLastError'
+  | 'stripeCustomerId'
+  | 'cancellationRequestedAt'
 >;
 
 export type ChargeCard = Pick<

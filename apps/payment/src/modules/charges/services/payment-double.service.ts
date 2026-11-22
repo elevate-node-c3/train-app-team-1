@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { paymentDoubleSucceededBookingsFromEnv } from '../../../config/payment-double.settings.js';
 import {
   ErrorCode,
   type CancelChargeRequest,
@@ -17,13 +16,11 @@ import { PaymentChargeRepository } from '../repositories/payment-charge.reposito
 import type { ChargeCard, Charge } from '../types/charge.types.js';
 
 /**
- * Sprint 3 contract-compatible payment double. Stripe can replace this provider
- * in payment without changing the booking contract or client.
+ * Real charge orchestration. Only the explicitly deferred refund body remains
+ * a contract double until TA-110 supplies Stripe refund execution.
  */
 @Injectable()
 export class PaymentDoubleService {
-  private readonly succeededBookings = paymentDoubleSucceededBookingsFromEnv();
-
   constructor(
     private readonly charges: PaymentChargeRepository,
     private readonly cards: ChargeCardRepository,
@@ -39,13 +36,10 @@ export class PaymentDoubleService {
       throw new PaymentError(ErrorCode.INVALID_PAYLOAD);
     }
 
-    let existingCharge: Charge | undefined;
-    if (request.savedCardId) {
-      existingCharge = await this.charges.findByBookingOrKey(
-        request.bookingReference,
-        request.idempotencyKey,
-      );
-    }
+    const existingCharge = await this.charges.findByBookingOrKey(
+      request.bookingReference,
+      request.idempotencyKey,
+    );
 
     let card: ChargeCard | undefined;
     if (request.savedCardId) {
@@ -77,6 +71,8 @@ export class PaymentDoubleService {
       }
     }
 
+    if (existingCharge) return this.replay(existingCharge, request);
+
     await this.charges.createStarted({
       id: uuid(),
       bookingReference: request.bookingReference,
@@ -95,7 +91,8 @@ export class PaymentDoubleService {
       !charge ||
       charge.bookingReference !== request.bookingReference ||
       charge.idempotencyKey !== request.idempotencyKey ||
-      Number(charge.amountPiastres) !== request.amountPiastres
+      Number(charge.amountPiastres) !== request.amountPiastres ||
+      (card && charge.stripePaymentMethodId !== card.stripePaymentMethodId)
     ) {
       throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
     }
@@ -104,24 +101,7 @@ export class PaymentDoubleService {
       await this.cards.markUsed(request.savedCardId, request.accountId);
     }
 
-    if (this.succeededBookings.has(request.bookingReference)) {
-      await this.charges.markStartedSucceeded(charge.id);
-    }
-
-    const intent = await this.intents.startFor(charge);
-    const status =
-      this.succeededBookings.has(request.bookingReference) ||
-      charge.status === 'succeeded'
-        ? 'SUCCEEDED'
-        : 'STARTED';
-
-    // One PaymentIntent per booking; a retry after a decline or a restart
-    // returns the intent the first attempt made.
-    return {
-      paymentReference: charge.id,
-      status,
-      clientSecret: intent.clientSecret,
-    };
+    return this.replay(charge, request);
   }
 
   private async replay(
@@ -131,43 +111,51 @@ export class PaymentDoubleService {
     if (
       charge.bookingReference !== request.bookingReference ||
       charge.idempotencyKey !== request.idempotencyKey ||
-      Number(charge.amountPiastres) !== request.amountPiastres
+      Number(charge.amountPiastres) !== request.amountPiastres ||
+      charge.currency !== request.currency
     ) {
       throw new PaymentError(ErrorCode.BOOKING_KEY_CONFLICT);
     }
 
+    if (charge.status !== 'started' || charge.cancellationRequestedAt) {
+      return {
+        paymentReference: charge.id,
+        status: charge.status.toUpperCase(),
+        clientSecret: '',
+      };
+    }
     const intent = await this.intents.startFor(charge);
+    const current = await this.charges.findByReference(
+      charge.id,
+      charge.bookingReference,
+    );
+    if (!current) throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+    const status =
+      current.status !== 'started'
+        ? current.status.toUpperCase()
+        : intent.status === 'succeeded'
+          ? 'SUCCEEDED'
+          : intent.status === 'canceled'
+            ? 'CANCELLED'
+            : 'STARTED';
 
     return {
       paymentReference: charge.id,
-      status:
-        charge.status === 'succeeded'
-          ? 'SUCCEEDED'
-          : charge.status === 'cancelled'
-            ? 'CANCELLED'
-            : 'STARTED',
-      clientSecret: intent.clientSecret,
+      status,
+      clientSecret:
+        status === 'STARTED' && !current.cancellationRequestedAt
+          ? intent.clientSecret
+          : '',
     };
   }
 
   async cancel(request: CancelChargeRequest): Promise<CancelChargeResponse> {
-    const cancelled = await this.charges.cancelStarted(
+    const charge = await this.charges.findByReference(
       request.paymentReference,
       request.bookingReference,
     );
-    if (cancelled) return { status: 'CANCELLED' };
-
-    const status = await this.charges.findStatus(
-      request.paymentReference,
-      request.bookingReference,
-    );
-    if (status === 'succeeded') {
-      return { status: 'ALREADY_SUCCEEDED' };
-    }
-    if (status === 'cancelled') {
-      return { status: 'CANCELLED' };
-    }
-    throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+    if (!charge) throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+    return { status: await this.intents.cancelFor(charge) };
   }
 
   // TODO(TA-110, Youssef Mostafa): replace this body with stripe.refunds.create
@@ -191,10 +179,31 @@ export class PaymentDoubleService {
       };
     }
     if (charge.status !== 'succeeded') {
-      throw new PaymentError(ErrorCode.CONFLICT);
+      return {
+        status: 'NOT_REFUNDABLE',
+        refundReference: '',
+        amountPiastres: 0,
+      };
     }
 
-    await this.charges.refundSucceeded(charge.id);
+    if (!(await this.charges.refundSucceeded(charge.id))) {
+      const current = await this.charges.findByReference(
+        charge.id,
+        charge.bookingReference,
+      );
+      if (current?.status === 'refunded') {
+        return {
+          status: 'ALREADY_REFUNDED',
+          refundReference,
+          amountPiastres: current.amountPiastres,
+        };
+      }
+      return {
+        status: 'NOT_REFUNDABLE',
+        refundReference: '',
+        amountPiastres: 0,
+      };
+    }
 
     return {
       status: 'REFUNDED',
