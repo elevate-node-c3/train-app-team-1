@@ -20,6 +20,7 @@ import {
 
 const BOOKING = randomUUID();
 const UNKNOWN = randomUUID();
+const PAYMENT = randomUUID();
 
 let ds: DataSource;
 let repository: BookingFlowRepository;
@@ -38,8 +39,8 @@ async function seed(
   await source.query(
     `INSERT INTO booking_draft
        (id, user_id, flow_state, compensation_status, compensation_next_attempt_at,
-        payment_reference, payment_succeeded_at, resume_next_attempt_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+         payment_reference, payment_succeeded_at, resume_next_attempt_at, total_piastres)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 6955)`,
     [
       BOOKING,
       randomUUID(),
@@ -55,7 +56,7 @@ async function seed(
 async function read(source: DataSource, bookingReference: string) {
   const [row] = await source.query(
     `SELECT flow_state, payment_event_id, compensation_status,
-            compensation_next_attempt_at, resume_next_attempt_at
+            compensation_next_attempt_at, resume_next_attempt_at, payment_reference
        FROM booking_draft WHERE id = $1`,
     [bookingReference],
   );
@@ -65,11 +66,18 @@ async function read(source: DataSource, bookingReference: string) {
     compensation_status: string;
     compensation_next_attempt_at: Date | null;
     resume_next_attempt_at: Date | null;
+    payment_reference: string | null;
   };
 }
 
-function input(): { bookingReference: string; paymentEventId: string } {
-  return { bookingReference: BOOKING, paymentEventId: 'evt_1' };
+function input() {
+  return {
+    bookingReference: BOOKING,
+    paymentEventId: 'evt_1',
+    paymentReference: PAYMENT,
+    amountPiastres: 6955,
+    currency: 'EGP',
+  };
 }
 
 function paymentSucceeded(
@@ -84,7 +92,7 @@ function paymentSucceeded(
     producer: 'payment',
     payload: {
       bookingReference: props.bookingReference,
-      paymentReference: randomUUID(),
+      paymentReference: PAYMENT,
       amountPiastres: 6955,
       currency: 'EGP',
       stripeEventId: 'evt_1',
@@ -115,8 +123,7 @@ describe('BookingFlowRepository.beginConfirming', () => {
     });
     expect(
       await repository.beginConfirming({
-        bookingReference: BOOKING,
-        paymentEventId: 'evt_1',
+        ...input(),
       }),
     ).toBe(true);
     const row = await read(ds, BOOKING);
@@ -138,6 +145,47 @@ describe('BookingFlowRepository.beginConfirming', () => {
   it('takes a booking still in payment_starting, before its reference was recorded', async () => {
     await seed(ds, { flowState: 'payment_starting', paymentReference: null });
     expect(await repository.beginConfirming(input())).toBe(true);
+    expect((await read(ds, BOOKING)).payment_reference).toBe(PAYMENT);
+  });
+
+  it('routes an abandoned booking with verified money to full-refund recovery', async () => {
+    await seed(ds, { flowState: 'abandoned', compensationStatus: 'pending' });
+    expect(await repository.beginConfirming(input())).toBe(true);
+    const row = await read(ds, BOOKING);
+    expect(row.flow_state).toBe('refunding');
+    expect(row.compensation_status).toBe('none');
+    expect(row.payment_reference).toBe(PAYMENT);
+  });
+
+  it('fences old compensation responses once verified payment owns the row', async () => {
+    await seed(ds, { flowState: 'abandoned', compensationStatus: 'pending' });
+    expect(await repository.beginConfirming(input())).toBe(true);
+    await repository.markChargeCancelled(BOOKING);
+    await repository.recordLatePayment(BOOKING, 'stale cancellation');
+    await repository.completeCompensation(BOOKING);
+    await repository.recordCompensationFailure(BOOKING, 60_000, 'stale error');
+    const row = await repository.findById(BOOKING);
+    expect(row?.flowState).toBe('refunding');
+    expect(row?.compensationStatus).toBe('none');
+    expect(row?.chargeCancelled).toBe(false);
+    expect(row?.latePayment).toBe(false);
+  });
+
+  it('does not accept a payment for a different amount or reference', async () => {
+    await seed(ds, {
+      flowState: 'awaiting_payment',
+      paymentReference: PAYMENT,
+    });
+    expect(
+      await repository.beginConfirming({ ...input(), amountPiastres: 3000 }),
+    ).toBe(false);
+    expect(
+      await repository.beginConfirming({
+        ...input(),
+        paymentReference: randomUUID(),
+      }),
+    ).toBe(false);
+    expect((await read(ds, BOOKING)).flow_state).toBe('awaiting_payment');
   });
 
   it('is a no-op the second time', async () => {
@@ -153,6 +201,28 @@ describe('BookingFlowRepository.beginConfirming', () => {
 });
 
 describe('PaymentSucceededConsumer', () => {
+  it('persists the browser secret for reloads and clears it on verified success', async () => {
+    await seed(ds, { flowState: 'payment_starting' });
+    await ds.query(
+      `UPDATE booking_draft SET expires_at = now() + interval '1 minute' WHERE id = $1`,
+      [BOOKING],
+    );
+    expect(
+      await repository.recordPaymentStarted(
+        BOOKING,
+        PAYMENT,
+        'pi_booking_secret_private',
+      ),
+    ).toBe('awaiting_payment');
+    expect((await repository.findById(BOOKING))?.paymentClientSecret).toBe(
+      'pi_booking_secret_private',
+    );
+    await consumer.handle(paymentSucceeded({ bookingReference: BOOKING }));
+    expect(
+      (await repository.findById(BOOKING))?.paymentClientSecret,
+    ).toBeNull();
+  });
+
   it('skips an event for a booking it does not know, rather than failing it', async () => {
     const result = await consumer.handle(
       paymentSucceeded({ bookingReference: UNKNOWN }),
@@ -170,6 +240,8 @@ describe('PaymentSucceededConsumer', () => {
     );
     expect(result).toEqual({ status: 'handled' });
     expect((await read(ds, BOOKING)).flow_state).toBe('confirming');
+    expect((await read(ds, BOOKING)).payment_event_id).toBe('evt_1');
+    expect((await read(ds, BOOKING)).payment_reference).toBe(PAYMENT);
   });
 
   it('is a no-op, not a skip, when the same event is handled twice', async () => {

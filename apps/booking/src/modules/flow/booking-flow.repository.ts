@@ -45,6 +45,10 @@ const HELD_STATES: readonly BookingFlowState[] = [
 const LEASE_SECONDS = 20;
 const CLAIM_LIMIT = 20;
 
+const COMPENSATION_GUARD = `payment_succeeded_at IS NULL
+  AND flow_state IN ('failed', 'expired', 'abandoned')
+  AND compensation_status = 'pending'`;
+
 /**
  * Every write the checkout flow makes to booking_draft. Conditional updates
  * return the rows they changed, so the service can tell a transition it won
@@ -228,16 +232,24 @@ export class BookingFlowRepository {
   async recordPaymentStarted(
     id: string,
     paymentReference: string,
+    clientSecret?: string,
   ): Promise<BookingFlowState | null> {
-    const started = await this.transition(id, ['payment_starting'], {
-      paymentReference,
-      flowState: 'awaiting_payment',
-      resumeNextAttemptAt: null,
-    }, 'expires_at > now()');
+    const started = await this.transition(
+      id,
+      ['payment_starting'],
+      {
+        paymentReference,
+        paymentClientSecret: clientSecret ?? null,
+        flowState: 'awaiting_payment',
+        resumeNextAttemptAt: null,
+      },
+      'expires_at > now()',
+    );
     if (started) return 'awaiting_payment';
 
     const expired = await this.transition(id, ['payment_starting'], {
       paymentReference,
+      paymentClientSecret: null,
       flowState: 'expired',
       compensationStatus: 'pending',
       compensationNextAttemptAt: new Date(),
@@ -264,21 +276,48 @@ export class BookingFlowRepository {
   async beginConfirming(input: {
     bookingReference: string;
     paymentEventId: string;
+    paymentReference: string;
+    amountPiastres: number;
+    currency: string;
   }): Promise<boolean> {
-    return this.transition(
-      input.bookingReference,
-      ['awaiting_payment', 'seats_held', 'payment_starting', 'expired'],
-      {
-        flowState: 'confirming',
+    if (input.currency !== 'EGP') return false;
+    const result = await this.drafts
+      .createQueryBuilder()
+      .update(BookingDraftEntity)
+      .set({
+        flowState: () =>
+          "CASE WHEN flow_state = 'abandoned' THEN 'refunding' ELSE 'confirming' END",
         paymentSucceededAt: () => 'now()',
         paymentEventId: input.paymentEventId,
-        sagaStep: 'payment_recorded',
+        paymentReference: input.paymentReference,
+        paymentClientSecret: null,
+        chargeCancelled: false,
+        // A late settlement can reacquire seats; the saga must verify its own cleanup.
+        holdReleased: false,
+        sagaStep: () =>
+          "CASE WHEN flow_state = 'abandoned' THEN 'refunding' ELSE 'payment_recorded' END",
+        settlementOutcome: () =>
+          "CASE WHEN flow_state = 'abandoned' THEN 'no_seats' ELSE NULL END",
+        sagaAttempts: 0,
         resumeNextAttemptAt: () => 'now()',
         compensationStatus: 'none',
         compensationNextAttemptAt: null,
-      },
-      'payment_succeeded_at IS NULL',
-    );
+        updatedAt: () => 'now()',
+      })
+      .where('id = :id', { id: input.bookingReference })
+      .andWhere(
+        "flow_state IN ('awaiting_payment', 'seats_held', 'payment_starting', 'expired', 'abandoned')",
+      )
+      .andWhere('payment_succeeded_at IS NULL')
+      .andWhere('total_piastres = :amount', { amount: input.amountPiastres })
+      .andWhere(
+        '(payment_reference IS NULL OR payment_reference = :reference)',
+        {
+          reference: input.paymentReference,
+        },
+      )
+      .execute();
+    return (result.affected ?? 0) > 0;
   }
 
   /** Records inventory's decision before anything is issued from it. */
@@ -293,6 +332,9 @@ export class BookingFlowRepository {
       tripId: assignment.tripId,
       coachNumber: assignment.coachNumber,
       seatNumber: assignment.seatNumber,
+      tripSeatId: assignment.tripSeatId,
+      outcome: assignment.outcome,
+      label: assignment.label,
     }));
 
     return this.transition(
@@ -303,31 +345,53 @@ export class BookingFlowRepository {
         settledSeats,
         seatsChanged,
         sagaStep: 'settled',
+        sagaAttempts: 0,
       },
       "saga_step = 'payment_recorded'",
     );
   }
 
   /** Issues once: guarded on the step and on tickets never having been issued. */
+  async lockForConfirmation(
+    ctx: TransactionContext,
+    id: string,
+  ): Promise<boolean> {
+    const rows = await entityManagerOf(ctx).query(
+      `SELECT id FROM booking_draft WHERE id = $1 AND flow_state = 'confirming'
+        AND saga_step = 'settled' AND settlement_outcome IN ('sold', 'reallocated')
+        AND tickets_issued_at IS NULL FOR UPDATE`,
+      [id],
+    );
+    return unwrapQueryResult<{ id: string }>(rows).length > 0;
+  }
+
   async confirm(ctx: TransactionContext, id: string): Promise<boolean> {
     const result = (await entityManagerOf(ctx).query(
       `UPDATE booking_draft
           SET flow_state = 'confirmed', status = 'CONFIRMED',
               tickets_issued_at = now(), saga_step = 'confirmed',
-              updated_at = now()
-        WHERE id = $1 AND flow_state = 'confirming' AND tickets_issued_at IS NULL
+               payment_client_secret = NULL, resume_next_attempt_at = NULL,
+               saga_attempts = 0, updated_at = now()
+         WHERE id = $1 AND flow_state = 'confirming' AND saga_step = 'settled'
+           AND settlement_outcome IN ('sold', 'reallocated') AND tickets_issued_at IS NULL
         RETURNING id`,
       [id],
     )) as { id: string }[];
-    return result.length > 0;
+    return unwrapQueryResult<{ id: string }>(result).length > 0;
   }
 
   /** No seat was left after settlement: the whole charge must come back. */
   async beginRefunding(id: string): Promise<boolean> {
-    return this.transition(id, ['confirming'], {
-      flowState: 'refunding',
-      sagaStep: 'refunding',
-    });
+    return this.transition(
+      id,
+      ['confirming'],
+      {
+        flowState: 'refunding',
+        sagaStep: 'refunding',
+        sagaAttempts: 0,
+      },
+      "settlement_outcome = 'no_seats' AND saga_step = 'settled'",
+    );
   }
 
   async recordRefund(
@@ -339,12 +403,14 @@ export class BookingFlowRepository {
       `UPDATE booking_draft
           SET flow_state = 'refunded', status = 'CANCELLED',
               refund_reference = $2, refunded_at = now(),
-              saga_step = 'refunded', updated_at = now()
-        WHERE id = $1 AND flow_state = 'refunding'
+               saga_step = 'refunded', payment_client_secret = NULL,
+               resume_next_attempt_at = NULL, saga_attempts = 0, updated_at = now()
+         WHERE id = $1 AND flow_state = 'refunding' AND NOT charge_cancelled
+           AND settlement_outcome = 'no_seats'
         RETURNING id`,
       [id, reference],
     )) as { id: string }[];
-    return result.length > 0;
+    return unwrapQueryResult<{ id: string }>(result).length > 0;
   }
 
   async abandon(id: string): Promise<boolean> {
@@ -354,17 +420,24 @@ export class BookingFlowRepository {
       compensationStatus: 'pending',
       compensationNextAttemptAt: new Date(),
       resumeNextAttemptAt: null,
+      paymentClientSecret: null,
     });
   }
 
   /** Expires one flow whose hold has run out. */
   async expireIfDue(id: string): Promise<boolean> {
-    return this.transition(id, HELD_STATES, {
-      flowState: 'expired',
-      compensationStatus: 'pending',
-      compensationNextAttemptAt: new Date(),
-      resumeNextAttemptAt: null,
-    }, 'expires_at <= now()');
+    return this.transition(
+      id,
+      HELD_STATES,
+      {
+        flowState: 'expired',
+        compensationStatus: 'pending',
+        compensationNextAttemptAt: new Date(),
+        resumeNextAttemptAt: null,
+        paymentClientSecret: null,
+      },
+      'expires_at <= now()',
+    );
   }
 
   /** Expires every flow whose hold has run out, for the sweep. */
@@ -377,6 +450,7 @@ export class BookingFlowRepository {
         compensationStatus: 'pending',
         compensationNextAttemptAt: () => 'now()',
         resumeNextAttemptAt: null,
+        paymentClientSecret: null,
         updatedAt: () => 'now()',
       })
       .where('flow_state IN (:...states)', { states: HELD_STATES })
@@ -396,6 +470,7 @@ export class BookingFlowRepository {
         compensationStatus: 'pending',
         compensationNextAttemptAt: () => 'now()',
         resumeNextAttemptAt: null,
+        paymentClientSecret: null,
         updatedAt: () => 'now()',
       })
       .where('hold_id = :holdId', { holdId })
@@ -457,16 +532,26 @@ export class BookingFlowRepository {
     return rows[0]?.ref ?? null;
   }
 
-  async markHoldReleased(id: string): Promise<void> {
-    await this.set(id, { holdReleased: true });
+  async markHoldReleased(id: string, forSaga = false): Promise<void> {
+    await this.set(
+      id,
+      { holdReleased: true },
+      forSaga
+        ? "flow_state = 'refunding' AND settlement_outcome = 'no_seats' AND NOT charge_cancelled"
+        : COMPENSATION_GUARD,
+    );
   }
 
   async markChargeCancelled(id: string): Promise<void> {
-    await this.set(id, { chargeCancelled: true });
+    await this.set(id, { chargeCancelled: true }, COMPENSATION_GUARD);
   }
 
   async recordPaymentReference(id: string, reference: string): Promise<void> {
-    await this.set(id, { paymentReference: reference });
+    await this.set(
+      id,
+      { paymentReference: reference },
+      'payment_reference IS NULL',
+    );
   }
 
   async completeCompensation(id: string): Promise<void> {
@@ -480,17 +565,21 @@ export class BookingFlowRepository {
         updatedAt: () => 'now()',
       })
       .where('id = :id', { id })
-      .andWhere('compensation_status = :pending', { pending: 'pending' })
+      .andWhere(COMPENSATION_GUARD)
       .execute();
   }
 
   /** A charge that succeeded mid-compensation needs a human, not a retry. */
   async recordLatePayment(id: string, reason: string): Promise<void> {
-    await this.set(id, {
-      latePayment: true,
-      compensationStatus: 'late_payment',
-      compensationLastError: reason,
-    });
+    await this.set(
+      id,
+      {
+        latePayment: true,
+        compensationStatus: 'late_payment',
+        compensationLastError: reason,
+      },
+      COMPENSATION_GUARD,
+    );
   }
 
   async recordCompensationFailure(
@@ -511,7 +600,7 @@ export class BookingFlowRepository {
         updatedAt: () => 'now()',
       })
       .where('id = :id', { id })
-      .andWhere('compensation_status = :pending', { pending: 'pending' })
+      .andWhere(COMPENSATION_GUARD)
       .execute();
   }
 
@@ -543,7 +632,8 @@ export class BookingFlowRepository {
     const rawResult = await this.drafts.query(
       `WITH due AS (
          SELECT id FROM booking_draft
-          WHERE compensation_status = 'pending'
+           WHERE compensation_status = 'pending'
+             AND payment_succeeded_at IS NULL
             AND compensation_next_attempt_at <= now()
             AND (lease_until IS NULL OR lease_until < now())
           ORDER BY compensation_next_attempt_at
@@ -593,6 +683,24 @@ export class BookingFlowRepository {
       .execute();
   }
 
+  async deferSaga(
+    id: string,
+    workerId: string,
+    error: string,
+  ): Promise<number | null> {
+    const result = await this.drafts.query(
+      `UPDATE booking_draft SET saga_attempts = saga_attempts + 1,
+        resume_next_attempt_at = now() +
+          LEAST(1000 * power(2, LEAST(saga_attempts + 1, 6)), 60000) * interval '1 millisecond',
+        compensation_last_error = $3, lease_until = NULL, lease_owner = NULL,
+        updated_at = now()
+        WHERE id = $1 AND lease_owner = $2 AND flow_state IN ('confirming', 'refunding')
+        RETURNING saga_attempts AS attempts`,
+      [id, workerId, error],
+    );
+    return unwrapQueryResult<{ attempts: number }>(result)[0]?.attempts ?? null;
+  }
+
   async deadLetterCompensation(
     id: string,
     attempts: number,
@@ -613,13 +721,15 @@ export class BookingFlowRepository {
   private async set(
     id: string,
     values: Record<string, unknown>,
+    guard?: string,
   ): Promise<void> {
-    await this.drafts
+    const query = this.drafts
       .createQueryBuilder()
       .update(BookingDraftEntity)
       .set({ ...values, updatedAt: () => 'now()' })
-      .where('id = :id', { id })
-      .execute();
+      .where('id = :id', { id });
+    if (guard) query.andWhere(guard);
+    await query.execute();
   }
 
   /** A guarded transition: it changed a row, or another request got there. */

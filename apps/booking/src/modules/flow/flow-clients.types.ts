@@ -1,6 +1,8 @@
 import type {
   CancelChargeRequest,
   CancelChargeResponse,
+  GetHoldRequest,
+  HoldSnapshot,
   QuoteBookingRequest,
   QuoteBookingResponse,
   RefundChargeRequest,
@@ -49,6 +51,11 @@ export interface PaymentFlowClient {
 }
 
 export interface InventoryFlowClient {
+  releaseHold(
+    request: GetHoldRequest,
+    metadata?: unknown,
+    options?: { deadline: number },
+  ): Observable<HoldSnapshot>;
   settleHold(
     request: SettleHoldRequest,
     metadata?: unknown,

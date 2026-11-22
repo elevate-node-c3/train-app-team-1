@@ -20,7 +20,6 @@ export class TicketIssuerService {
     const manager = entityManagerOf(ctx);
     const passengers = draft.passengerSnapshot ?? [];
     const settledSeats = draft.settledSeats ?? [];
-    const tickets: TicketEntity[] = [];
 
     for (const passenger of passengers) {
       const seats = settledSeats.filter(
@@ -58,11 +57,12 @@ export class TicketIssuerService {
             ticket.seatNumber,
           ],
         );
-
-        tickets.push(ticket);
       }
     }
 
-    return tickets;
+    return manager.getRepository(TicketEntity).find({
+      where: { bookingReference: draft.id },
+      order: { ticketNumber: 'ASC' },
+    });
   }
 }

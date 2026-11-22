@@ -72,6 +72,8 @@ export interface BookingResponse {
   currency: string;
   holdExpiresAt: string;
   paymentReference: string;
+  /** Only exposed to the owner while awaiting SDK confirmation; never logged. */
+  clientSecret?: string;
   serverTime: string;
   travelClass?: TravelClass;
   legs: BookedLeg[];

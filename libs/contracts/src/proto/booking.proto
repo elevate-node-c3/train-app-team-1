@@ -114,4 +114,5 @@ message BookingResponse {
   string termsAcceptedAt = 13;     // '' until accepted
   repeated Ticket tickets = 14;    // only once state is 'confirmed'
   bool seatsChanged = 15;          // a late payment forced a reallocation
+  string clientSecret = 16;        // owner only, while awaiting payment
 }

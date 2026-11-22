@@ -41,7 +41,8 @@ export type BookingFlowState =
   | 'refunding'
   | 'refunded';
 
-export type CompensationStatus = 'none' | 'pending' | 'complete' | 'late_payment';
+export type CompensationStatus =
+  'none' | 'pending' | 'complete' | 'late_payment';
 
 /** Inventory's settlement outcome, lower-cased for this column's own check. */
 export type SettlementOutcomeColumn = 'sold' | 'reallocated' | 'no_seats';
@@ -51,6 +52,9 @@ export interface SettledSeat {
   tripId: string;
   coachNumber: number;
   seatNumber: string;
+  outcome?: AllocationOutcome;
+  label?: string;
+  tripSeatId?: string;
 }
 
 export interface BookingHoldIntent {
@@ -181,6 +185,9 @@ export class BookingDraftEntity {
   @Column({ name: 'payment_reference', type: 'uuid', nullable: true })
   paymentReference!: string | null;
 
+  @Column({ name: 'payment_client_secret', type: 'text', nullable: true })
+  paymentClientSecret!: string | null;
+
   @Column({ name: 'payment_attempted', type: 'boolean', default: false })
   paymentAttempted!: boolean;
 
@@ -214,7 +221,11 @@ export class BookingDraftEntity {
   @Column({ name: 'compensation_last_error', type: 'text', nullable: true })
   compensationLastError!: string | null;
 
-  @Column({ name: 'resume_next_attempt_at', type: 'timestamptz', nullable: true })
+  @Column({
+    name: 'resume_next_attempt_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
   resumeNextAttemptAt!: Date | null;
 
   @Column({ name: 'resume_attempts', type: 'integer', default: 0 })
@@ -264,6 +275,9 @@ export class BookingDraftEntity {
 
   @Column({ name: 'saga_step', type: 'varchar', length: 24, nullable: true })
   sagaStep!: string | null;
+
+  @Column({ name: 'saga_attempts', type: 'integer', default: 0 })
+  sagaAttempts!: number;
 
   /** How many passengers the hold is for; the intent is the source. */
   get passengerCount(): number {

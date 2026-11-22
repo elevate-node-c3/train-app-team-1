@@ -11,6 +11,7 @@ import type {
 } from '@app/messaging';
 import { BookingFlowRepository } from './booking-flow.repository.js';
 import { parsePaymentSucceededEvent } from './payment-succeeded.parser.js';
+import { PermanentEventError } from '@app/messaging/event-errors.js';
 
 export const BOOKING_PAYMENT_QUEUES = {
   [PAYMENT_SUCCEEDED_EVENT_TYPE]: 'booking.payment.succeeded',
@@ -44,7 +45,10 @@ export class PaymentSucceededConsumer implements EventHandlerPort {
 
     const started = await this.repository.beginConfirming({
       bookingReference: payload.bookingReference,
-      paymentEventId: envelope.id,
+      paymentEventId: payload.stripeEventId,
+      paymentReference: payload.paymentReference,
+      amountPiastres: payload.amountPiastres,
+      currency: payload.currency,
     });
     if (started) return { status: 'handled' };
 
@@ -52,6 +56,18 @@ export class PaymentSucceededConsumer implements EventHandlerPort {
     // this step (a duplicate delivery). Only the former is skipped.
     const draft = await this.repository.findById(payload.bookingReference);
     if (!draft) return { status: 'skipped', skipReason: 'unknown_booking' };
+    if (
+      !draft.paymentSucceededAt &&
+      (draft.totalPiastres !== payload.amountPiastres ||
+        payload.currency !== 'EGP' ||
+        (draft.paymentReference &&
+          draft.paymentReference !== payload.paymentReference))
+    ) {
+      throw new PermanentEventError(
+        'Payment does not match the locked booking.',
+        'invalid-payload',
+      );
+    }
     return { status: 'handled' };
   }
 }

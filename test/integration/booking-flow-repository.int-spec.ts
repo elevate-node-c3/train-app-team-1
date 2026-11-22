@@ -93,3 +93,47 @@ describe('BookingFlowRepository.findChargedWithoutOutcome', () => {
     expect(await repository.findChargedWithoutOutcome(60)).toEqual([]);
   });
 });
+
+describe('BookingFlowRepository.deferSaga', () => {
+  it('persists failure counts and capped exponential backoff for the current lease owner', async () => {
+    const worker = randomUUID();
+    await seed(BOOKING, {
+      flowState: 'refunding',
+      paymentSucceededAt: secondsAgo(90),
+    });
+    await ds.query(`UPDATE booking_draft SET lease_owner = $2 WHERE id = $1`, [
+      BOOKING,
+      worker,
+    ]);
+    expect(await repository.deferSaga(BOOKING, worker, 'refund refused')).toBe(
+      1,
+    );
+    const [first] = await ds.query(
+      `SELECT saga_attempts,
+      EXTRACT(EPOCH FROM (resume_next_attempt_at - updated_at)) AS delay,
+      lease_owner, compensation_last_error FROM booking_draft WHERE id = $1`,
+      [BOOKING],
+    );
+    expect(first.saga_attempts).toBe(1);
+    expect(Number(first.delay)).toBe(2);
+    expect(first.lease_owner).toBeNull();
+    expect(first.compensation_last_error).toBe('refund refused');
+
+    await ds.query(
+      `UPDATE booking_draft SET lease_owner = $2, saga_attempts = 11 WHERE id = $1`,
+      [BOOKING, worker],
+    );
+    expect(
+      await repository.deferSaga(BOOKING, randomUUID(), 'stale attempt'),
+    ).toBeNull();
+    expect(await repository.deferSaga(BOOKING, worker, 'still refused')).toBe(
+      12,
+    );
+    const [last] = await ds.query(
+      `SELECT EXTRACT(EPOCH FROM
+      (resume_next_attempt_at - updated_at)) AS delay FROM booking_draft WHERE id = $1`,
+      [BOOKING],
+    );
+    expect(Number(last.delay)).toBe(60);
+  });
+});

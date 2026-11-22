@@ -1,9 +1,10 @@
-import type {
+import {
   AllocationOutcome,
-  BookedLeg,
-  BookedPassenger,
-  BookingResponse,
-  Ticket,
+  SEATS_SPLIT_NOTICE,
+  type BookedLeg,
+  type BookedPassenger,
+  type BookingResponse,
+  type Ticket,
 } from '@app/contracts';
 
 import type { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
@@ -60,6 +61,12 @@ export function toBookingResponse(
     currency: BOOKING_CURRENCY,
     holdExpiresAt: draft.expiresAt?.toISOString() ?? '',
     paymentReference: draft.paymentReference ?? '',
+    clientSecret:
+      draft.flowState === 'awaiting_payment' &&
+      draft.expiresAt &&
+      draft.expiresAt > now
+        ? (draft.paymentClientSecret ?? '')
+        : '',
     serverTime: now.toISOString(),
     ...(draft.travelClass ? { travelClass: draft.travelClass } : {}),
     legs,
@@ -94,6 +101,16 @@ function seatsOf(draft: BookingDraftEntity): SeatView[] {
       passengerRef: seat.passengerRef,
       coachNumber: seat.coachNumber,
       seatNumber: seat.seatNumber,
+      outcome:
+        seat.outcome ??
+        (!draft.seatsChanged
+          ? draft.holdSnapshot?.assignments.find(
+              (held) =>
+                held.tripId === seat.tripId &&
+                held.passengerRef === seat.passengerRef,
+            )?.outcome
+          : undefined),
+      label: seat.label,
     }));
   }
 
@@ -116,6 +133,13 @@ function splitNoticeOf(
   draft: BookingDraftEntity,
   tripId: string,
 ): Pick<BookedLeg, 'splitNotice'> | Record<string, never> {
+  if (draft.settledSeats) {
+    return outcomeOf(
+      seatsOf(draft).filter((seat) => seat.tripId === tripId),
+    ) === AllocationOutcome.SPLIT
+      ? { splitNotice: SEATS_SPLIT_NOTICE }
+      : {};
+  }
   const leg = draft.legs.find((candidate) => candidate.tripId === tripId);
   return leg?.splitNotice ? { splitNotice: leg.splitNotice } : {};
 }

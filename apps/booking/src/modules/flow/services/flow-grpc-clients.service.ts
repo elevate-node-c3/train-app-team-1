@@ -7,6 +7,8 @@ import { Metadata as GrpcMetadata } from '@grpc/grpc-js';
 import type {
   CancelChargeRequest,
   CancelChargeResponse,
+  GetHoldRequest,
+  HoldSnapshot,
   QuoteBookingRequest,
   QuoteBookingResponse,
   RefundChargeRequest,
@@ -24,6 +26,7 @@ import {
   type InventoryFlowClient,
   type PaymentFlowClient,
 } from '../flow-clients.types.js';
+import { serviceKeyFor } from '../../../config/service-keys.js';
 
 export const FLOW_GRPC_DEADLINE_MS = 1_800;
 
@@ -85,11 +88,22 @@ export class FlowGrpcClientsService {
     request: SettleHoldRequest,
     correlationId?: string,
   ): Promise<SettlementSnapshot> {
-    return this.call(
-      (metadata, deadline) =>
-        this.inventory.settleHold(request, metadata, { deadline }),
-      correlationId,
-    );
+    return this.call((metadata, deadline) => {
+      const key = serviceKeyFor('inventory');
+      if (key) metadata.set('x-booking-inventory-key', key);
+      return this.inventory.settleHold(request, metadata, { deadline });
+    }, correlationId);
+  }
+
+  releaseHold(
+    request: GetHoldRequest,
+    correlationId?: string,
+  ): Promise<HoldSnapshot> {
+    return this.call((metadata, deadline) => {
+      const key = serviceKeyFor('inventory');
+      if (key) metadata.set('x-booking-inventory-key', key);
+      return this.inventory.releaseHold(request, metadata, { deadline });
+    }, correlationId);
   }
 
   private call<T>(

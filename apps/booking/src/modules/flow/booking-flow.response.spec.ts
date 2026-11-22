@@ -3,6 +3,7 @@ import type { SettledSeat } from '../draft/entities/booking-draft.entity.js';
 import { BookingDraftEntity } from '../draft/entities/booking-draft.entity.js';
 import { TicketEntity } from './entities/ticket.entity.js';
 import { toBookingResponse } from './booking-flow.response.js';
+import { AllocationOutcome, SEATS_SPLIT_NOTICE } from '@app/contracts';
 
 const TRIP = 'trip-1';
 const PASSENGER = 'p1';
@@ -115,5 +116,75 @@ describe('toBookingResponse', () => {
     );
     expect(response.seatsChanged).toBe(true);
     expect(response.legs[0].passengers[0].seatNumber).toBe('12');
+  });
+
+  it('exposes the SDK secret only while the owner can still pay', () => {
+    const paymentClientSecret = 'pi_booking_secret_private';
+    expect(
+      toBookingResponse(
+        draft({
+          flowState: 'awaiting_payment',
+          paymentClientSecret,
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+      ).clientSecret,
+    ).toBe(paymentClientSecret);
+    for (const flowState of [
+      'confirming',
+      'confirmed',
+      'refunding',
+      'refunded',
+      'expired',
+      'abandoned',
+    ] as const) {
+      expect(
+        toBookingResponse(draft({ flowState, paymentClientSecret }))
+          .clientSecret,
+      ).toBe('');
+    }
+  });
+
+  it('withholds the SDK secret at and after the actual hold deadline', () => {
+    const expiresAt = new Date('2026-11-22T01:00:00.000Z');
+    const booking = draft({
+      flowState: 'awaiting_payment',
+      expiresAt,
+      paymentClientSecret: 'pi_booking_secret_private',
+    });
+    expect(
+      toBookingResponse(booking, [], new Date(expiresAt.getTime() - 1))
+        .clientSecret,
+    ).toBe('pi_booking_secret_private');
+    expect(toBookingResponse(booking, [], expiresAt).clientSecret).toBe('');
+    expect(
+      toBookingResponse(booking, [], new Date(expiresAt.getTime() + 1))
+        .clientSecret,
+    ).toBe('');
+  });
+
+  it('uses the settled allocation and not an obsolete split warning', () => {
+    const legs = [{ tripId: TRIP, splitNotice: SEATS_SPLIT_NOTICE }];
+    const response = toBookingResponse(
+      draft({
+        seatsChanged: true,
+        legs: legs as BookingDraftEntity['legs'],
+        settledSeats: [seat({ outcome: AllocationOutcome.SIDE_BY_SIDE })],
+      }),
+    );
+    expect(response.legs[0].allocationOutcome).toBe(
+      AllocationOutcome.SIDE_BY_SIDE,
+    );
+    expect(response.legs[0].splitNotice).toBeUndefined();
+  });
+
+  it('reports a new split allocation from settlement metadata', () => {
+    const response = toBookingResponse(
+      draft({
+        seatsChanged: true,
+        settledSeats: [seat({ outcome: AllocationOutcome.SPLIT })],
+      }),
+    );
+    expect(response.legs[0].allocationOutcome).toBe(AllocationOutcome.SPLIT);
+    expect(response.legs[0].splitNotice).toEqual(SEATS_SPLIT_NOTICE);
   });
 });

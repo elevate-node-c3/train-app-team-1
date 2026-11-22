@@ -1,11 +1,14 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { Test } from '@nestjs/testing';
 import { ClsModule, ClsService } from 'nestjs-cls';
 import type { DataSource } from 'typeorm';
 
 import { DataSourceInitializer } from '@app/common/persistence/data-source-initializer.js';
-import { TypeOrmUnitOfWork } from '@app/common/persistence/typeorm-unit-of-work.js';
+import {
+  TypeOrmUnitOfWork,
+  entityManagerOf,
+} from '@app/common/persistence/typeorm-unit-of-work.js';
 import { SchemaReadinessGate } from '@app/common/persistence/schema-readiness.gate.js';
 import {
   AmqpClientService,
@@ -17,7 +20,14 @@ import {
   TypeOrmOutboxRepository,
   TypeOrmProcessedEventStore,
 } from '@app/messaging';
-import type { RefundChargeRequest, SettleHoldRequest } from '@app/contracts';
+import type {
+  EventEnvelope,
+  RefundChargeRequest,
+  SettleHoldRequest,
+} from '@app/contracts';
+import { EVENT_TYPES } from '@app/contracts';
+import { EVENTS_EXCHANGE } from '@app/messaging/amqp-topology.js';
+import { envelopeOf, fromDbRow } from '@app/messaging/outbox/outbox-row.js';
 
 import { HoldCoreRepository } from '../../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
 import { HoldCoreService } from '../../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
@@ -37,19 +47,19 @@ import {
 } from '../../../apps/booking/src/modules/flow/payment-succeeded.consumer.js';
 
 import { buildPaymentSucceeded } from '../../../apps/payment/src/modules/charges/payment-events.factory.js';
+import { PaymentDoubleService } from '../../../apps/payment/src/modules/charges/services/payment-double.service.js';
+import { PaymentChargeRepository } from '../../../apps/payment/src/modules/charges/repositories/payment-charge.repository.js';
+import { ChargeCardRepository } from '../../../apps/payment/src/modules/charges/repositories/charge-card.repository.js';
+import type { PaymentIntentService } from '../../../apps/payment/src/modules/charges/services/payment-intent.service.js';
+import { PaymentChargeEntity } from '../../../apps/payment/src/modules/charges/entities/payment-charge.entity.js';
+import { SavedCardEntity } from '../../../apps/payment/src/modules/cards/entities/saved-card.entity.js';
 
 const MINUTE = 60_000;
 const TRAVEL_CLASS = randomUUID();
 const STATIONS = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
 
-/**
- * In-process end-to-end harness for TA-107, scoped down per a deliberate
- * ruling: every distributed piece that matters is real (Postgres, RabbitMQ,
- * the outbox relay, the real event consumer, the real settlement branches),
- * but there is no literal container kill/restart and no wire-level gRPC --
- * `settleHold`/`refundCharge` call the real inventory/payment service
- * objects directly in-process instead of over the network.
- */
+// The direct-service fixture covers SQL and AMQP. The recovery suite separately
+// boots booking's production module in an abruptly terminated OS process.
 
 export function isolatedConfirmationEndpoints(databases: {
   inventory: string;
@@ -124,6 +134,7 @@ export interface BookingSagaInstance {
   confirmation: BookingConfirmationService;
   consumer: PaymentSucceededConsumer;
   consumerService: EventConsumerService;
+  deliveries: { eventId: string; contentHash: string }[];
   relayOnce: () => Promise<number>;
   startConsumer: () => Promise<void>;
   stopConsumer: () => Promise<void>;
@@ -170,6 +181,15 @@ export async function bookingSagaInstance(
     cls,
     failures,
   );
+  const deliveries: BookingSagaInstance['deliveries'] = [];
+  const handleMessage = consumerService.handleMessage.bind(consumerService);
+  consumerService.handleMessage = async (subscription, message, channel) => {
+    await handleMessage(subscription, message, channel);
+    deliveries.push({
+      eventId: message.properties.messageId,
+      contentHash: createHash('sha256').update(message.content).digest('hex'),
+    });
+  };
 
   // Booking's own outbox needs a relay too, for booking.confirmed and the rest.
   const publisherAmqp = new AmqpClientService();
@@ -188,6 +208,7 @@ export async function bookingSagaInstance(
     confirmation,
     consumer,
     consumerService,
+    deliveries,
     relayOnce: () => relay.runOnce(),
     startConsumer: () => consumerService.onApplicationBootstrap(),
     stopConsumer: () => consumerService.beforeApplicationShutdown(),
@@ -200,7 +221,9 @@ export async function bookingSagaInstance(
 }
 
 /** A real HoldSettlementService, constructed directly, no gRPC hop. */
-export function inventorySettlementFor(source: DataSource): HoldSettlementService {
+export function inventorySettlementFor(
+  source: DataSource,
+): HoldSettlementService {
   const initializer = new DataSourceInitializer(source);
   const unitOfWork = new TypeOrmUnitOfWork(initializer);
   const outbox = new TypeOrmOutboxRepository(initializer);
@@ -208,7 +231,11 @@ export function inventorySettlementFor(source: DataSource): HoldSettlementServic
     outbox,
     new AvailabilityCountsRepository(),
   );
-  return new HoldSettlementService(new HoldCoreRepository(), unitOfWork, availability);
+  return new HoldSettlementService(
+    new HoldCoreRepository(),
+    unitOfWork,
+    availability,
+  );
 }
 
 export function inventoryHoldServiceFor(source: DataSource): HoldCoreService {
@@ -218,43 +245,38 @@ export function inventoryHoldServiceFor(source: DataSource): HoldCoreService {
   return new HoldCoreService(new HoldCoreRepository(), unitOfWork, outbox);
 }
 
-/**
- * Stands in for the gRPC hop to inventory and payment: real settlement
- * logic, real payment-row mutation, zero network. `refundCharge` mirrors
- * `PaymentDoubleService.refund`'s dummy body directly against the real
- * payment database -- deliberately not wiring Stripe's whole intent stack
- * for this one path.
- */
+/** The production payment double's refund, not a hand-written SQL imitation. */
+export function paymentServiceFor(
+  paymentSource: DataSource,
+): PaymentDoubleService {
+  const unusedIntents = new Proxy({} as PaymentIntentService, {
+    get: () => {
+      throw new Error(
+        'This seeded-charge fixture must not create Stripe intents.',
+      );
+    },
+  });
+  return new PaymentDoubleService(
+    new PaymentChargeRepository(
+      paymentSource.getRepository(PaymentChargeEntity),
+    ),
+    new ChargeCardRepository(paymentSource.getRepository(SavedCardEntity)),
+    unusedIntents,
+  );
+}
+
+/** Direct-service adapter only; the recovery suite uses real gRPC clients. */
 export function clientsFor(
   settlement: HoldSettlementService,
   paymentSource: DataSource,
+  inventorySource: DataSource,
 ): FlowGrpcClientsService {
+  const payment = paymentServiceFor(paymentSource);
   return {
     settleHold: (request: SettleHoldRequest) => settlement.settle(request),
-    refundCharge: async (request: RefundChargeRequest) => {
-      const rows = (await paymentSource.query(
-        'SELECT * FROM payment_charge WHERE id = $1 AND booking_reference = $2',
-        [request.paymentReference, request.bookingReference],
-      )) as { id: string; status: string; amount_piastres: number }[];
-      const charge = rows[0];
-      if (!charge) throw new Error('No charge for this booking.');
-      const refundReference = `refund_${charge.id}`;
-      if (charge.status === 'refunded') {
-        return {
-          status: 'ALREADY_REFUNDED',
-          refundReference,
-          amountPiastres: charge.amount_piastres,
-        };
-      }
-      await paymentSource.query(
-        `UPDATE payment_charge SET status = 'refunded' WHERE id = $1`,
-        [charge.id],
-      );
-      return {
-        status: 'REFUNDED',
-        refundReference,
-        amountPiastres: charge.amount_piastres,
-      };
+    refundCharge: (request: RefundChargeRequest) => payment.refund(request),
+    releaseHold: (request: { ownerId: string; bookingKey: string }) => {
+      return inventoryHoldServiceFor(inventorySource).releaseHold(request);
     },
   } as unknown as FlowGrpcClientsService;
 }
@@ -378,14 +400,20 @@ export async function aLiveHoldAwaitingPayment(
     passengerRef: ref,
     displayName: ref,
     maskedNationalId: '***',
-    identities: [],
+    identities: [
+      {
+        tripId: trip.tripId,
+        passengerToken: `${ref}:${trip.tripId}`,
+        passengerKeyVersion: 1,
+      },
+    ],
   }));
 
   await bookingSource.query(
     `INSERT INTO booking_draft
        (id, user_id, flow_state, status, total_piastres, payment_reference,
-        hold_id, correlation_id, passenger_snapshot)
-     VALUES ($1, $2, 'awaiting_payment', 'PENDING', $3, $4, $5, $6, $7::jsonb)`,
+         hold_id, correlation_id, passenger_snapshot, hold_intent, hold_snapshot)
+      VALUES ($1, $2, 'awaiting_payment', 'PENDING', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)`,
     [
       bookingId,
       ownerId,
@@ -394,6 +422,8 @@ export async function aLiveHoldAwaitingPayment(
       snapshot.holdId,
       randomUUID(),
       JSON.stringify(passengerSnapshot),
+      JSON.stringify({ legs: [legInput], passengerRefs: passengers }),
+      JSON.stringify(snapshot),
     ],
   );
 
@@ -452,7 +482,7 @@ export async function publishPaymentSucceeded(
   paymentOutboxRelay: Awaited<ReturnType<typeof outboxRelayFor>>,
   booking: LiveBooking,
   overrides: { eventId?: string; amountPiastres?: number } = {},
-): Promise<void> {
+): Promise<EventEnvelope> {
   const event = buildPaymentSucceeded({
     eventId: overrides.eventId ?? randomUUID(),
     correlationId: randomUUID(),
@@ -465,18 +495,77 @@ export async function publishPaymentSucceeded(
       stripeEventId: overrides.eventId ?? randomUUID(),
     },
   });
-  try {
-    await paymentOutboxRelay.unitOfWork.withTransaction((ctx) =>
-      paymentOutboxRelay.outbox.append(ctx, event),
-    );
-  } catch (error: unknown) {
-    // Mirrors production: the real webhook path dedups at stripe_event
-    // before ever appending twice. A repeated eventId here is the same
-    // logical delivery, not a second one.
-    const code = (error as { code?: string } | null)?.code;
-    if (code !== '23505') throw error;
-  }
+  const persisted = await paymentOutboxRelay.unitOfWork.withTransaction(
+    async (ctx) => {
+      await paymentOutboxRelay.outbox.append(ctx, event);
+      const [row] = await entityManagerOf(ctx).query(
+        'SELECT * FROM outbox_event WHERE id = $1',
+        [event.id],
+      );
+      // JSONB normalizes payload key order. Replay the relay's stored envelope,
+      // not the pre-persistence factory object, to preserve every published byte.
+      return envelopeOf(fromDbRow(row));
+    },
+  );
   await paymentOutboxRelay.runOnce();
+  return persisted;
+}
+
+/** Model an at-least-once relay replay: every envelope byte is unchanged. */
+export async function redeliverPaymentSucceeded(
+  relay: Awaited<ReturnType<typeof outboxRelayFor>>,
+  envelope: EventEnvelope,
+): Promise<void> {
+  await new EventPublisherService(relay.amqp).publishConfirmed(envelope);
+}
+
+/** Durable bindings with no listener allow observing independently relayed outcomes. */
+export async function outcomeQueueFor(
+  amqp: AmqpClientService,
+  eventTypes: readonly string[] = [
+    EVENT_TYPES.bookingConfirmed,
+    EVENT_TYPES.bookingRefunded,
+    EVENT_TYPES.bookingSeatsChanged,
+  ],
+): Promise<{ queue: string; close: () => Promise<void> }> {
+  const channel = await amqp.ensureChannel();
+  await channel.assertExchange(EVENTS_EXCHANGE, 'topic', { durable: true });
+  const queue = `test.booking-confirmation.${randomUUID()}`;
+  await channel.assertQueue(queue, { durable: true });
+  for (const eventType of eventTypes)
+    await channel.bindQueue(queue, EVENTS_EXCHANGE, eventType);
+  return {
+    queue,
+    close: async () => {
+      await channel.deleteQueue(queue);
+    },
+  };
+}
+
+/** Bounded condition polling; never a fixed sleep or a background polling loop. */
+export async function waitFor<T>(
+  probe: () => Promise<T>,
+  ready: (value: T) => boolean,
+  description: string,
+  timeoutMs = 15_000,
+): Promise<T> {
+  const deadline = performance.now() + timeoutMs;
+  do {
+    const value = await probe();
+    if (ready(value)) return value;
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  } while (performance.now() < deadline);
+  throw new Error(`Timed out waiting for ${description}.`);
+}
+
+export async function processedPaymentEvent(
+  source: DataSource,
+  eventId: string,
+): Promise<unknown[]> {
+  return source.query(
+    'SELECT event_id, status, attempt_count FROM processed_event WHERE event_id = $1',
+    [eventId],
+  );
 }
 
 /**
@@ -494,10 +583,7 @@ export async function driveSaga(
   while (performance.now() < end) {
     const draft = await saga.repository.findById(bookingId);
     if (!draft) throw new Error('Booking vanished mid-saga.');
-    if (
-      options.stopAtSagaStep &&
-      draft.sagaStep === options.stopAtSagaStep
-    ) {
+    if (options.stopAtSagaStep && draft.sagaStep === options.stopAtSagaStep) {
       await saga.relayOnce();
       return;
     }

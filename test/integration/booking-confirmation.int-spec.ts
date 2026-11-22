@@ -1,7 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { ClsService } from 'nestjs-cls';
 import type { DataSource } from 'typeorm';
+import { ephemeralRabbitVhost } from './support/rabbit-vhost.js';
 
 import {
   bookingDataSource,
@@ -31,14 +41,18 @@ import {
   inventorySettlementFor,
   isolatedConfirmationEndpoints,
   outboxRelayFor,
+  outcomeQueueFor,
+  processedPaymentEvent,
   publishPaymentSucceeded,
   publishedCount,
   refundedAmount,
+  redeliverPaymentSucceeded,
   sellEverySeatInClass,
   soldCount,
   soldCountForBooking,
   state,
   ticketCount,
+  waitFor,
   type BookingSagaInstance,
   type LiveBooking,
 } from './support/booking-confirmation-fixture.js';
@@ -51,10 +65,10 @@ const OUTBOUND = randomUUID();
 const RETURN = randomUUID();
 
 async function seedDraft(id: string): Promise<void> {
-  await ds.query(
-    `INSERT INTO booking_draft (id, user_id) VALUES ($1, $2)`,
-    [id, randomUUID()],
-  );
+  await ds.query(`INSERT INTO booking_draft (id, user_id) VALUES ($1, $2)`, [
+    id,
+    randomUUID(),
+  ]);
 }
 
 async function insertTicket(
@@ -72,7 +86,13 @@ async function insertTicket(
        (id, booking_reference, passenger_ref, trip_id, ticket_number,
         coach_number, seat_number)
      VALUES ($1, $2, $3, $4, $5, 1, '1A')`,
-    [id, props.bookingReference, props.passengerRef, props.tripId, props.ticketNumber],
+    [
+      id,
+      props.bookingReference,
+      props.passengerRef,
+      props.tripId,
+      props.ticketNumber,
+    ],
   );
   return { id };
 }
@@ -138,28 +158,23 @@ describe('booking confirmation saga schema', () => {
     for (const state of ['confirming', 'confirmed', 'refunding', 'refunded']) {
       await expect(setFlowState(ds, BOOKING, state)).resolves.toBeDefined();
     }
-    await expect(
-      setFlowState(ds, BOOKING, 'nearly_confirmed'),
-    ).rejects.toThrow(/chk_booking_draft_flow_state/);
+    await expect(setFlowState(ds, BOOKING, 'nearly_confirmed')).rejects.toThrow(
+      /chk_booking_draft_flow_state/,
+    );
   });
 });
 
-/**
- * TA-107's acceptance criteria, end to end. Scoped down by an explicit
- * ruling (see the plan's ledger): real Postgres, real RabbitMQ, the real
- * outbox relay and the real event consumer all run; `settleHold` and
- * `refundCharge` call the real inventory/payment service objects directly
- * in-process rather than over gRPC, and "restart" means closing and
- * re-creating this harness's own instances rather than a literal Docker
- * container kill -- those containers are not part of local dev at all.
- */
-describe('TA-107 confirmation saga, end to end', () => {
+// SQL/AMQP coverage with direct production service calls. Genuine process
+// crash recovery and authenticated gRPC live in booking-confirmation-recovery.
+describe('TA-107 confirmation saga, SQL and AMQP', () => {
   let inventorySource: DataSource;
   let paymentSource: DataSource;
   let cls: ClsService;
   let paymentRelay: Awaited<ReturnType<typeof outboxRelayFor>>;
   let bookingSource: DataSource;
   let saga: BookingSagaInstance;
+  let outcomes: Awaited<ReturnType<typeof outcomeQueueFor>>;
+  let vhost: Awaited<ReturnType<typeof ephemeralRabbitVhost>> | undefined;
 
   beforeAll(async () => {
     bookingSource = await bookingDataSource();
@@ -170,21 +185,34 @@ describe('TA-107 confirmation saga, end to end', () => {
       booking: BOOKING_DATABASE_URL,
       payment: PAYMENT_DATABASE_URL,
     });
+    vhost = await ephemeralRabbitVhost('booking-confirmation');
+    vi.stubEnv('HOLDS_TEST_RABBITMQ_URL', vhost.rabbit);
+    vi.stubEnv('RABBITMQ_URL', vhost.rabbit);
     cls = await clsInstance();
     paymentRelay = await outboxRelayFor(paymentSource, cls);
+    outcomes = await outcomeQueueFor(paymentRelay.amqp);
   }, 60_000);
 
   afterAll(async () => {
-    await paymentRelay.close();
-    await closeInventoryDataSource();
-    await closePaymentDataSource();
+    try {
+      await outcomes?.close();
+      await paymentRelay?.close();
+      await closeInventoryDataSource();
+      await closePaymentDataSource();
+    } finally {
+      try {
+        await vhost?.close();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
   });
 
   beforeEach(async () => {
     await truncateInventory(inventorySource);
     await truncatePayment(paymentSource);
     const settlement = inventorySettlementFor(inventorySource);
-    const clients = clientsFor(settlement, paymentSource);
+    const clients = clientsFor(settlement, paymentSource, inventorySource);
     saga = await bookingSagaInstance(bookingSource, clients, cls);
     await saga.startConsumer();
   }, 30_000);
@@ -204,175 +232,121 @@ describe('TA-107 confirmation saga, end to end', () => {
     );
   }
 
-  it(
-    'confirms a booking end to end, from the published event to the tickets',
-    async () => {
-      const booking = await newBooking({ totalPiastres: 6955 });
-      await publishPaymentSucceeded(paymentRelay, booking, {
-        amountPiastres: 6955,
-      });
-      await driveSaga(saga, booking.id);
+  it('confirms a booking end to end, from the published event to the tickets', async () => {
+    const booking = await newBooking({ totalPiastres: 6955 });
+    await publishPaymentSucceeded(paymentRelay, booking, {
+      amountPiastres: 6955,
+    });
+    await driveSaga(saga, booking.id);
 
-      expect(await state(bookingSource, booking)).toBe('confirmed');
-      expect(await ticketCount(bookingSource, booking)).toBe(
-        booking.passengers.length * booking.legs.length,
-      );
-      expect(await soldCount(inventorySource, booking.tripId)).toBe(
-        booking.passengers.length,
-      );
-    },
-    30_000,
-  );
+    expect(await state(bookingSource, booking)).toBe('confirmed');
+    expect(await ticketCount(bookingSource, booking)).toBe(
+      booking.passengers.length * booking.legs.length,
+    );
+    expect(await soldCount(inventorySource, booking.tripId)).toBe(
+      booking.passengers.length,
+    );
+  }, 30_000);
 
-  it(
-    "does not confirm on the client's word alone",
-    async () => {
-      const booking = await newBooking();
-      expect(await state(bookingSource, booking)).toBe('awaiting_payment');
-      expect(await ticketCount(bookingSource, booking)).toBe(0);
-    },
-    30_000,
-  );
+  it("does not confirm on the client's word alone", async () => {
+    const booking = await newBooking();
+    expect(await state(bookingSource, booking)).toBe('awaiting_payment');
+    expect(await ticketCount(bookingSource, booking)).toBe(0);
+  }, 30_000);
 
-  it(
-    'sells once and publishes once when the event is delivered twice',
-    async () => {
-      const booking = await newBooking();
-      const eventId = randomUUID();
-      await publishPaymentSucceeded(paymentRelay, booking, { eventId });
-      await publishPaymentSucceeded(paymentRelay, booking, { eventId });
-      await driveSaga(saga, booking.id);
+  it('sells once and publishes once when the event is delivered twice', async () => {
+    const booking = await newBooking();
+    const event = await publishPaymentSucceeded(paymentRelay, booking);
+    await redeliverPaymentSucceeded(paymentRelay, event);
+    await driveSaga(saga, booking.id);
+    const deliveries = await waitFor(
+      async () =>
+        saga.deliveries.filter((delivery) => delivery.eventId === event.id),
+      (received) => received.length === 2,
+      'both identical broker deliveries to complete',
+    );
+    expect(deliveries[0].contentHash).toBe(deliveries[1].contentHash);
+    expect(await processedPaymentEvent(bookingSource, event.id)).toMatchObject([
+      { event_id: event.id, status: 'handled', attempt_count: 1 },
+    ]);
+    expect(await soldCountForBooking(inventorySource, booking)).toBe(
+      booking.passengers.length,
+    );
 
-      expect(await ticketCount(bookingSource, booking)).toBe(
-        booking.passengers.length,
-      );
-      expect(
-        await publishedCount(bookingSource, 'booking.confirmed', booking),
-      ).toBe(1);
-    },
-    30_000,
-  );
+    expect(await ticketCount(bookingSource, booking)).toBe(
+      booking.passengers.length,
+    );
+    expect(
+      await publishedCount(bookingSource, 'booking.confirmed', booking),
+    ).toBe(1);
+  }, 30_000);
 
-  it(
-    'issues the tickets exactly once when booking is killed between selling and issuing',
-    async () => {
-      const booking = await newBooking();
-      await publishPaymentSucceeded(paymentRelay, booking);
-      await driveSaga(saga, booking.id, {
-        stopAtSagaStep: 'settled',
-      });
+  it('confirms a booking whose event arrived while it was stopped', async () => {
+    const booking = await newBooking();
+    await saga.stopConsumer();
+    await publishPaymentSucceeded(paymentRelay, booking);
+    await saga.startConsumer();
 
-      // Kill the container, start it again: close this instance, build a new one.
-      await saga.close();
-      const settlement = inventorySettlementFor(inventorySource);
-      const clients = clientsFor(settlement, paymentSource);
-      saga = await bookingSagaInstance(bookingSource, clients, cls);
-      await saga.startConsumer();
+    await driveSaga(saga, booking.id);
 
-      await driveSaga(saga, booking.id);
+    expect(await state(bookingSource, booking)).toBe('confirmed');
+  }, 30_000);
 
-      expect(await state(bookingSource, booking)).toBe('confirmed');
-      expect(await ticketCount(bookingSource, booking)).toBe(
-        booking.passengers.length,
-      );
-    },
-    30_000,
-  );
+  it('refunds the whole total when no seat is left after a late payment', async () => {
+    const booking = await newBooking({ totalPiastres: 6955 });
+    await expireTheHold(inventorySource, booking);
+    await sellEverySeatInClass(
+      inventorySource,
+      booking.tripId,
+      booking.travelClassId,
+    );
+    await publishPaymentSucceeded(paymentRelay, booking, {
+      amountPiastres: 6955,
+    });
+    await driveSaga(saga, booking.id);
 
-  it(
-    'confirms a booking whose event arrived while it was stopped',
-    async () => {
-      const booking = await newBooking();
-      await saga.stopConsumer();
-      await publishPaymentSucceeded(paymentRelay, booking);
-      await saga.startConsumer();
+    expect(await state(bookingSource, booking)).toBe('refunded');
+    expect(await ticketCount(bookingSource, booking)).toBe(0);
+    expect(await refundedAmount(bookingSource, booking)).toBe(6955);
+  }, 30_000);
 
-      await driveSaga(saga, booking.id);
+  it('produces exactly one outcome when the hold expires and the payment lands together', async () => {
+    const booking = await newBooking();
+    await Promise.all([
+      expireTheHold(inventorySource, booking),
+      publishPaymentSucceeded(paymentRelay, booking),
+    ]);
+    await driveSaga(saga, booking.id);
 
-      expect(await state(bookingSource, booking)).toBe('confirmed');
-    },
-    30_000,
-  );
+    const final = await state(bookingSource, booking);
+    expect(['confirmed', 'refunded']).toContain(final);
+    if (final === 'confirmed') {
+      expect(await refundedAmount(bookingSource, booking)).toBe(0);
+    } else {
+      expect(await soldCountForBooking(inventorySource, booking)).toBe(0);
+    }
+  }, 30_000);
 
-  it(
-    'sells once across a restart between two deliveries of the same event',
-    async () => {
-      const booking = await newBooking();
-      const eventId = randomUUID();
-      await publishPaymentSucceeded(paymentRelay, booking, { eventId });
-      await driveSaga(saga, booking.id);
+  it('confirms and relays to a durable outcome queue even with no listener', async () => {
+    const booking = await newBooking();
+    await publishPaymentSucceeded(paymentRelay, booking);
+    await driveSaga(saga, booking.id);
 
-      await saga.close();
-      const settlement = inventorySettlementFor(inventorySource);
-      const clients = clientsFor(settlement, paymentSource);
-      saga = await bookingSagaInstance(bookingSource, clients, cls);
-      await saga.startConsumer();
-
-      await publishPaymentSucceeded(paymentRelay, booking, { eventId });
-      await driveSaga(saga, booking.id);
-
-      expect(await ticketCount(bookingSource, booking)).toBe(
-        booking.passengers.length,
-      );
-    },
-    30_000,
-  );
-
-  it(
-    'refunds the whole total when no seat is left after a late payment',
-    async () => {
-      const booking = await newBooking({ totalPiastres: 6955 });
-      await expireTheHold(inventorySource, booking);
-      await sellEverySeatInClass(
-        inventorySource,
-        booking.tripId,
-        booking.travelClassId,
-      );
-      await publishPaymentSucceeded(paymentRelay, booking, {
-        amountPiastres: 6955,
-      });
-      await driveSaga(saga, booking.id);
-
-      expect(await state(bookingSource, booking)).toBe('refunded');
-      expect(await ticketCount(bookingSource, booking)).toBe(0);
-      expect(await refundedAmount(bookingSource, booking)).toBe(6955);
-    },
-    30_000,
-  );
-
-  it(
-    'produces exactly one outcome when the hold expires and the payment lands together',
-    async () => {
-      const booking = await newBooking();
-      await Promise.all([
-        expireTheHold(inventorySource, booking),
-        publishPaymentSucceeded(paymentRelay, booking),
-      ]);
-      await driveSaga(saga, booking.id);
-
-      const final = await state(bookingSource, booking);
-      expect(['confirmed', 'refunded']).toContain(final);
-      if (final === 'confirmed') {
-        expect(await refundedAmount(bookingSource, booking)).toBe(0);
-      } else {
-        expect(await soldCountForBooking(inventorySource, booking)).toBe(0);
-      }
-    },
-    30_000,
-  );
-
-  it(
-    'confirms even when nothing is listening for booking.confirmed',
-    async () => {
-      const booking = await newBooking();
-      await publishPaymentSucceeded(paymentRelay, booking);
-      await driveSaga(saga, booking.id);
-
-      expect(await state(bookingSource, booking)).toBe('confirmed');
-      expect(
-        await publishedCount(bookingSource, 'booking.confirmed', booking),
-      ).toBe(1);
-    },
-    30_000,
-  );
+    expect(await state(bookingSource, booking)).toBe('confirmed');
+    expect(
+      await publishedCount(bookingSource, 'booking.confirmed', booking),
+    ).toBe(1);
+    const channel = await paymentRelay.amqp.ensureChannel();
+    const message = await waitFor(
+      () => channel.get(outcomes.queue, { noAck: true }),
+      (received) =>
+        received !== false &&
+        JSON.parse(received.content.toString()).payload.bookingReference ===
+          booking.id,
+      'the durable booking outcome',
+    );
+    expect(message && JSON.parse(message.content.toString()).type).toBe(
+      'booking.confirmed',
+    );
+  }, 30_000);
 });

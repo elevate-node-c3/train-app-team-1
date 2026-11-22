@@ -4,6 +4,7 @@ import { BookingCheckoutFlow1795000000002 } from './1795000000002-booking-checko
 import { BookingConfirmationSaga1797200000001 } from './1797200000001-booking-confirmation-saga.js';
 import { PaymentEventIdIsText1797200000002 } from './1797200000002-payment-event-id-is-text.js';
 import { TicketNumberSequence1797300000001 } from './1797300000001-ticket-number-sequence.js';
+import { BookingSagaRecovery1797400000001 } from './1797400000001-booking-saga-recovery.js';
 
 export const migrations = [
   CreateBookingDraftTables1793500000000,
@@ -12,4 +13,5 @@ export const migrations = [
   BookingConfirmationSaga1797200000001,
   PaymentEventIdIsText1797200000002,
   TicketNumberSequence1797300000001,
+  BookingSagaRecovery1797400000001,
 ];

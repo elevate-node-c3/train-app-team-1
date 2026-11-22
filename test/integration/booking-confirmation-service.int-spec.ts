@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { DataSource } from 'typeorm';
 import { DataSourceInitializer } from '@app/common/persistence/data-source-initializer.js';
 import { TypeOrmUnitOfWork } from '@app/common/persistence/typeorm-unit-of-work.js';
@@ -71,7 +79,7 @@ async function given(props: {
     `UPDATE booking_draft
         SET saga_step = $2, settlement_outcome = $3, seats_changed = $4,
             total_piastres = $5, passenger_snapshot = $6::jsonb,
-            settled_seats = $7::jsonb
+             settled_seats = $7::jsonb, hold_intent = $8::jsonb
       WHERE id = $1`,
     [
       BOOKING,
@@ -81,6 +89,10 @@ async function given(props: {
       props.totalPiastres ?? 6955,
       JSON.stringify(passengerSnapshot),
       JSON.stringify(settledSeats),
+      JSON.stringify({
+        passengerRefs: passengers,
+        legs: legs.map((tripId) => ({ tripId })),
+      }),
     ],
   );
 }
@@ -171,6 +183,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeBookingDataSource();
 });
+afterEach(() => vi.restoreAllMocks());
 
 describe('BookingConfirmationService.run', () => {
   it('records what inventory decided before it issues anything', async () => {
@@ -230,6 +243,7 @@ describe('BookingConfirmationService.run', () => {
     await service.run(BOOKING); // calls payment
     expect(payment.refundCharge).toHaveBeenCalledWith(
       expect.objectContaining({ idempotencyKey: `booking:${BOOKING}:refund` }),
+      'corr-1',
     );
     const row = await read(BOOKING);
     expect(row.flow_state).toBe('refunded');
@@ -250,6 +264,88 @@ describe('BookingConfirmationService.run', () => {
     expect(await ticketCount(BOOKING)).toBe(1);
     expect(await outboxEventTypes()).toEqual(['booking.confirmed']);
   });
+
+  it('commits tickets and the confirmation event once under concurrent replay', async () => {
+    await given({ settlementOutcome: 'sold', sagaStep: 'settled' });
+    await Promise.all([service.run(BOOKING), service.run(BOOKING)]);
+    expect(await ticketCount(BOOKING)).toBe(1);
+    expect(await outboxEventTypes()).toEqual(['booking.confirmed']);
+  });
+
+  it('records a concurrent refund acceptance and its event once', async () => {
+    await given({ settlementOutcome: 'no_seats', sagaStep: 'settled' });
+    await service.run(BOOKING);
+    await Promise.all([service.run(BOOKING), service.run(BOOKING)]);
+    expect((await read(BOOKING)).flow_state).toBe('refunded');
+    expect(await outboxEventTypes()).toEqual(['booking.refunded']);
+    expect(await ticketCount(BOOKING)).toBe(0);
+  });
+
+  it('finishes a refund despite a stale pre-success cancellation response', async () => {
+    await given({ settlementOutcome: 'no_seats', sagaStep: 'settled' });
+    await ds.query(
+      `UPDATE booking_draft SET payment_succeeded_at = now() WHERE id = $1`,
+      [BOOKING],
+    );
+    await service.run(BOOKING);
+    payment.refundCharge.mockImplementation(async () => {
+      await repository.markChargeCancelled(BOOKING);
+      return {
+        status: 'REFUNDED',
+        refundReference: 'refund_1',
+        amountPiastres: 6955,
+      };
+    });
+    await service.run(BOOKING);
+    expect((await read(BOOKING)).flow_state).toBe('refunded');
+    expect((await repository.findById(BOOKING))?.chargeCancelled).toBe(false);
+    expect(await outboxEventTypes()).toEqual(['booking.refunded']);
+  });
+
+  it('does not issue a partial set of tickets', async () => {
+    await given({
+      settlementOutcome: 'sold',
+      sagaStep: 'settled',
+      passengers: ['p1', 'p2'],
+    });
+    await ds.query(
+      `UPDATE booking_draft SET settled_seats = '[]'::jsonb WHERE id = $1`,
+      [BOOKING],
+    );
+    await expect(service.run(BOOKING)).rejects.toThrow(
+      'every passenger and leg',
+    );
+    expect((await read(BOOKING)).flow_state).toBe('confirming');
+    expect(await ticketCount(BOOKING)).toBe(0);
+    expect(await outboxEventTypes()).toEqual([]);
+  });
+
+  it('cannot confirm if ticket persistence does not return the complete settlement', async () => {
+    await given({ settlementOutcome: 'sold', sagaStep: 'settled' });
+    vi.spyOn(TicketIssuerService.prototype, 'issue').mockResolvedValue([]);
+    await expect(service.run(BOOKING)).rejects.toThrow(
+      'Tickets do not cover the settled seats',
+    );
+    expect((await read(BOOKING)).flow_state).toBe('confirming');
+    expect(await ticketCount(BOOKING)).toBe(0);
+    expect(await outboxEventTypes()).toEqual([]);
+  });
+
+  it.each([
+    { status: 'NOT_REFUNDABLE', refundReference: '', amountPiastres: 0 },
+    { status: 'REFUNDED', refundReference: 'refund_1', amountPiastres: 3000 },
+    { status: 'REFUNDED', refundReference: '', amountPiastres: 6955 },
+  ])(
+    'keeps a rejected or incomplete refund owed: $status/$amountPiastres',
+    async (result) => {
+      await given({ settlementOutcome: 'no_seats', sagaStep: 'settled' });
+      await service.run(BOOKING);
+      payment.refundCharge.mockResolvedValue(result);
+      await expect(service.run(BOOKING)).rejects.toThrow('full locked refund');
+      expect((await read(BOOKING)).flow_state).toBe('refunding');
+      expect(await outboxEventTypes()).toEqual([]);
+    },
+  );
 
   it('keeps the refund owed and retries when payment refuses', async () => {
     payment.refundCharge.mockRejectedValueOnce(new Error('Stripe is down'));

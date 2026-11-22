@@ -13,6 +13,7 @@ import {
 } from '../confirmation-events.factory.js';
 import { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
 import { TicketIssuerService } from './ticket-issuer.service.js';
+import { BookingFlowFault } from '../booking-flow-error.js';
 
 /**
  * TA-107's saga: settle inventory's hold, then confirm with tickets or
@@ -32,6 +33,8 @@ export class BookingConfirmationService {
   async run(id: string): Promise<void> {
     const draft = await this.repository.findById(id);
     if (!draft) return;
+    if (draft.flowState !== 'confirming' && draft.flowState !== 'refunding')
+      return;
 
     switch (draft.sagaStep) {
       case 'payment_recorded':
@@ -49,10 +52,13 @@ export class BookingConfirmationService {
   }
 
   private async settle(draft: BookingDraftEntity): Promise<void> {
-    const settlement = await this.clients.settleHold({
-      ownerId: draft.userId,
-      bookingKey: draft.id,
-    });
+    const settlement = await this.clients.settleHold(
+      {
+        ownerId: draft.userId,
+        bookingKey: draft.id,
+      },
+      draft.correlationId ?? draft.id,
+    );
 
     await this.repository.recordSettlement(
       draft.id,
@@ -73,9 +79,47 @@ export class BookingConfirmationService {
   /** Tickets, the state change, and the outbox append: one transaction. */
   private async confirm(draft: BookingDraftEntity): Promise<void> {
     await this.unitOfWork.withTransaction(async (ctx) => {
+      if (!(await this.repository.lockForConfirmation(ctx, draft.id))) return;
+      const passengers = draft.passengerSnapshot ?? [];
+      const tripIds = draft.holdIntent?.legs.map((leg) => leg.tripId) ?? [];
+      const seats = draft.settledSeats ?? [];
+      const pairs = new Set(
+        seats.map((seat) => `${seat.passengerRef}:${seat.tripId}`),
+      );
+      if (
+        passengers.length === 0 ||
+        tripIds.length === 0 ||
+        seats.length !== passengers.length * tripIds.length ||
+        pairs.size !== seats.length ||
+        passengers.some((passenger) =>
+          tripIds.some(
+            (tripId) => !pairs.has(`${passenger.passengerRef}:${tripId}`),
+          ),
+        )
+      ) {
+        throw new BookingFlowFault(
+          'Settlement does not cover every passenger and leg',
+        );
+      }
       const tickets = await this.ticketIssuer.issue(ctx, draft);
+      if (
+        tickets.length !== seats.length ||
+        tickets.some(
+          (ticket) =>
+            !seats.some(
+              (seat) =>
+                seat.passengerRef === ticket.passengerRef &&
+                seat.tripId === ticket.tripId &&
+                seat.coachNumber === ticket.coachNumber &&
+                seat.seatNumber === ticket.seatNumber,
+            ),
+        )
+      ) {
+        throw new BookingFlowFault('Tickets do not cover the settled seats');
+      }
       const confirmed = await this.repository.confirm(ctx, draft.id);
-      if (!confirmed) return;
+      if (!confirmed)
+        throw new BookingFlowFault('The confirmation guard did not hold');
 
       const correlationId = draft.correlationId ?? draft.id;
       const occurredAt = new Date();
@@ -124,11 +168,49 @@ export class BookingConfirmationService {
   }
 
   private async payRefund(draft: BookingDraftEntity): Promise<void> {
-    const result = await this.clients.refundCharge({
-      bookingReference: draft.id,
-      paymentReference: draft.paymentReference ?? '',
-      idempotencyKey: `booking:${draft.id}:refund`,
-    });
+    if (
+      draft.chargeCancelled ||
+      draft.settlementOutcome !== 'no_seats' ||
+      !draft.paymentReference
+    ) {
+      throw new BookingFlowFault(
+        'A refund requires a succeeded charge and a no-seats decision',
+      );
+    }
+    if (draft.holdId && !draft.holdReleased) {
+      const released = await this.clients.releaseHold(
+        { ownerId: draft.userId, bookingKey: draft.id },
+        draft.correlationId ?? draft.id,
+      );
+      if (released.state === 'SOLD') {
+        throw new BookingFlowFault(
+          'Sold seats cannot be refunded by confirmation recovery',
+        );
+      }
+      if (!['RELEASED', 'EXPIRED', 'CANCELLED'].includes(released.state)) {
+        throw new BookingFlowFault('Hold release has not been acknowledged');
+      }
+      await this.repository.markHoldReleased(draft.id, true);
+    }
+    const result = await this.clients.refundCharge(
+      {
+        bookingReference: draft.id,
+        paymentReference: draft.paymentReference ?? '',
+        idempotencyKey: `booking:${draft.id}:refund`,
+      },
+      draft.correlationId ?? draft.id,
+    );
+
+    if (
+      !['REFUNDED', 'ALREADY_REFUNDED'].includes(result.status) ||
+      !result.refundReference ||
+      result.amountPiastres !== draft.totalPiastres ||
+      !(result.amountPiastres > 0)
+    ) {
+      throw new BookingFlowFault(
+        'Payment did not accept the full locked refund',
+      );
+    }
 
     await this.unitOfWork.withTransaction(async (ctx) => {
       const recorded = await this.repository.recordRefund(

@@ -94,11 +94,29 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
         await this.repository.releaseLease(flow.id, this.workerId);
       } catch (error: unknown) {
         // The step keeps its place; the next pass tries it again.
-        await this.repository.deferResume(
-          flow.id,
-          this.workerId,
-          messageOf(error),
-        );
+        if (flow.flowState === 'confirming' || flow.flowState === 'refunding') {
+          const attempts = await this.repository.deferSaga(
+            flow.id,
+            this.workerId,
+            messageOf(error),
+          );
+          if (attempts !== null && attempts >= 12) {
+            await this.repository.deadLetterCompensation(
+              flow.id,
+              attempts,
+              messageOf(error),
+            );
+            this.logger.error(
+              `DEAD LETTER: saga for booking ${flow.id} failed ${attempts} times; retry continues`,
+            );
+          }
+        } else {
+          await this.repository.deferResume(
+            flow.id,
+            this.workerId,
+            messageOf(error),
+          );
+        }
         this.logger.warn(
           `Booking ${flow.id} stays at ${flow.flowState}; the step will retry: ${messageOf(error)}`,
         );
@@ -112,7 +130,9 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
       CHARGED_WITHOUT_OUTCOME_THRESHOLD_SECONDS,
     );
     for (const { id, sagaStep } of stuck) {
-      this.logger.error(`ALERT: booking ${id} was charged and is still ${sagaStep}`);
+      this.logger.error(
+        `ALERT: booking ${id} was charged and is still ${sagaStep}`,
+      );
     }
   }
 
