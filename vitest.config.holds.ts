@@ -7,7 +7,7 @@ import tsconfigPaths from 'vite-tsconfig-paths';
  *
  * These fixtures truncate the tables they test and the expiry-load spec stops
  * and starts the broker, so running this tier resets the local development
- * data for inventory, identity and booking. The guard below keeps that
+ * data for inventory, identity, booking and payment. The guard below keeps that
  * confined to the published local ports: it refuses any host or port that is
  * not this machine's compose stack, so no shared or remote database can ever
  * be the target.
@@ -47,7 +47,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    // TA-70's tier: inventory's holds, and booking as their only caller.
+    // Local Compose tier: inventory holds, booking flow and payment schema.
     include: [
       'test/integration/hold-*.int-spec.ts',
       'test/integration/booking-hold.int-spec.ts',
@@ -56,6 +56,9 @@ export default defineConfig({
       'test/integration/booking-flow-repository.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
+      // These need payment's own database URL, which only this tier sets.
+      'test/integration/payment-charge-webhook.int-spec.ts',
+      'test/integration/payment-intent.service.int-spec.ts',
     ],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.kilo/**'],
     fileParallelism: false,

@@ -3,6 +3,8 @@ import { DataSource } from 'typeorm';
 import { migrations } from '../../../apps/payment/src/database/migrations/index.js';
 import { PaymentChargeEntity } from '../../../apps/payment/src/modules/charges/entities/payment-charge.entity.js';
 import { StripeEventEntity } from '../../../apps/payment/src/modules/charges/entities/stripe-event.entity.js';
+import { PaymentCustomerEntity } from '../../../apps/payment/src/modules/cards/entities/payment-customer.entity.js';
+import { SavedCardEntity } from '../../../apps/payment/src/modules/cards/entities/saved-card.entity.js';
 import { assertReachable } from './catalog-database.js';
 
 /**
@@ -45,7 +47,12 @@ export async function paymentDataSource(): Promise<DataSource> {
     url: PAYMENT_DATABASE_URL,
     synchronize: false,
     migrations,
-    entities: [PaymentChargeEntity, StripeEventEntity],
+    entities: [
+      PaymentChargeEntity,
+      StripeEventEntity,
+      PaymentCustomerEntity,
+      SavedCardEntity,
+    ],
     extra: { connectionTimeoutMillis: 5000 },
   });
 

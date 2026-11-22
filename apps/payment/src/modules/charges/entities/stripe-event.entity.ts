@@ -1,4 +1,10 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryColumn,
+} from 'typeorm';
 
 @Entity('stripe_event')
 @Index('uq_stripe_event_object_type', ['objectId', 'type'], { unique: true })
@@ -10,7 +16,7 @@ export class StripeEventEntity {
   type!: string;
 
   /** The Stripe object the event is about, e.g. a payment intent id. */
-  @Column({ type: 'text' })
+  @Column({ name: 'object_id', type: 'text' })
   objectId!: string;
 
   @Column({ type: 'jsonb', default: () => "'{}'" })

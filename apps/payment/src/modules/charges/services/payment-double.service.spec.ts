@@ -1,82 +1,118 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DataSource } from 'typeorm';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { ErrorCode } from '@app/contracts';
-import { PaymentIntentService } from './payment-intent.service.js';
-import { PaymentDoubleService, type ChargeRow } from './payment-double.service.js';
+import type { PaymentIntentService } from './payment-intent.service.js';
+import { PaymentDoubleService } from './payment-double.service.js';
+import type { PaymentChargeRepository } from '../repositories/payment-charge.repository.js';
+import type { ChargeCardRepository } from '../repositories/charge-card.repository.js';
+import type {
+  ChargeCard,
+  Charge,
+  CreateChargeInput,
+} from '../types/charge.types.js';
 
 describe('PaymentDoubleService', () => {
-  let chargeStatus: 'started' | 'succeeded' | 'cancelled';
-  let query: ReturnType<typeof vi.fn>;
+  let charges: {
+    findByBookingOrKey: Mock<PaymentChargeRepository['findByBookingOrKey']>;
+    createStarted: Mock<PaymentChargeRepository['createStarted']>;
+    markStartedSucceeded: Mock<PaymentChargeRepository['markStartedSucceeded']>;
+    cancelStarted: Mock<PaymentChargeRepository['cancelStarted']>;
+    findStatus: Mock<PaymentChargeRepository['findStatus']>;
+  };
+  let cards: {
+    findOwned: Mock<ChargeCardRepository['findOwned']>;
+    markUsed: Mock<ChargeCardRepository['markUsed']>;
+  };
+  let intents: { startFor: Mock<PaymentIntentService['startFor']> };
   let payment: PaymentDoubleService;
-  let savedCards: Array<{
-    id: string;
-    account_id: string;
-    stripe_payment_method_id: string;
-    brand: string;
-    last4: string;
-    exp_month: number;
-    exp_year: number;
-    status: 'active' | 'detached';
-  }>;
-  let savedCharge: Record<string, unknown> | undefined;
+  let savedCards: Array<
+    ChargeCard & {
+      id: string;
+      accountId: string;
+    }
+  >;
+  let savedCharge:
+    (Charge & Pick<CreateChargeInput, 'cardBrand' | 'cardLast4'>) | undefined;
 
   beforeEach(() => {
     vi.unstubAllEnvs();
-    chargeStatus = 'started';
     savedCards = [];
     savedCharge = undefined;
-    query = vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('FROM saved_card')) {
-        return savedCards.filter(
-          (card) => card.id === params[0] && card.account_id === params[1],
-        );
-      }
-      if (sql.includes('INSERT INTO payment_charge')) {
-        if (!savedCharge) {
-          savedCharge = {
-            id: '00000000-0000-4000-8000-000000000001',
-            booking_reference: params[1],
-            idempotency_key: params[2],
-            amount_piastres: params[3],
-            currency: params[4],
-            status: 'started',
-            card_brand: params[5],
-            card_last4: params[6],
-            stripe_payment_method_id: params[7],
-          };
+    charges = {
+      findByBookingOrKey: vi.fn<PaymentChargeRepository['findByBookingOrKey']>(
+        async (bookingReference, idempotencyKey) =>
+          savedCharge &&
+          (savedCharge.bookingReference === bookingReference ||
+            savedCharge.idempotencyKey === idempotencyKey)
+            ? { ...savedCharge }
+            : undefined,
+      ),
+      createStarted: vi.fn<PaymentChargeRepository['createStarted']>(
+        async (input) => {
+          if (!savedCharge) {
+            savedCharge = {
+              id: '00000000-0000-4000-8000-000000000001',
+              bookingReference: input.bookingReference,
+              idempotencyKey: input.idempotencyKey,
+              amountPiastres: input.amountPiastres,
+              currency: input.currency,
+              status: 'started',
+              cardBrand: input.cardBrand,
+              cardLast4: input.cardLast4,
+              stripePaymentMethodId: input.stripePaymentMethodId,
+            };
+          }
+        },
+      ),
+      markStartedSucceeded: vi.fn<
+        PaymentChargeRepository['markStartedSucceeded']
+      >(async (id) => {
+        if (savedCharge?.id === id && savedCharge.status === 'started') {
+          savedCharge.status = 'succeeded';
         }
-        return [];
-      }
-      if (sql.includes('SELECT * FROM payment_charge')) {
-        return savedCharge ? [{ ...savedCharge, status: chargeStatus }] : [];
-      }
-      if (sql.includes("SET status = 'succeeded'")) {
-        chargeStatus = 'succeeded';
-        if (savedCharge) savedCharge.status = 'succeeded';
-        return [];
-      }
-      if (sql.includes("SET status = 'cancelled'")) {
-        if (chargeStatus === 'started') {
-          chargeStatus = 'cancelled';
-          if (savedCharge) savedCharge.status = 'cancelled';
-          return [{ status: chargeStatus }];
-        }
-        return [];
-      }
-      if (sql.includes('SELECT status FROM payment_charge')) {
-        return [{ status: chargeStatus }];
-      }
-      return [];
-    });
+      }),
+      cancelStarted: vi.fn<PaymentChargeRepository['cancelStarted']>(
+        async (id, bookingReference) => {
+          if (
+            savedCharge?.id === id &&
+            savedCharge.bookingReference === bookingReference &&
+            savedCharge.status === 'started'
+          ) {
+            savedCharge.status = 'cancelled';
+            return true;
+          }
+          return false;
+        },
+      ),
+      findStatus: vi.fn<PaymentChargeRepository['findStatus']>(
+        async (id, bookingReference) =>
+          savedCharge?.id === id &&
+          savedCharge.bookingReference === bookingReference
+            ? savedCharge.status
+            : undefined,
+      ),
+    };
+    cards = {
+      findOwned: vi.fn<ChargeCardRepository['findOwned']>(
+        async (cardId, accountId) =>
+          savedCards.find(
+            (card) => card.id === cardId && card.accountId === accountId,
+          ),
+      ),
+      markUsed: vi
+        .fn<ChargeCardRepository['markUsed']>()
+        .mockResolvedValue(undefined),
+    };
+    intents = {
+      startFor: vi.fn<PaymentIntentService['startFor']>().mockResolvedValue({
+        paymentIntentId: 'pi_new',
+        clientSecret: 'pi_new_secret',
+        status: 'requires_payment_method',
+      }),
+    };
     payment = new PaymentDoubleService(
-      { query } as unknown as DataSource,
-      {
-        startFor: vi.fn().mockResolvedValue({
-          paymentIntentId: 'pi_new',
-          clientSecret: 'pi_new_secret',
-          status: 'requires_payment_method',
-        }),
-      } as unknown as PaymentIntentService,
+      charges as unknown as PaymentChargeRepository,
+      cards as unknown as ChargeCardRepository,
+      intents as unknown as PaymentIntentService,
     );
   });
 
@@ -94,7 +130,13 @@ describe('PaymentDoubleService', () => {
 
     expect(second).toEqual(first);
     expect(first.paymentReference).toBe('00000000-0000-4000-8000-000000000001');
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(charges.createStarted).toHaveBeenCalledTimes(2);
+    expect(charges.findByBookingOrKey).toHaveBeenCalledTimes(2);
+    expect(charges.findByBookingOrKey).toHaveBeenCalledWith(
+      startRequest.bookingReference,
+      startRequest.idempotencyKey,
+    );
+    expect(intents.startFor).toHaveBeenCalledTimes(2);
   });
 
   it('treats a repeated cancellation as successful', async () => {
@@ -107,6 +149,15 @@ describe('PaymentDoubleService', () => {
 
     expect(await payment.cancel(request)).toEqual({ status: 'CANCELLED' });
     expect(await payment.cancel(request)).toEqual({ status: 'CANCELLED' });
+    expect(charges.cancelStarted).toHaveBeenCalledTimes(2);
+    expect(charges.cancelStarted).toHaveBeenCalledWith(
+      charge.paymentReference,
+      startRequest.bookingReference,
+    );
+    expect(charges.findStatus).toHaveBeenCalledWith(
+      charge.paymentReference,
+      startRequest.bookingReference,
+    );
   });
 
   it('reports an already-succeeded charge rather than cancelling it', async () => {
@@ -115,14 +166,9 @@ describe('PaymentDoubleService', () => {
       startRequest.bookingReference,
     );
     payment = new PaymentDoubleService(
-      { query } as unknown as DataSource,
-      {
-        startFor: vi.fn().mockResolvedValue({
-          paymentIntentId: 'pi_new',
-          clientSecret: 'pi_new_secret',
-          status: 'requires_payment_method',
-        }),
-      } as unknown as PaymentIntentService,
+      charges as unknown as PaymentChargeRepository,
+      cards as unknown as ChargeCardRepository,
+      intents as unknown as PaymentIntentService,
     );
     const charge = await payment.start(startRequest);
 
@@ -133,17 +179,21 @@ describe('PaymentDoubleService', () => {
         idempotencyKey: 'booking:test:cancel',
       }),
     ).toEqual({ status: 'ALREADY_SUCCEEDED' });
+    expect(charges.markStartedSucceeded).toHaveBeenCalledWith(
+      charge.paymentReference,
+    );
+    expect(savedCharge?.status).toBe('succeeded');
   });
 
   it('charges only an owned, active saved card and snapshots its payment details', async () => {
     savedCards.push({
       id: '00000000-0000-4000-8000-000000000004',
-      account_id: startRequest.accountId,
-      stripe_payment_method_id: 'pm_owned',
+      accountId: startRequest.accountId,
+      stripePaymentMethodId: 'pm_owned',
       brand: 'visa',
       last4: '4242',
-      exp_month: 12,
-      exp_year: new Date().getUTCFullYear() + 1,
+      expMonth: 12,
+      expYear: new Date().getUTCFullYear() + 1,
       status: 'active',
     });
 
@@ -153,25 +203,39 @@ describe('PaymentDoubleService', () => {
     });
 
     expect(savedCharge).toMatchObject({
-      card_brand: 'visa',
-      card_last4: '4242',
-      stripe_payment_method_id: 'pm_owned',
+      cardBrand: 'visa',
+      cardLast4: '4242',
+      stripePaymentMethodId: 'pm_owned',
     });
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM saved_card'),
-      ['00000000-0000-4000-8000-000000000004', startRequest.accountId],
+    expect(charges.createStarted).toHaveBeenCalledWith({
+      id: expect.any(String),
+      bookingReference: startRequest.bookingReference,
+      idempotencyKey: startRequest.idempotencyKey,
+      amountPiastres: startRequest.amountPiastres,
+      currency: startRequest.currency,
+      cardBrand: 'visa',
+      cardLast4: '4242',
+      stripePaymentMethodId: 'pm_owned',
+    });
+    expect(cards.findOwned).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000004',
+      startRequest.accountId,
+    );
+    expect(cards.markUsed).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000004',
+      startRequest.accountId,
     );
   });
 
   it('returns not found for a card owned by another traveller', async () => {
     savedCards.push({
       id: '00000000-0000-4000-8000-000000000004',
-      account_id: '00000000-0000-4000-8000-000000000005',
-      stripe_payment_method_id: 'pm_foreign',
+      accountId: '00000000-0000-4000-8000-000000000005',
+      stripePaymentMethodId: 'pm_foreign',
       brand: 'visa',
       last4: '4242',
-      exp_month: 12,
-      exp_year: new Date().getUTCFullYear() + 1,
+      expMonth: 12,
+      expYear: new Date().getUTCFullYear() + 1,
       status: 'active',
     });
 
@@ -182,17 +246,19 @@ describe('PaymentDoubleService', () => {
       }),
     ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
     expect(savedCharge).toBeUndefined();
+    expect(charges.createStarted).not.toHaveBeenCalled();
+    expect(cards.markUsed).not.toHaveBeenCalled();
   });
 
   it('refuses an expired saved card', async () => {
     savedCards.push({
       id: '00000000-0000-4000-8000-000000000004',
-      account_id: startRequest.accountId,
-      stripe_payment_method_id: 'pm_expired',
+      accountId: startRequest.accountId,
+      stripePaymentMethodId: 'pm_expired',
       brand: 'visa',
       last4: '4242',
-      exp_month: 1,
-      exp_year: new Date().getUTCFullYear() - 1,
+      expMonth: 1,
+      expYear: new Date().getUTCFullYear() - 1,
       status: 'active',
     });
 
@@ -203,17 +269,19 @@ describe('PaymentDoubleService', () => {
       }),
     ).rejects.toMatchObject({ code: 'INVALID_PAYLOAD' });
     expect(savedCharge).toBeUndefined();
+    expect(charges.createStarted).not.toHaveBeenCalled();
+    expect(cards.markUsed).not.toHaveBeenCalled();
   });
 
   it('replays a started payment after its saved card has been deleted', async () => {
     savedCards.push({
       id: '00000000-0000-4000-8000-000000000004',
-      account_id: startRequest.accountId,
-      stripe_payment_method_id: 'pm_owned',
+      accountId: startRequest.accountId,
+      stripePaymentMethodId: 'pm_owned',
       brand: 'visa',
       last4: '4242',
-      exp_month: 12,
-      exp_year: new Date().getUTCFullYear() + 1,
+      expMonth: 12,
+      expYear: new Date().getUTCFullYear() + 1,
       status: 'active',
     });
     const request = {
@@ -224,28 +292,31 @@ describe('PaymentDoubleService', () => {
     savedCards[0].status = 'detached';
 
     await expect(payment.start(request)).resolves.toEqual(first);
+    expect(charges.createStarted).toHaveBeenCalledTimes(1);
+    expect(cards.markUsed).toHaveBeenCalledTimes(1);
+    expect(intents.startFor).toHaveBeenCalledTimes(2);
   });
 
   it('still returns 404 for a foreign card when the booking already has a charge', async () => {
     savedCards.push(
       {
         id: '00000000-0000-4000-8000-000000000004',
-        account_id: startRequest.accountId,
-        stripe_payment_method_id: 'pm_owned',
+        accountId: startRequest.accountId,
+        stripePaymentMethodId: 'pm_owned',
         brand: 'visa',
         last4: '4242',
-        exp_month: 12,
-        exp_year: new Date().getUTCFullYear() + 1,
+        expMonth: 12,
+        expYear: new Date().getUTCFullYear() + 1,
         status: 'active',
       },
       {
         id: '00000000-0000-4000-8000-000000000005',
-        account_id: '00000000-0000-4000-8000-000000000006',
-        stripe_payment_method_id: 'pm_foreign',
+        accountId: '00000000-0000-4000-8000-000000000006',
+        stripePaymentMethodId: 'pm_foreign',
         brand: 'visa',
         last4: '0000',
-        exp_month: 12,
-        exp_year: new Date().getUTCFullYear() + 1,
+        expMonth: 12,
+        expYear: new Date().getUTCFullYear() + 1,
         status: 'active',
       },
     );
@@ -269,54 +340,60 @@ describe('PaymentDoubleService.refund', () => {
   const STARTED_ONLY = '00000000-0000-4000-8000-000000000012';
   const STARTED_CHARGE = '00000000-0000-4000-8000-000000000013';
 
-  let charges: ChargeRow[];
-  let query: ReturnType<typeof vi.fn>;
+  let charges: Charge[];
+  let repository: {
+    findByReference: Mock<PaymentChargeRepository['findByReference']>;
+    refundSucceeded: Mock<PaymentChargeRepository['refundSucceeded']>;
+  };
   let service: PaymentDoubleService;
 
   beforeEach(() => {
     charges = [
       {
         id: CHARGE,
-        booking_reference: BOOKING,
-        idempotency_key: 'booking:test:charge',
-        amount_piastres: 6955,
+        bookingReference: BOOKING,
+        idempotencyKey: 'booking:test:charge',
+        amountPiastres: 6955,
         currency: 'EGP',
         status: 'succeeded',
-        stripe_payment_method_id: null,
+        stripePaymentMethodId: null,
       },
       {
         id: STARTED_CHARGE,
-        booking_reference: STARTED_ONLY,
-        idempotency_key: 'booking:started-only:charge',
-        amount_piastres: 6955,
+        bookingReference: STARTED_ONLY,
+        idempotencyKey: 'booking:started-only:charge',
+        amountPiastres: 6955,
         currency: 'EGP',
         status: 'started',
-        stripe_payment_method_id: null,
+        stripePaymentMethodId: null,
       },
     ];
-    query = vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('SELECT * FROM payment_charge WHERE id')) {
-        return charges.filter(
-          (charge) =>
-            charge.id === params[0] && charge.booking_reference === params[1],
-        );
-      }
-      if (sql.includes("SET status = 'refunded'")) {
-        const charge = charges.find((c) => c.id === params[0]);
-        if (charge && charge.status === 'succeeded') charge.status = 'refunded' as ChargeRow['status'];
-        return [];
-      }
-      return [];
-    });
+    repository = {
+      findByReference: vi.fn<PaymentChargeRepository['findByReference']>(
+        async (id, bookingReference) =>
+          charges.find(
+            (charge) =>
+              charge.id === id && charge.bookingReference === bookingReference,
+          ),
+      ),
+      refundSucceeded: vi.fn<PaymentChargeRepository['refundSucceeded']>(
+        async (id) => {
+          const charge = charges.find((c) => c.id === id);
+          if (charge?.status === 'succeeded') charge.status = 'refunded';
+        },
+      ),
+    };
     service = new PaymentDoubleService(
-      { query } as unknown as DataSource,
+      repository as unknown as PaymentChargeRepository,
+      {} as ChargeCardRepository,
       {} as unknown as PaymentIntentService,
     );
   });
 
   const refundRequest = (overrides: { bookingReference?: string } = {}) => ({
     bookingReference: overrides.bookingReference ?? BOOKING,
-    paymentReference: overrides.bookingReference === STARTED_ONLY ? STARTED_CHARGE : CHARGE,
+    paymentReference:
+      overrides.bookingReference === STARTED_ONLY ? STARTED_CHARGE : CHARGE,
     idempotencyKey: `booking:${overrides.bookingReference ?? BOOKING}:refund`,
   });
 
@@ -329,16 +406,22 @@ describe('PaymentDoubleService.refund', () => {
     expect(result.status).toBe('REFUNDED');
     expect(result.amountPiastres).toBe(6955);
     expect(charges.find((c) => c.id === CHARGE)?.status).toBe('refunded');
+    expect(repository.findByReference).toHaveBeenCalledWith(CHARGE, BOOKING);
+    expect(repository.refundSucceeded).toHaveBeenCalledWith(CHARGE);
   });
 
   it('is safe to call twice', async () => {
     await service.refund(refundRequest());
-    expect((await service.refund(refundRequest())).status).toBe('ALREADY_REFUNDED');
+    expect((await service.refund(refundRequest())).status).toBe(
+      'ALREADY_REFUNDED',
+    );
+    expect(repository.refundSucceeded).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to refund a charge that never succeeded', async () => {
     await expect(
       service.refund(refundRequest({ bookingReference: STARTED_ONLY })),
     ).rejects.toMatchObject({ code: ErrorCode.CONFLICT });
+    expect(repository.refundSucceeded).not.toHaveBeenCalled();
   });
 });

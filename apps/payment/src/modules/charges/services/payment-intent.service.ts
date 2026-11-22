@@ -1,13 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { DataSource } from 'typeorm';
-import type { ChargeRow } from './payment-double.service.js';
+import { Injectable } from '@nestjs/common';
+import { ErrorCode } from '@app/contracts';
 import { StripeService } from '../../cards/services/stripe.service.js';
-
-export interface PaymentIntentStartResult {
-  paymentIntentId: string;
-  clientSecret: string;
-  status: string;
-}
+import { PaymentError } from '../payment-error.js';
+import { ChargeCardRepository } from '../repositories/charge-card.repository.js';
+import { PaymentChargeRepository } from '../repositories/payment-charge.repository.js';
+import type { Charge } from '../types/charge.types.js';
+import type { PaymentIntentStartResult } from '../types/payment-intent.types.js';
 
 /**
  * One Stripe PaymentIntent per booking. The idempotency key is derived from
@@ -17,19 +15,18 @@ export interface PaymentIntentStartResult {
  */
 @Injectable()
 export class PaymentIntentService {
-  private readonly logger = new Logger(PaymentIntentService.name);
-
   constructor(
     private readonly stripe: StripeService,
-    private readonly dataSource: DataSource,
+    private readonly charges: PaymentChargeRepository,
+    private readonly cards: ChargeCardRepository,
   ) {}
 
-  async startFor(charge: ChargeRow): Promise<PaymentIntentStartResult> {
-    const idempotencyKey = `booking:${charge.booking_reference}:charge`;
+  async startFor(charge: Charge): Promise<PaymentIntentStartResult> {
+    const idempotencyKey = `booking:${charge.bookingReference}:charge`;
 
-    if (charge.stripe_payment_intent_id) {
+    if (charge.stripePaymentIntentId) {
       const intent = await this.stripe.retrievePaymentIntent(
-        charge.stripe_payment_intent_id,
+        charge.stripePaymentIntentId,
       );
       return {
         paymentIntentId: intent.id,
@@ -38,19 +35,27 @@ export class PaymentIntentService {
       };
     }
 
+    let customerId = '';
+    if (charge.stripePaymentMethodId) {
+      customerId =
+        (await this.cards.findCustomerIdByPaymentMethodId(
+          charge.stripePaymentMethodId,
+        )) ?? '';
+      if (!customerId) {
+        throw new PaymentError(ErrorCode.RESOURCE_NOT_FOUND);
+      }
+    }
+
     const intent = await this.stripe.createOrRetrievePaymentIntent({
-      bookingReference: charge.booking_reference,
-      amountPiastres: charge.amount_piastres,
+      bookingReference: charge.bookingReference,
+      amountPiastres: charge.amountPiastres,
       currency: charge.currency,
-      customerId: charge.stripe_customer_id ?? '',
-      paymentMethodId: charge.stripe_payment_method_id ?? '',
+      customerId,
+      paymentMethodId: charge.stripePaymentMethodId ?? '',
       idempotencyKey,
     });
 
-    await this.dataSource.query(
-      `UPDATE payment_charge SET stripe_payment_intent_id = $1, updated_at = NOW() WHERE booking_reference = $2`,
-      [intent.id, charge.booking_reference],
-    );
+    await this.charges.savePaymentIntent(charge.bookingReference, intent.id);
 
     return {
       paymentIntentId: intent.id,

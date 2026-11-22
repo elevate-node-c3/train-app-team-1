@@ -8,11 +8,13 @@ import { SavedCardsService } from './services/saved-cards.service.js';
 import { SavedCardsGrpcController } from './controllers/saved-cards.grpc.controller.js';
 import { StripeWebhookController } from './controllers/stripe-webhook.controller.js';
 import { ChargeWebhookService } from '../charges/services/charge-webhook.service.js';
+import { ChargesPersistenceModule } from '../charges/charges-persistence.module.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PaymentCustomerEntity, SavedCardEntity]),
     OutboxModule,
+    ChargesPersistenceModule,
   ],
   controllers: [SavedCardsGrpcController, StripeWebhookController],
   providers: [StripeService, SavedCardsService, ChargeWebhookService],
