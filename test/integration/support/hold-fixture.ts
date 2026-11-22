@@ -597,18 +597,42 @@ function managementUrl(path: string): string {
 /** The same broker credentials the AMQP URL carries. */
 function managementAuthorization(): string {
   const url = new URL(isolatedHoldEndpoints().rabbit);
-  const credentials = `${url.username}:${url.password}`;
+  const credentials = `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
   return `Basic ${Buffer.from(credentials).toString('base64')}`;
 }
 
-export async function rabbitManagement<T>(path: string): Promise<T> {
+export async function rabbitManagement<T = void>(
+  path: string,
+  options: {
+    method?: 'GET' | 'PUT' | 'DELETE';
+    body?: unknown;
+    allowMissing?: boolean;
+  } = {},
+): Promise<T> {
   const response = await fetch(managementUrl(path), {
-    headers: { Authorization: managementAuthorization() },
+    method: options.method ?? 'GET',
+    headers: {
+      Authorization: managementAuthorization(),
+      ...(options.body === undefined
+        ? {}
+        : { 'Content-Type': 'application/json' }),
+    },
+    ...(options.body === undefined
+      ? {}
+      : { body: JSON.stringify(options.body) }),
     signal: AbortSignal.timeout(5_000),
   });
+  if (response.status === 404 && options.allowMissing) return undefined as T;
   if (!response.ok)
     throw new Error(`Isolated RabbitMQ management returned ${response.status}`);
+  if (options.method === 'PUT' || options.method === 'DELETE')
+    return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function managementVhostPath(): string {
+  const pathname = new URL(isolatedHoldEndpoints().rabbit).pathname;
+  return encodeURIComponent(decodeURIComponent(pathname.slice(1) || '/'));
 }
 
 /** The prefix every capture queue this fixture owns is named with. */
@@ -622,31 +646,29 @@ const CAPTURE_QUEUE_PREFIX = 'holds.expiry.capture.';
  * sees a binding it did not make. Only this fixture's own queues are removed,
  * never the one it is about to use.
  */
-export async function removeStaleExpiryCaptures(keep?: string): Promise<string[]> {
-  const queues = await rabbitManagement<{ name: string }[]>('queues/%2F');
+export async function removeStaleExpiryCaptures(
+  keep?: string,
+): Promise<string[]> {
+  const vhost = managementVhostPath();
+  const queues = await rabbitManagement<{ name: string }[]>(`queues/${vhost}`);
   const stale = queues
     .map((entry) => entry.name)
     .filter((name) => name.startsWith(CAPTURE_QUEUE_PREFIX) && name !== keep);
 
   for (const name of stale) {
-    const response = await fetch(managementUrl(`queues/%2F/${name}`), {
+    await rabbitManagement(`queues/${vhost}/${encodeURIComponent(name)}`, {
       method: 'DELETE',
-      headers: { Authorization: managementAuthorization() },
-      signal: AbortSignal.timeout(5_000),
+      allowMissing: true,
     });
-    // 404 means another run removed it first, which is the outcome we want.
-    if (!response.ok && response.status !== 404)
-      throw new Error(`Could not delete ${name}: ${response.status}`);
   }
 
   return stale;
 }
 
 export async function assertNoExpiryBinding(): Promise<void> {
-  const bindings =
-    await rabbitManagement<
-      { source: string; destination: string; routing_key: string }[]
-    >('bindings/%2F');
+  const bindings = await rabbitManagement<
+    { source: string; destination: string; routing_key: string }[]
+  >(`bindings/${managementVhostPath()}`);
   const matches = (binding: string[], routing: string[]): boolean => {
     if (binding.length === 0) return routing.length === 0;
     if (binding[0] === '#')

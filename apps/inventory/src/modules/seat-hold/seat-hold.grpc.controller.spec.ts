@@ -154,6 +154,26 @@ describe('SeatHoldGrpcController hold RPCs', () => {
     expect(core.extendHold).toHaveBeenCalledWith(key, 'corr-def');
   });
 
+  it('delegates settlement without discarding its decision or seat metadata', async () => {
+    const { controller, settlement } = buildController(
+      'settlement-correlation',
+    );
+    const result = {
+      outcome: 'REALLOCATED',
+      holdId: snapshot.holdId,
+      legs: snapshot.legs,
+      assignments: snapshot.assignments,
+      serverNow: snapshot.serverNow,
+    };
+    settlement.settle.mockResolvedValue(result);
+    const key = { ownerId: OWNER_ID, bookingKey: BOOKING_KEY };
+    await expect(controller.settleHold(key)).resolves.toBe(result);
+    expect(settlement.settle).toHaveBeenCalledWith(
+      key,
+      'settlement-correlation',
+    );
+  });
+
   it('maps SEAT_TAKEN to ABORTED with a machine-readable code', async () => {
     const { controller, core } = buildController();
     core.createHold.mockRejectedValue(

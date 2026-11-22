@@ -31,10 +31,13 @@ import {
   getInventoryProtoPath,
   type CreateHoldRequest,
   type HoldSnapshot,
+  type SettlementSnapshot,
 } from '@app/contracts';
 import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
 import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
 import { HoldSettlementService } from '../../apps/inventory/src/modules/seat-hold/services/hold-settlement.service.js';
+import { AvailabilityPublisher } from '../../apps/inventory/src/modules/seats/services/availability-publisher.service.js';
+import { AvailabilityCountsRepository } from '../../apps/inventory/src/modules/seats/repositories/availability-counts.repository.js';
 import { SeatHoldGrpcController } from '../../apps/inventory/src/modules/seat-hold/seat-hold.grpc.controller.js';
 import {
   HoldCreationGuard,
@@ -49,7 +52,9 @@ import {
 import { seedSixStopTrip, SIX_STOP_TRIP } from './support/inventory-fixture.js';
 import { isolatedHoldEndpoints } from './support/hold-fixture.js';
 
-type Method = 'createHold' | 'getHold' | 'releaseHold' | 'extendHold';
+type HoldMethod = 'createHold' | 'getHold' | 'releaseHold' | 'extendHold';
+type Method = HoldMethod | 'settleHold';
+type Response = HoldSnapshot | SettlementSnapshot;
 type NativeClient = grpc.Client &
   Record<
     Method,
@@ -57,10 +62,7 @@ type NativeClient = grpc.Client &
       request: unknown,
       metadata: grpc.Metadata,
       options: grpc.CallOptions,
-      callback: (
-        error: grpc.ServiceError | null,
-        response?: HoldSnapshot,
-      ) => void,
+      callback: (error: grpc.ServiceError | null, response?: Response) => void,
     ) => grpc.ClientUnaryCall
   >;
 const key = 'holds-native-inventory-service-credential-test-only';
@@ -78,10 +80,20 @@ function metadata(): grpc.Metadata {
 }
 
 function call(
+  method: HoldMethod,
+  input: unknown,
+  headers?: grpc.Metadata,
+): Promise<HoldSnapshot>;
+function call(
+  method: 'settleHold',
+  input: unknown,
+  headers?: grpc.Metadata,
+): Promise<SettlementSnapshot>;
+function call(
   method: Method,
   input: unknown,
   headers = metadata(),
-): Promise<HoldSnapshot> {
+): Promise<Response> {
   return new Promise((resolve, reject) =>
     client[method](
       input,
@@ -145,7 +157,14 @@ beforeAll(async () => {
       { provide: HoldCoreService, useValue: core },
       {
         provide: HoldSettlementService,
-        useValue: { settle: vi.fn() },
+        useValue: new HoldSettlementService(
+          new HoldCoreRepository(),
+          new TypeOrmUnitOfWork(initializer),
+          new AvailabilityPublisher(
+            new TypeOrmOutboxRepository(initializer),
+            new AvailabilityCountsRepository(),
+          ),
+        ),
       },
       { provide: DataSourceInitializer, useValue: initializer },
       { provide: SchemaReadinessGate, useValue: new SchemaReadinessGate() },
@@ -237,6 +256,30 @@ afterAll(async () => {
 });
 
 describe('TA-70 live private Inventory protobuf transport', () => {
+  it('authenticates settlement and returns SOLD over both settlement and hold views', async () => {
+    const req = request();
+    const held = await call('createHold', req);
+    const keyRequest = { ownerId: req.ownerId, bookingKey: req.bookingKey };
+    await expect(
+      call('settleHold', keyRequest, new grpc.Metadata()),
+    ).rejects.toMatchObject({
+      code: grpc.status.PERMISSION_DENIED,
+    });
+    const sold = await call('settleHold', keyRequest);
+    expect(sold.outcome).toBe('SOLD');
+    expect(sold.assignments).toEqual(held.assignments);
+    expect((await call('getHold', keyRequest)).state).toBe('SOLD');
+    expect((await call('releaseHold', keyRequest)).state).toBe('SOLD');
+    expect((await call('settleHold', keyRequest)).assignments).toEqual(
+      sold.assignments,
+    );
+    const [row] = await source.query(
+      `SELECT count(*)::int AS count FROM seat_occupation WHERE hold_id = $1 AND state = 'sold' AND released_at IS NULL`,
+      [held.holdId],
+    );
+    expect(row.count).toBe(4);
+  });
+
   it('refuses unauthenticated calls without writing a hold', async () => {
     await expect(
       call('createHold', request(), new grpc.Metadata()),

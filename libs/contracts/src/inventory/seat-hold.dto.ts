@@ -6,8 +6,8 @@ import {
 /**
  * Effective hold state as of Inventory's returned `serverNow`.
  *
- * `HELD` is the only state that owns seats. The other three are terminal
- * receipts: replaying their booking key never reallocates or reclaims seats.
+ * `HELD` owns temporary seats and `SOLD` owns settled seats. Release and expiry
+ * retain receipts; only payment settlement may reacquire their allocations.
  */
 export type HoldState = 'HELD' | 'RELEASED' | 'EXPIRED' | 'CANCELLED' | 'SOLD';
 
@@ -143,7 +143,8 @@ export interface SettleHoldRequest {
 /**
  * BR-36's branch: a live hold sells its exact seats, an expired-but-free hold
  * re-sells them, a taken hold reallocates within the same class, and a full
- * class refuses rather than occupying nothing.
+ * class refuses rather than occupying nothing. The first settlement decision
+ * is durable: retries preserve SOLD, REALLOCATED, or NO_SEATS.
  */
 export type SettlementOutcome = 'SOLD' | 'REALLOCATED' | 'NO_SEATS';
 

@@ -13,6 +13,7 @@ import {
   type HoldSeatAssignment,
   type HoldSnapshot,
   type HoldState,
+  type SettlementOutcome,
   composeAllocationOutcome,
 } from '@app/contracts';
 import { entityManagerOf } from '@app/common/persistence/typeorm-unit-of-work.js';
@@ -28,11 +29,7 @@ import { toInt4Range, type Segment } from '../seats/segment.js';
 import { ErrorCode } from '@app/contracts';
 
 export type DbHoldState =
-  | 'held'
-  | 'released'
-  | 'expired'
-  | 'cancelled'
-  | 'sold';
+  'held' | 'released' | 'expired' | 'cancelled' | 'sold';
 
 export type HoldRow = {
   id: string;
@@ -40,11 +37,12 @@ export type HoldRow = {
   ownerId: string;
   requestFingerprint: string;
   state: DbHoldState;
+  settlementOutcome: SettlementOutcome | null;
   version: number;
   extensionUsed: boolean;
   expiresAt: Date | null;
   releasedAt: Date | null;
-}
+};
 
 export type LegFacts = {
   leg: HoldLegInput;
@@ -52,14 +50,14 @@ export type LegFacts = {
   destinationPosition: number;
   originDepartureAt: Date;
   segment: Segment;
-}
+};
 
 export type LegLayout = {
   /** Every seat of the leg's trip and class, occupied or not. */
   seats: AllocatableSeat[];
   /** Seats blocked over the leg's segment. */
   occupiedSeatIds: Set<string>;
-}
+};
 
 export type PersistedLeg = {
   tripId: string;
@@ -70,7 +68,7 @@ export type PersistedLeg = {
   destinationPosition: number;
   segment: Segment;
   outcome: AllocationOutcome;
-}
+};
 
 export type PersistedAssignment = {
   passengerRef: string;
@@ -88,7 +86,7 @@ export type PersistedAssignment = {
   originPosition: number;
   destinationPosition: number;
   segment: Segment;
-}
+};
 
 export type NewHold = {
   id: string;
@@ -100,7 +98,7 @@ export type NewHold = {
   passengers: HoldPassengerInput[];
   legs: PersistedLeg[];
   assignments: PersistedAssignment[];
-}
+};
 
 interface HoldDbRow {
   id: string;
@@ -108,6 +106,7 @@ interface HoldDbRow {
   ownerId: string;
   requestFingerprint: string;
   state: DbHoldState;
+  settlementOutcome: SettlementOutcome | null;
   version: number;
   extensionUsed: boolean;
   expiresAt: Date | null;
@@ -196,7 +195,7 @@ export class HoldCoreRepository {
               booking_key AS "bookingKey",
               owner_id AS "ownerId",
               request_fingerprint AS "requestFingerprint",
-              state, version,
+               state, version, settlement_outcome AS "settlementOutcome",
               extension_used AS "extensionUsed",
               expires_at AS "expiresAt",
               released_at AS "releasedAt"
@@ -295,9 +294,10 @@ export class HoldCoreRepository {
       `SELECT id,
               booking_key AS "bookingKey",
               owner_id AS "ownerId",
-              request_fingerprint AS "requestFingerprint",
-              state,
-              version,
+               request_fingerprint AS "requestFingerprint",
+               state,
+               settlement_outcome AS "settlementOutcome",
+               version,
               extension_used AS "extensionUsed",
               expires_at AS "expiresAt",
               released_at AS "releasedAt"
@@ -346,9 +346,10 @@ export class HoldCoreRepository {
       `SELECT id,
               booking_key AS "bookingKey",
               owner_id AS "ownerId",
-              request_fingerprint AS "requestFingerprint",
-              state,
-              version,
+               request_fingerprint AS "requestFingerprint",
+               state,
+               settlement_outcome AS "settlementOutcome",
+               version,
               extension_used AS "extensionUsed",
               expires_at AS "expiresAt",
               released_at AS "releasedAt"
@@ -864,9 +865,10 @@ export class HoldCoreRepository {
       `SELECT id,
               booking_key AS "bookingKey",
               owner_id AS "ownerId",
-              request_fingerprint AS "requestFingerprint",
-              state,
-              version,
+               request_fingerprint AS "requestFingerprint",
+               state,
+               settlement_outcome AS "settlementOutcome",
+               version,
               extension_used AS "extensionUsed",
               expires_at AS "expiresAt",
               released_at AS "releasedAt"
@@ -989,6 +991,139 @@ export class HoldCoreRepository {
     return rows.length > 0;
   }
 
+  async hasCompleteSettlementReceipt(
+    ctx: TransactionContext,
+    holdId: string,
+  ): Promise<boolean> {
+    const [row]: { complete: boolean }[] = await managerOf(ctx).query(
+      `WITH legs AS (SELECT * FROM seat_hold_leg WHERE hold_id = $1),
+            identities AS (SELECT * FROM seat_hold_passenger WHERE hold_id = $1),
+            passengers AS (SELECT DISTINCT passenger_ref FROM identities),
+            assignments AS (SELECT * FROM seat_hold_assignment WHERE hold_id = $1)
+       SELECT EXISTS (SELECT 1 FROM legs)
+          AND EXISTS (SELECT 1 FROM passengers)
+          AND (SELECT count(*) FROM identities) =
+              (SELECT count(*) FROM legs) * (SELECT count(*) FROM passengers)
+          AND (SELECT count(*) FROM assignments) =
+              (SELECT count(*) FROM legs) * (SELECT count(*) FROM passengers)
+          AND NOT EXISTS (
+            SELECT 1 FROM legs l CROSS JOIN passengers p
+            WHERE NOT EXISTS (
+              SELECT 1 FROM identities i JOIN assignments a
+                ON a.trip_id = i.trip_id AND a.passenger_ref = i.passenger_ref
+              WHERE i.trip_id = l.trip_id AND i.passenger_ref = p.passenger_ref
+                AND a.passenger_key_version = i.passenger_key_version
+                AND a.segment = l.segment AND a.travel_class_id = l.travel_class_id
+                AND a.origin_station_id = l.origin_station_id
+                AND a.destination_station_id = l.destination_station_id
+                AND a.origin_position = l.origin_position
+                AND a.destination_position = l.destination_position
+            )
+          ) AS complete`,
+      [holdId],
+    );
+    return row.complete;
+  }
+
+  async hasCompleteLiveOccupations(
+    ctx: TransactionContext,
+    holdId: string,
+  ): Promise<boolean> {
+    const [row]: { complete: boolean }[] = await managerOf(ctx).query(
+      `SELECT
+         (SELECT count(*) FROM seat_occupation
+          WHERE hold_id = $1 AND state = 'held' AND released_at IS NULL) =
+         (SELECT count(*) FROM seat_hold_assignment WHERE hold_id = $1)
+         AND NOT EXISTS (
+           SELECT 1 FROM seat_hold_assignment a
+           JOIN seat_hold_passenger p
+             ON p.hold_id = a.hold_id AND p.trip_id = a.trip_id
+             AND p.passenger_ref = a.passenger_ref
+           WHERE a.hold_id = $1 AND NOT EXISTS (
+             SELECT 1 FROM seat_occupation o
+             WHERE o.hold_id = $1 AND o.state = 'held' AND o.released_at IS NULL
+               AND o.trip_id = a.trip_id AND o.trip_seat_id = a.trip_seat_id
+               AND o.segment = a.segment AND o.passenger_ref = a.passenger_ref
+               AND o.passenger_token = p.passenger_token
+               AND o.passenger_key_version = p.passenger_key_version
+           )
+         ) AS complete`,
+      [holdId],
+    );
+    return row.complete;
+  }
+
+  async passengersClearForSettlement(
+    ctx: TransactionContext,
+    holdId: string,
+    facts: readonly LegFacts[],
+    now: Date,
+  ): Promise<boolean> {
+    for (const fact of facts) {
+      const rows: unknown[] = await managerOf(ctx).query(
+        `SELECT 1 FROM seat_hold_passenger p JOIN seat_occupation o
+           ON o.trip_id = p.trip_id AND o.passenger_token = p.passenger_token
+         WHERE p.hold_id = $1 AND p.trip_id = $2
+           AND o.hold_id IS DISTINCT FROM $1::uuid AND o.released_at IS NULL
+           AND (o.state = 'sold' OR o.hold_expires_at > $3)
+           AND o.segment && $4::int4range
+         LIMIT 1`,
+        [holdId, fact.leg.tripId, now, toInt4Range(fact.segment)],
+      );
+      if (rows.length > 0) return false;
+    }
+    return true;
+  }
+
+  /** Roll back every leg if a constraint catches a passenger-conflict race. */
+  async attemptSettlement(
+    ctx: TransactionContext,
+    work: () => Promise<SettlementOutcome>,
+  ): Promise<SettlementOutcome> {
+    const manager = managerOf(ctx);
+    await manager.query('SAVEPOINT hold_settlement');
+    try {
+      const outcome = await work();
+      await manager.query('RELEASE SAVEPOINT hold_settlement');
+      return outcome;
+    } catch (error) {
+      const databaseError = error as {
+        code?: string;
+        constraint?: string;
+        driverError?: { code?: string; constraint?: string };
+      } | null;
+      const code = databaseError?.driverError?.code ?? databaseError?.code;
+      const constraint =
+        databaseError?.driverError?.constraint ?? databaseError?.constraint;
+      if (
+        code !== '23P01' ||
+        constraint !== 'excl_seat_occupation_passenger_overlap'
+      ) {
+        throw error;
+      }
+      await manager.query('ROLLBACK TO SAVEPOINT hold_settlement');
+      await manager.query('RELEASE SAVEPOINT hold_settlement');
+      return 'NO_SEATS';
+    }
+  }
+
+  async recordNoSeats(
+    ctx: TransactionContext,
+    holdId: string,
+    now: Date,
+  ): Promise<void> {
+    await managerOf(ctx).query(
+      `UPDATE seat_hold_group
+       SET settlement_outcome = 'NO_SEATS', version = version + 1,
+           released_at = CASE WHEN state = 'held' THEN $2 ELSE released_at END,
+           state = CASE WHEN state = 'held' THEN 'released' ELSE state END,
+           updated_at = $2
+       WHERE id = $1 AND settlement_outcome IS NULL`,
+      [holdId, now],
+    );
+    await this.releaseOccupations(ctx, holdId, now);
+  }
+
   /** The hold's own occupations are still live: sell exactly what is held. */
   async sellHold(
     ctx: TransactionContext,
@@ -1009,12 +1144,14 @@ export class HoldCoreRepository {
     ctx: TransactionContext,
     holdId: string,
     now: Date,
+    outcome: 'SOLD' | 'REALLOCATED' = 'SOLD',
   ): Promise<void> {
     await managerOf(ctx).query(
       `UPDATE seat_hold_group
-       SET state = 'sold', version = version + 1, updated_at = $2
-       WHERE id = $1 AND state <> 'sold'`,
-      [holdId, now],
+       SET state = 'sold', settlement_outcome = $3, version = version + 1,
+           released_at = NULL, updated_at = $2
+       WHERE id = $1 AND settlement_outcome IS NULL`,
+      [holdId, now, outcome],
     );
   }
 
@@ -1278,7 +1415,7 @@ export class HoldCoreRepository {
       }
     }
 
-    await this.markHoldSold(ctx, holdId, now);
+    await this.markHoldSold(ctx, holdId, now, 'REALLOCATED');
     return true;
   }
 
@@ -1378,4 +1515,3 @@ function holdStateOf(state: DbHoldState): HoldState {
       return 'SOLD';
   }
 }
-

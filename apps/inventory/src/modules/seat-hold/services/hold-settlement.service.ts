@@ -40,10 +40,7 @@ export class HoldSettlementService {
     correlationId: string = randomUUID(),
   ): Promise<SettlementSnapshot> {
     return this.unitOfWork.withTransaction(async (ctx) => {
-      const hold = await this.repository.lockHoldByKey(
-        ctx,
-        request.bookingKey,
-      );
+      const hold = await this.repository.lockHoldByKey(ctx, request.bookingKey);
       if (!hold || hold.ownerId !== request.ownerId) {
         throw new HoldCoreError(
           ErrorCode.HOLD_NOT_FOUND,
@@ -55,8 +52,8 @@ export class HoldSettlementService {
       await this.repository.lockTrips(ctx, tripIds);
       const now = await this.repository.sampleNow(ctx);
 
-      if (hold.state === 'sold') {
-        return this.buildSnapshot(ctx, hold.id, 'SOLD', now);
+      if (hold.settlementOutcome !== null) {
+        return this.buildSnapshot(ctx, hold.id, hold.settlementOutcome, now);
       }
 
       await this.repository.reclaimExpiredOccupations(ctx, tripIds, now);
@@ -66,45 +63,70 @@ export class HoldSettlementService {
 
       let outcome: SettlementOutcome;
 
-      if (facts === null) {
+      if (
+        hold.state === 'cancelled' ||
+        facts === null ||
+        !(await this.repository.hasCompleteSettlementReceipt(ctx, hold.id))
+      ) {
         outcome = 'NO_SEATS';
-      } else if (await this.repository.hasLiveOccupations(ctx, hold.id)) {
-        await this.repository.sellHold(ctx, hold.id, now);
-        outcome = 'SOLD';
-      } else if (
-        await this.repository.reacquireSameSeats(
-          ctx,
-          hold.id,
-          hold.ownerId,
-          facts,
-          now,
-        )
-      ) {
-        outcome = 'SOLD';
-      } else if (
-        await this.repository.reallocateForBooking(
-          ctx,
-          hold.id,
-          hold.ownerId,
-          facts,
-          now,
-        )
-      ) {
-        outcome = 'REALLOCATED';
       } else {
-        outcome = 'NO_SEATS';
+        outcome = await this.repository.attemptSettlement(ctx, async () => {
+          if (await this.repository.hasLiveOccupations(ctx, hold.id)) {
+            if (
+              !(await this.repository.hasCompleteLiveOccupations(ctx, hold.id))
+            ) {
+              return 'NO_SEATS';
+            }
+            await this.repository.sellHold(ctx, hold.id, now);
+            return 'SOLD';
+          }
+          if (
+            !(await this.repository.passengersClearForSettlement(
+              ctx,
+              hold.id,
+              facts,
+              now,
+            ))
+          ) {
+            return 'NO_SEATS';
+          }
+          if (
+            await this.repository.reacquireSameSeats(
+              ctx,
+              hold.id,
+              hold.ownerId,
+              facts,
+              now,
+            )
+          ) {
+            return 'SOLD';
+          }
+          if (
+            await this.repository.reallocateForBooking(
+              ctx,
+              hold.id,
+              hold.ownerId,
+              facts,
+              now,
+            )
+          ) {
+            return 'REALLOCATED';
+          }
+          return 'NO_SEATS';
+        });
       }
 
-      if (outcome !== 'NO_SEATS') {
-        for (const tripId of tripIds) {
-          await this.availability.publishChange(
-            ctx,
-            tripId,
-            WHOLE_TRIP,
-            correlationId,
-            now,
-          );
-        }
+      if (outcome === 'NO_SEATS') {
+        await this.repository.recordNoSeats(ctx, hold.id, now);
+      }
+      for (const tripId of tripIds) {
+        await this.availability.publishChange(
+          ctx,
+          tripId,
+          WHOLE_TRIP,
+          correlationId,
+          now,
+        );
       }
 
       return this.buildSnapshot(ctx, hold.id, outcome, now);

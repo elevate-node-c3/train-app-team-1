@@ -68,7 +68,7 @@ enum HoldState {
   RELEASED = 2;
   EXPIRED = 3;
   CANCELLED = 4;
-  HOLD_STATE_SOLD = 5;
+  SOLD = 5;
 }
 
 message HoldPassengerLegIdentity {
@@ -160,19 +160,19 @@ message HoldView {
   repeated HoldSeatAssignment assignments = 11;
 }
 
-enum SettlementOutcome {
-  SETTLEMENT_OUTCOME_UNSPECIFIED = 0;
-  SOLD = 1;
-  REALLOCATED = 2;
-  NO_SEATS = 3;
-}
-
 message SettleHoldRequest {
   string ownerId = 1;
   string bookingKey = 2;
 }
 
 message SettleHoldResponse {
+  enum SettlementOutcome {
+    SETTLEMENT_OUTCOME_UNSPECIFIED = 0;
+    SOLD = 1;
+    REALLOCATED = 2;
+    NO_SEATS = 3;
+  }
+
   SettlementOutcome outcome = 1;
   string holdId = 2;
   repeated HoldLegView legs = 3;
