@@ -6,9 +6,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * the column `uuid`. Corrected forward rather than editing an already-applied
  * migration.
  */
-export class PaymentEventIdIsText1797200000002
-  implements MigrationInterface
-{
+export class PaymentEventIdIsText1797200000002 implements MigrationInterface {
   name = 'PaymentEventIdIsText1797200000002';
 
   async up(queryRunner: QueryRunner): Promise<void> {

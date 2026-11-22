@@ -7,9 +7,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * could never issue a ticket. A database sequence makes the number globally
  * unique in fact, not just in the column's name.
  */
-export class TicketNumberSequence1797300000001
-  implements MigrationInterface
-{
+export class TicketNumberSequence1797300000001 implements MigrationInterface {
   name = 'TicketNumberSequence1797300000001';
 
   async up(queryRunner: QueryRunner): Promise<void> {

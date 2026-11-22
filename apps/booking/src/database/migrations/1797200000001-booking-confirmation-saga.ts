@@ -5,9 +5,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * a final outcome, the columns that carry the saga's own progress, and the
  * ticket table the confirm step issues into.
  */
-export class BookingConfirmationSaga1797200000001
-  implements MigrationInterface
-{
+export class BookingConfirmationSaga1797200000001 implements MigrationInterface {
   name = 'BookingConfirmationSaga1797200000001';
 
   async up(queryRunner: QueryRunner): Promise<void> {
