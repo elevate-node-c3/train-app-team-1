@@ -21,6 +21,8 @@ export interface StartChargeRequest {
 export interface StartChargeResponse {
   paymentReference: string;
   status: string;
+  /** The Stripe client secret for the browser; never logged. Empty until created. */
+  clientSecret?: string;
 }
 
 export interface CancelChargeRequest {
@@ -31,6 +33,24 @@ export interface CancelChargeRequest {
 
 export interface CancelChargeResponse {
   status: string;
+}
+
+/**
+ * The whole locked total, booking fee included; never a partial amount.
+ * TA-110 owns the server side; until it lands payment marks the charge refunded
+ * without calling Stripe. These shapes are the contract and do not change.
+ */
+export interface RefundChargeRequest {
+  bookingReference: string;
+  paymentReference: string;
+  idempotencyKey: string;
+}
+
+/** status is REFUNDED, ALREADY_REFUNDED, or NOT_REFUNDABLE. */
+export interface RefundChargeResponse {
+  status: string;
+  refundReference: string;
+  amountPiastres: number;
 }
 
 export interface CreateSetupIntentRequest {
@@ -93,6 +113,11 @@ export interface PaymentGrpcService {
     metadata?: Metadata,
     options?: Record<string, unknown>,
   ): Observable<CancelChargeResponse>;
+  refundCharge(
+    request: RefundChargeRequest,
+    metadata?: Metadata,
+    options?: Record<string, unknown>,
+  ): Observable<RefundChargeResponse>;
   createSetupIntent(
     request: CreateSetupIntentRequest,
     metadata?: Metadata,

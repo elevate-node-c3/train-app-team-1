@@ -37,6 +37,8 @@ function bookingResponse(legs: BookingResponse['legs'] = []): BookingResponse {
     bookingFeePiastres: 500,
     bookingFeePercent: 4,
     termsAcceptedAt: '',
+    tickets: [],
+    seatsChanged: false,
   };
 }
 

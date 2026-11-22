@@ -1,9 +1,10 @@
 import { Check, Column, Entity, Index, PrimaryColumn } from 'typeorm';
-import type { HoldState } from '@app/contracts';
+import type { HoldState, SettlementOutcome } from '@app/contracts';
 
 /**
  * One traveller's hold lifecycle head. A key row is immutable after first use:
- * replay returns its original allocation and a terminal state is never revived.
+ * hold replay returns its receipt; payment settlement alone can reacquire it.
+ * A persisted settlement decision is never replaced on a retry.
  *
  * The partial unique owner index is deliberate: an expired-but-unreleased head
  * still occupies it until the create/replacement or expiry path releases it.
@@ -19,7 +20,15 @@ import type { HoldState } from '@app/contracts';
 })
 @Check(
   'chk_seat_hold_group_state',
-  `"state" IN ('held', 'released', 'expired', 'cancelled')`,
+  `"state" IN ('held', 'released', 'expired', 'cancelled', 'sold')`,
+)
+@Check(
+  'chk_seat_hold_group_settlement_outcome',
+  `"settlement_outcome" IN ('SOLD', 'REALLOCATED', 'NO_SEATS')`,
+)
+@Check(
+  'chk_seat_hold_group_settlement_state',
+  `("state" = 'sold') = COALESCE("settlement_outcome" IN ('SOLD', 'REALLOCATED'), false)`,
 )
 @Check('chk_seat_hold_group_version', `"version" > 0`)
 @Check(
@@ -42,6 +51,9 @@ export class SeatHoldGroupEntity {
 
   @Column({ type: 'text' })
   state!: Lowercase<HoldState>;
+
+  @Column({ name: 'settlement_outcome', type: 'text', nullable: true })
+  settlementOutcome!: SettlementOutcome | null;
 
   @Column({ type: 'integer' })
   version!: number;

@@ -89,6 +89,19 @@ describe('Correlation ID & PII Logging Redaction (§2.4)', () => {
   });
 
   describe('PII Redactor & Email Masking', () => {
+    it('scrubs charge and setup client secrets from free-form errors and keyed fields', () => {
+      expect(
+        redactPii({
+          message: 'Charge pi_123_secret_private setup seti_456_secret_private',
+          clientSecret: 'pi_123_secret_private',
+          paymentClientSecret: 'pi_123_secret_private',
+        }),
+      ).toEqual({
+        message: 'Charge [REDACTED] setup [REDACTED]',
+        clientSecret: '[REDACTED]',
+        paymentClientSecret: '[REDACTED]',
+      });
+    });
     it('redacts purpose-specific credentials and IDs embedded in driver messages', () => {
       expect(
         redactPii({

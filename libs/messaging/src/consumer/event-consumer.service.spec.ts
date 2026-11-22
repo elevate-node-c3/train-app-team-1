@@ -301,6 +301,49 @@ describe('Event consumer (ADR-0003, ADR-0004, BR-54)', () => {
     expect(h.ack).toHaveBeenCalledTimes(1);
   });
 
+  it.each([4, 100])(
+    'retains durable notification failures on the final delayed retry (attempt %s)',
+    async (attempt) => {
+      const h = harness({
+        attempt,
+        handler: {
+          handle: async () => {
+            throw new Error('recipient or SMTP unavailable');
+          },
+        },
+      });
+      h.sub.retryIndefinitely = true;
+      await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
+      expect(h.calls).toEqual([
+        'claim',
+        'markFailed',
+        `publish:${RETRY_EXCHANGE}`,
+        'ack',
+      ]);
+      expect(h.publishes[0].routingKey).toBe(`${QUEUE}.retry.9000`);
+      expect(h.publishes[0].options.headers).not.toHaveProperty(
+        'x-death-reason',
+      );
+    },
+  );
+
+  it('still dead-letters invalid payloads for indefinitely retrying notifications', async () => {
+    const h = harness({
+      attempt: 100,
+      handler: {
+        handle: async () => {
+          throw new InvalidEventPayloadError('invalid outcome');
+        },
+      },
+    });
+    h.sub.retryIndefinitely = true;
+    await h.consumer.handleMessage(h.sub, message(), h.plainChannel);
+    expect(h.publishes[0].exchange).toBe(DEAD_LETTER_EXCHANGE);
+    expect(h.publishes[0].options.headers['x-death-reason']).toBe(
+      'invalid-payload',
+    );
+  });
+
   it('marks skipped results without sending', async () => {
     const h = harness({
       handler: {

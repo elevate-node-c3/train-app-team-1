@@ -42,9 +42,13 @@ describe('MT-02 National-ID vault', () => {
 
   it('detects tampering and never falls back to plaintext', () => {
     const encrypted = encryptNationalId(nationalId, 'passenger');
-    expect(() =>
-      decryptNationalId(`${encrypted.slice(0, -1)}A`, 'passenger'),
-    ).toThrow('failed authentication');
+    const parts = encrypted.split(':');
+    const ciphertext = Buffer.from(parts.at(-1)!, 'base64url');
+    ciphertext[0] ^= 1;
+    parts[parts.length - 1] = ciphertext.toString('base64url');
+    expect(() => decryptNationalId(parts.join(':'), 'passenger')).toThrow(
+      'failed authentication',
+    );
     expect(() => decryptNationalId(nationalId, 'passenger')).toThrow(
       'not encrypted',
     );

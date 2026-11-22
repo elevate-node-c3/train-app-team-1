@@ -22,6 +22,7 @@ import { VerificationCodeIssuedConsumer } from './consumers/verification-code-is
 import { EmailDeliveryRepository } from './email-delivery.repository.js';
 import { NodemailerEmailSender } from './email-sender.js';
 import { EmailDeliveryEntity } from './entities/email-delivery.entity.js';
+import { ProfileCompletedModule } from '../profile-completed/profile-completed.module.js';
 
 /** Each consumer needs its own queue. */
 export const VERIFICATION_EMAIL_QUEUE = 'notification.verification-code-issued';
@@ -50,7 +51,11 @@ export function createVerificationEmailSubscriptions(
 
 /** Keep database and SMTP setup in this feature, not its consumers. */
 @Module({
-  imports: [MessagingModule, TypeOrmModule.forFeature([EmailDeliveryEntity])],
+  imports: [
+    MessagingModule,
+    TypeOrmModule.forFeature([EmailDeliveryEntity]),
+    ProfileCompletedModule,
+  ],
   providers: [
     VerificationCodeIssuedConsumer,
     AccountRegisteredConsumer,

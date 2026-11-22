@@ -11,9 +11,7 @@ import {
   INVENTORY_SERVICE_NAME,
   getInventoryProtoPath,
 } from './inventory.grpc.js';
-import {
-  AllocationOutcome,
-} from './seat-allocation.dto.js';
+import { AllocationOutcome } from './seat-allocation.dto.js';
 import {
   composeAllocationOutcome,
   type CreateHoldRequest,
@@ -23,9 +21,7 @@ import {
   type HoldSnapshot,
 } from './seat-hold.dto.js';
 import { ErrorCode } from '../error-codes.enum.js';
-import {
-  HOLD_LIFECYCLE_PAYLOAD_KEYS,
-} from '../events/hold-events.js';
+import { HOLD_LIFECYCLE_PAYLOAD_KEYS } from '../events/hold-events.js';
 
 interface MessageDescriptor {
   field?: {
@@ -77,7 +73,7 @@ describe('MT-02 hold lifecycle contracts', () => {
     expect(existsSync(protoPath)).toBe(true);
   });
 
-  it('exposes create, get, release and extend as the only hold RPCs', () => {
+  it('exposes create, get, release, extend and settle as the only hold RPCs', () => {
     const service = serviceDefinition({ enums: String });
 
     // Holds are created only through this lifecycle; no legacy
@@ -88,6 +84,7 @@ describe('MT-02 hold lifecycle contracts', () => {
       'GetHold',
       'ReleaseHold',
       'SeatUsageForTrips',
+      'SettleHold',
     ]);
   });
 
@@ -110,7 +107,63 @@ describe('MT-02 hold lifecycle contracts', () => {
       'RELEASED',
       'EXPIRED',
       'CANCELLED',
+      'SOLD',
     ]);
+  });
+
+  it('round-trips sold hold state and every settlement outcome without losing metadata', () => {
+    const service = serviceDefinition({
+      enums: String,
+      arrays: true,
+      defaults: true,
+    });
+    const hold = service.GetHold.responseDeserialize(
+      service.GetHold.responseSerialize({ state: 'SOLD' }),
+    );
+    expect(hold).toMatchObject({ state: 'SOLD' });
+    const numeric = serviceDefinition();
+    expect(
+      numeric.GetHold.responseDeserialize(
+        service.GetHold.responseSerialize({ state: 'SOLD' }),
+      ),
+    ).toMatchObject({ state: 5 });
+    const assignment = {
+      passengerRef: 'p-1',
+      tripId: 'trip',
+      tripSeatId: 'seat',
+      travelClassId: 'class',
+      coachNumber: 1,
+      seatNumber: '1A',
+      rowNumber: 1,
+      label: 'Coach 1 Seat 1A',
+      outcome: 'SPLIT',
+      passengerKeyVersion: 1,
+      originStationId: 'origin',
+      destinationStationId: 'destination',
+      originPosition: 0,
+      destinationPosition: 2,
+    };
+    for (const [index, outcome] of [
+      'SOLD',
+      'REALLOCATED',
+      'NO_SEATS',
+    ].entries()) {
+      const result = service.SettleHold.responseDeserialize(
+        service.SettleHold.responseSerialize({
+          outcome,
+          holdId: 'hold',
+          assignments: [assignment],
+          legs: [],
+          serverNow: 'now',
+        }),
+      );
+      expect(result).toMatchObject({ outcome, assignments: [assignment] });
+      expect(
+        numeric.SettleHold.responseDeserialize(
+          service.SettleHold.responseSerialize({ outcome }),
+        ),
+      ).toMatchObject({ outcome: index + 1 });
+    }
   });
 
   it('carries owner, immutable key, legs, and passengers on create', () => {
@@ -261,9 +314,9 @@ describe('MT-02 hold lifecycle contracts', () => {
 
   it('composes per-leg outcomes without inventing a new tier', () => {
     expect(composeAllocationOutcome([])).toBeNull();
-    expect(
-      composeAllocationOutcome([AllocationOutcome.SIDE_BY_SIDE]),
-    ).toBe(AllocationOutcome.SIDE_BY_SIDE);
+    expect(composeAllocationOutcome([AllocationOutcome.SIDE_BY_SIDE])).toBe(
+      AllocationOutcome.SIDE_BY_SIDE,
+    );
     expect(
       composeAllocationOutcome([
         AllocationOutcome.SIDE_BY_SIDE,

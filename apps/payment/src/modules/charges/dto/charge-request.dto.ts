@@ -8,7 +8,11 @@ import {
   Min,
   IsOptional,
 } from 'class-validator';
-import type { CancelChargeRequest, StartChargeRequest } from '@app/contracts';
+import type {
+  CancelChargeRequest,
+  RefundChargeRequest,
+  StartChargeRequest,
+} from '@app/contracts';
 
 /** payment_charge.currency carries a CHECK for this one value. */
 export const SUPPORTED_CURRENCIES = ['EGP'] as const;
@@ -48,6 +52,19 @@ export class StartChargeRequestDto implements StartChargeRequest {
 }
 
 export class CancelChargeRequestDto implements CancelChargeRequest {
+  @IsUUID()
+  bookingReference!: string;
+
+  @IsUUID()
+  paymentReference!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_IDEMPOTENCY_KEY_LENGTH)
+  idempotencyKey!: string;
+}
+
+export class RefundChargeRequestDto implements RefundChargeRequest {
   @IsUUID()
   bookingReference!: string;
 

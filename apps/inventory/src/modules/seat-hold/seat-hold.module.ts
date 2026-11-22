@@ -9,9 +9,11 @@ import { SeatHoldLegEntity } from './entities/seat-hold-leg.entity.js';
 import { SeatHoldAssignmentEntity } from './entities/seat-hold-assignment.entity.js';
 import { SeatHoldGrpcController } from './seat-hold.grpc.controller.js';
 import { HoldCoreRepository } from './hold-core.repository.js';
-import { HoldCoreService } from './hold-core.service.js';
+import { HoldCoreService } from './services/hold-core.service.js';
+import { HoldSettlementService } from './services/hold-settlement.service.js';
 import { HoldExpiryWorker } from './hold-expiry.worker.js';
 import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
+import { SeatsModule } from '../seats/seats.module.js';
 
 @Module({
   imports: [
@@ -24,15 +26,17 @@ import { HoldCreationGuard, HoldServiceGuard } from './hold-access.guard.js';
     ]),
     OutboxModule,
     MigrationModule,
+    SeatsModule,
   ],
   controllers: [SeatHoldGrpcController],
   providers: [
     HoldCoreRepository,
     HoldCoreService,
+    HoldSettlementService,
     HoldExpiryWorker,
     HoldCreationGuard,
     HoldServiceGuard,
   ],
-  exports: [HoldCoreService],
+  exports: [HoldCoreService, HoldSettlementService],
 })
 export class SeatHoldModule {}

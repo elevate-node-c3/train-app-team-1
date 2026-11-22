@@ -1,4 +1,6 @@
 import { availableParallelism, arch, cpus, platform, totalmem } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import * as amqp from 'amqplib';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { performance } from 'node:perf_hooks';
@@ -14,6 +16,8 @@ import {
   vi,
 } from 'vitest';
 import type { DataSource } from 'typeorm';
+import { EVENTS_EXCHANGE } from '@app/messaging';
+import { ephemeralRabbitVhost } from './support/rabbit-vhost.js';
 import {
   HOLD_EXPIRED_EVENT_TYPE,
   HOLD_HELD_EVENT_TYPE,
@@ -45,6 +49,7 @@ let source: DataSource;
 let capture: HoldEventCapture | undefined;
 let instances: InventoryExpiryInstance[] = [];
 let cleanup: (() => Promise<void>)[] = [];
+let vhost: Awaited<ReturnType<typeof ephemeralRabbitVhost>> | undefined;
 const execute = promisify(execFile);
 
 /** docker-compose.yml's own project name; nothing else may be targeted. */
@@ -225,6 +230,9 @@ beforeAll(async () => {
     erlang_version: string;
     node: string;
   }>('overview');
+  vhost = await ephemeralRabbitVhost('hold-expiry-load');
+  vi.stubEnv('HOLDS_TEST_RABBITMQ_URL', vhost.rabbit);
+  vi.stubEnv('RABBITMQ_URL', vhost.rabbit);
   source = await inventoryDataSource();
   const [postgres] =
     await source.query(`SELECT version(), current_database() AS database, current_user AS role,
@@ -286,12 +294,54 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await closeInventoryDataSource();
-  vi.unstubAllEnvs();
+  try {
+    await closeInventoryDataSource();
+  } finally {
+    try {
+      await vhost?.close();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
 });
 
 describe('TA-70 real isolated expiry SLO and recovery', () => {
   it('retains a mandatory return without a binding and recovers the same expired event ID', async () => {
+    const root = new URL(isolatedHoldEndpoints().rabbit);
+    root.pathname = '/%2F';
+    const connection = await amqp.connect(root.href, { timeout: 5_000 });
+    const channel = await connection.createChannel();
+    const rootQueue = `holds.expiry.root-binding.${randomUUID()}`;
+    cleanup.push(async () => {
+      try {
+        await channel.deleteQueue(rootQueue);
+      } finally {
+        try {
+          await channel.close();
+        } finally {
+          await connection.close();
+        }
+      }
+    });
+    await channel.assertExchange(EVENTS_EXCHANGE, 'topic', { durable: true });
+    await channel.assertQueue(rootQueue, { durable: true });
+    await channel.bindQueue(
+      rootQueue,
+      EVENTS_EXCHANGE,
+      HOLD_EXPIRED_EVENT_TYPE,
+    );
+    expect(vhost?.name).not.toBe('/');
+    const rootBindings = () =>
+      rabbitManagement<
+        { source: string; destination: string; routing_key: string }[]
+      >('bindings/%2F');
+    expect(await rootBindings()).toContainEqual(
+      expect.objectContaining({
+        source: EVENTS_EXCHANGE,
+        destination: rootQueue,
+        routing_key: HOLD_EXPIRED_EVENT_TYPE,
+      }),
+    );
     await capture!.unbindExpiry();
     await assertNoExpiryBinding();
     await instance('mandatory-return');
@@ -325,6 +375,13 @@ describe('TA-70 real isolated expiry SLO and recovery', () => {
     await complete(seed);
     await assertWholeGroups(seed);
     expect(capturedExpired(seed)[0].event.id).toBe(pending.id);
+    expect(await rootBindings()).toContainEqual(
+      expect.objectContaining({
+        source: EVENTS_EXCHANGE,
+        destination: rootQueue,
+        routing_key: HOLD_EXPIRED_EVENT_TYPE,
+      }),
+    );
     console.info(
       'HOLDS_MANDATORY_RETURN_RECOVERY',
       JSON.stringify({

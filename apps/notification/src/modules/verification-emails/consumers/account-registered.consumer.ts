@@ -6,14 +6,19 @@ import type {
   EventHandlingResult,
 } from '@app/messaging/consumer/event-handler.port.js';
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
+import { TravellerProfileRepository } from '../../profile-completed/traveller-profile.repository.js';
 
 /**
- * Track account registration without sending mail.
- * Code emails are sent only for identity.verification-code.issued.
+ * Track account registration without sending mail, and record the one thing
+ * `profile.completed` never carries: the address. TA-107's booking-outcome
+ * emails read it back by account id. Code emails are sent only for
+ * identity.verification-code.issued.
  */
 @Injectable()
 export class AccountRegisteredConsumer implements EventHandlerPort {
   private readonly logger = new Logger(AccountRegisteredConsumer.name);
+
+  constructor(private readonly travellers: TravellerProfileRepository) {}
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {
     const payload = envelope.payload;
@@ -37,6 +42,8 @@ export class AccountRegisteredConsumer implements EventHandlerPort {
         'The account-registered payload must carry an account id and email',
       );
     }
+
+    await this.travellers.upsertEmail(record.accountId, record.email);
 
     this.logger.log(
       `Account ${record.accountId} registered for ${maskEmail(record.email)} (event ${envelope.id})`,

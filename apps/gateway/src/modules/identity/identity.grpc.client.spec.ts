@@ -697,6 +697,7 @@ describe('IdentityGrpcClient wire contract', () => {
         (method) => method.charAt(0).toUpperCase() + method.slice(1),
       ),
       'ResolveHoldPassengers',
+      'ResolveNotificationRecipient',
     ]);
   });
 

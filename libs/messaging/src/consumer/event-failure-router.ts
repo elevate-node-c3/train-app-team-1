@@ -59,12 +59,18 @@ export class EventFailureRouter {
       }
 
       const delays = retryDelaysFor(subscription);
-      if (attempt <= delays.length) {
+      if (
+        attempt <= delays.length ||
+        (subscription.retryIndefinitely && delays.length > 0)
+      ) {
         // Release the claim before republishing so a retry is not skipped as a duplicate.
         await this.processedEvents.markFailed(envelope.id, reason);
         await this.republisher.republish(
           RETRY_EXCHANGE,
-          retryQueueName(subscription.queueName, delays[attempt - 1]),
+          retryQueueName(
+            subscription.queueName,
+            delays[Math.min(attempt - 1, delays.length - 1)],
+          ),
           message,
           headers,
           envelope.id,

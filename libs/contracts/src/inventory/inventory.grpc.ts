@@ -11,6 +11,7 @@ export const INVENTORY_RPC_NAMES = [
   'GetHold',
   'ReleaseHold',
   'ExtendHold',
+  'SettleHold',
 ] as const;
 
 /** Resolves inventory.proto across the source, dist and container layouts. */

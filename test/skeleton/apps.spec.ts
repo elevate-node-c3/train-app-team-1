@@ -48,25 +48,34 @@ describe('service apps', () => {
 
   // Pin the documented GET /<service> routes and the gateway's GET /.
   // `path` and `controllers` are Nest metadata keys.
-  it.each(SERVICES)('%s serves its documented identity route', (service) => {
-    const pascal = service[0].toUpperCase() + service.slice(1);
-    const moduleClass = MODULES[service][`${pascal}Module`] as object;
+  it.each(SERVICES)(
+    '%s serves its documented identity route',
+    async (service) => {
+      const pascal = service[0].toUpperCase() + service.slice(1);
+      const moduleClass = MODULES[service][`${pascal}Module`] as object;
 
-    const controllers =
-      (Reflect.getMetadata('controllers', moduleClass) as
-        (new () => Record<string, () => { service: string }>)[] | undefined) ??
-      [];
-    const controller = controllers.find(
-      (candidate) => candidate.name === 'ServiceInfoController',
-    );
-    expect(controller).toBeDefined();
+      const controllers =
+        (Reflect.getMetadata('controllers', moduleClass) as
+          | (new () => Record<
+              string,
+              () => { service: string } | Promise<{ service: string }>
+            >)[]
+          | undefined) ?? [];
+      const controller = controllers.find(
+        (candidate) => candidate.name === 'ServiceInfoController',
+      );
+      expect(controller).toBeDefined();
 
-    const path = Reflect.getMetadata('path', controller!);
-    expect(path).toBe(service === 'gateway' ? '/' : service);
+      const path = Reflect.getMetadata('path', controller!);
+      expect(path).toBe(service === 'gateway' ? '/' : service);
 
-    const method = service === 'gateway' ? 'getRoot' : 'getInfo';
-    expect(new controller!()[method]().service).toBe(service);
-  });
+      const method = service === 'gateway' ? 'getRoot' : 'getInfo';
+      // No DI here: a service whose identity route needs a dependency (e.g.
+      // booking's live detectability read) must default gracefully without one.
+      const result = await new controller!()[method]();
+      expect(result.service).toBe(service);
+    },
+  );
 
   it.each(SERVICES)(
     '%s has a module that compiles on its own',

@@ -193,6 +193,8 @@ describe('TA-70 Booking durable orchestration (real PostgreSQL)', () => {
       holdIntent: null,
       passengerSnapshot: null,
       holdVersion: 0,
+      paymentClientSecret: null,
+      sagaAttempts: 0,
     });
     expect(
       (
@@ -202,6 +204,10 @@ describe('TA-70 Booking durable orchestration (real PostgreSQL)', () => {
       'CreateBookingDraftTables1793500000000',
       'BookingHoldIntent1794764000000',
       'BookingCheckoutFlow1795000000002',
+      'BookingConfirmationSaga1797200000001',
+      'PaymentEventIdIsText1797200000002',
+      'TicketNumberSequence1797300000001',
+      'BookingSagaRecovery1797400000001',
     ]);
     await expect(
       service.createDraft({ ...draftInput(), bookingKey: legacyId }),
@@ -549,5 +555,4 @@ describe('TA-70 Booking durable orchestration (real PostgreSQL)', () => {
       (await store.findOwned(dto.bookingKey, OWNER_ID))!.releaseRequested,
     ).toBe(true);
   });
-
 });

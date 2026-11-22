@@ -113,7 +113,7 @@ export class BookingFlowService {
     const current = await this.require(draft.id);
 
     if (current.flowState === 'awaiting_payment' || this.isTerminal(current)) {
-      return toBookingResponse(current);
+      return this.read(current.id);
     }
     if (current.flowState === 'payment_starting') {
       await this.startPayment(current.id, request.savedCardId);
@@ -127,7 +127,7 @@ export class BookingFlowService {
       await this.expireIfDue(current.id);
       const settled = await this.require(current.id);
       if (settled.flowState === 'awaiting_payment') {
-        return toBookingResponse(settled);
+        return this.read(settled.id);
       }
       throw new BookingFlowError(ErrorCode.CONFLICT);
     }
@@ -359,6 +359,7 @@ export class BookingFlowService {
     const settled = await this.repository.recordPaymentStarted(
       id,
       charge.paymentReference,
+      charge.clientSecret,
     );
     if (settled === 'awaiting_payment') {
       await this.publish(await this.require(id), buildBookingAwaitingPayment);
@@ -384,15 +385,34 @@ export class BookingFlowService {
   async compensate(id: string): Promise<void> {
     const draft = await this.require(id);
     if (!this.isTerminal(draft)) return;
+    if (draft.paymentSucceededAt) return;
     if (draft.compensationStatus !== 'pending') return;
 
     try {
       if (draft.holdId && !draft.holdReleased) {
-        await this.drafts.releaseHold(draft.userId, draft.id, 'en');
+        const release = await this.drafts.releaseHold(
+          draft.userId,
+          draft.id,
+          'en',
+        );
+        if (
+          release.reconciliationPending ||
+          !['RELEASED', 'EXPIRED', 'CANCELLED'].includes(
+            release.holdState ?? '',
+          )
+        ) {
+          throw new BookingFlowFault('Hold release has not been acknowledged');
+        }
         await this.repository.markHoldReleased(id);
       }
 
       const afterRelease = await this.require(id);
+      if (
+        !this.isTerminal(afterRelease) ||
+        afterRelease.paymentSucceededAt ||
+        afterRelease.compensationStatus !== 'pending'
+      )
+        return;
       if (
         afterRelease.paymentAttempted &&
         !afterRelease.chargeCancelled &&
@@ -457,6 +477,12 @@ export class BookingFlowService {
     error: unknown,
   ): Promise<void> {
     const current = await this.require(id);
+    if (
+      !this.isTerminal(current) ||
+      current.paymentSucceededAt ||
+      current.compensationStatus !== 'pending'
+    )
+      return;
     const attempts = current.compensationAttempts + 1;
     const delay = Math.min(1_000 * 2 ** Math.min(attempts, 6), 60_000);
 
@@ -526,7 +552,12 @@ export class BookingFlowService {
   }
 
   private async read(id: string): Promise<BookingResponse> {
-    return toBookingResponse(await this.require(id));
+    const draft = await this.require(id);
+    const tickets =
+      draft.flowState === 'confirmed'
+        ? await this.repository.findTickets(id)
+        : [];
+    return toBookingResponse(draft, tickets);
   }
 
   private async require(id: string): Promise<BookingDraftEntity> {

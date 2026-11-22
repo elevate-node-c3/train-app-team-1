@@ -18,7 +18,7 @@ interface PendingConfirmation {
 
 /**
  * Resolve only after the broker confirms publication.
- * Hold lifecycle events also require a route; consumers still own their queues.
+ * Critical lifecycle events also require a route; consumers still own their queues.
  */
 @Injectable()
 export class EventPublisherService {
@@ -38,6 +38,10 @@ export class EventPublisherService {
     EVENT_TYPES.holdReleased,
     EVENT_TYPES.holdExpired,
     EVENT_TYPES.holdExtended,
+    EVENT_TYPES.paymentSucceeded,
+    EVENT_TYPES.bookingConfirmed,
+    EVENT_TYPES.bookingSeatsChanged,
+    EVENT_TYPES.bookingRefunded,
   ]);
 
   constructor(private readonly amqp: AmqpClientService) {}

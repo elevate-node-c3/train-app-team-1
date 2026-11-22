@@ -7,10 +7,14 @@ import {
 } from '@nestjs/common';
 
 import { BookingFlowRepository } from './booking-flow.repository.js';
+import { BookingConfirmationService } from './services/booking-confirmation.service.js';
 import { BookingFlowService } from './services/booking-flow.service.js';
 
 /** How often the worker looks for work. Each pass is bounded by the claim. */
 const SCAN_INTERVAL_MS = 2_000;
+
+/** A charge this old without a settlement outcome is worth a human's attention. */
+const CHARGED_WITHOUT_OUTCOME_THRESHOLD_SECONDS = 60;
 
 /**
  * Drives the flows nobody is waiting on: a step whose remote call failed, a
@@ -31,6 +35,7 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
   constructor(
     private readonly repository: BookingFlowRepository,
     private readonly flow: BookingFlowService,
+    private readonly confirmation: BookingConfirmationService,
   ) {}
 
   onModuleInit(): void {
@@ -53,6 +58,7 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
       await this.expireDue();
       await this.resumeStalled();
       await this.runCompensations();
+      await this.logChargedWithoutOutcome();
     } catch (error: unknown) {
       this.logger.error(`Booking flow scan failed: ${messageOf(error)}`);
     } finally {
@@ -77,21 +83,56 @@ export class BookingFlowWorker implements OnModuleInit, OnApplicationShutdown {
       try {
         if (flow.flowState === 'payment_starting') {
           await this.flow.startPayment(flow.id);
+        } else if (
+          flow.flowState === 'confirming' ||
+          flow.flowState === 'refunding'
+        ) {
+          await this.confirmation.run(flow.id);
         } else {
           await this.flow.advance(flow.id);
         }
         await this.repository.releaseLease(flow.id, this.workerId);
       } catch (error: unknown) {
         // The step keeps its place; the next pass tries it again.
-        await this.repository.deferResume(
-          flow.id,
-          this.workerId,
-          messageOf(error),
-        );
+        if (flow.flowState === 'confirming' || flow.flowState === 'refunding') {
+          const attempts = await this.repository.deferSaga(
+            flow.id,
+            this.workerId,
+            messageOf(error),
+          );
+          if (attempts !== null && attempts >= 12) {
+            await this.repository.deadLetterCompensation(
+              flow.id,
+              attempts,
+              messageOf(error),
+            );
+            this.logger.error(
+              `DEAD LETTER: saga for booking ${flow.id} failed ${attempts} times; retry continues`,
+            );
+          }
+        } else {
+          await this.repository.deferResume(
+            flow.id,
+            this.workerId,
+            messageOf(error),
+          );
+        }
         this.logger.warn(
           `Booking ${flow.id} stays at ${flow.flowState}; the step will retry: ${messageOf(error)}`,
         );
       }
+    }
+  }
+
+  /** Charged without a ticket or a refund: the anti-goal §2 forbids silently. */
+  private async logChargedWithoutOutcome(): Promise<void> {
+    const stuck = await this.repository.findChargedWithoutOutcome(
+      CHARGED_WITHOUT_OUTCOME_THRESHOLD_SECONDS,
+    );
+    for (const { id, sagaStep } of stuck) {
+      this.logger.error(
+        `ALERT: booking ${id} was charged and is still ${sagaStep}`,
+      );
     }
   }
 

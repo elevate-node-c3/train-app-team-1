@@ -61,6 +61,10 @@ export const identityEnvSchema = commonEnvSchema
     TOKEN_GRACE_SECRET: Joi.string().optional(),
     BCRYPT_COST: Joi.number().integer().min(4).max(15).default(12),
     BOOKING_IDENTITY_SERVICE_KEY: Joi.string().empty('').min(32).optional(),
+    NOTIFICATION_IDENTITY_SERVICE_KEY: Joi.string()
+      .empty('')
+      .min(32)
+      .optional(),
     NATIONAL_ID_ACTIVE_KEY_VERSION: Joi.string()
       .pattern(/^[1-9]\d*$/)
       .required(),

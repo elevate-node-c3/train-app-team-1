@@ -12,4 +12,6 @@ export interface EventSubscription {
   handler: EventHandlerPort;
   /** Optional override; defaults to the platform retry budget. */
   retryDelaysMs?: readonly number[];
+  /** Durable notifications keep transient failures on the final delayed retry. */
+  retryIndefinitely?: boolean;
 }

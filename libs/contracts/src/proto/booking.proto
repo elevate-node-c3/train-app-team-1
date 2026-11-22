@@ -90,6 +90,14 @@ message BookedLeg {
   repeated BookedPassenger passengers = 9;
 }
 
+message Ticket {
+  string ticketNumber = 1;
+  string passengerRef = 2;
+  string tripId = 3;
+  int32 coachNumber = 4;
+  string seatNumber = 5;
+}
+
 message BookingResponse {
   string bookingReference = 1;
   string state = 2;
@@ -104,4 +112,7 @@ message BookingResponse {
   int32 bookingFeePiastres = 11;
   int32 bookingFeePercent = 12;    // 7
   string termsAcceptedAt = 13;     // '' until accepted
+  repeated Ticket tickets = 14;    // only once state is 'confirmed'
+  bool seatsChanged = 15;          // a late payment forced a reallocation
+  string clientSecret = 16;        // owner only, while awaiting payment
 }

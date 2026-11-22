@@ -7,17 +7,26 @@ import { Metadata as GrpcMetadata } from '@grpc/grpc-js';
 import type {
   CancelChargeRequest,
   CancelChargeResponse,
+  GetHoldRequest,
+  HoldSnapshot,
   QuoteBookingRequest,
   QuoteBookingResponse,
+  RefundChargeRequest,
+  RefundChargeResponse,
+  SettleHoldRequest,
+  SettlementSnapshot,
   StartChargeRequest,
   StartChargeResponse,
 } from '@app/contracts';
 import {
   CATALOG_FLOW_CLIENT,
+  INVENTORY_FLOW_CLIENT,
   PAYMENT_FLOW_CLIENT,
   type CatalogFlowClient,
+  type InventoryFlowClient,
   type PaymentFlowClient,
 } from '../flow-clients.types.js';
+import { serviceKeyFor } from '../../../config/service-keys.js';
 
 export const FLOW_GRPC_DEADLINE_MS = 1_800;
 
@@ -26,6 +35,8 @@ export class FlowGrpcClientsService {
   constructor(
     @Inject(CATALOG_FLOW_CLIENT) private readonly catalog: CatalogFlowClient,
     @Inject(PAYMENT_FLOW_CLIENT) private readonly payment: PaymentFlowClient,
+    @Inject(INVENTORY_FLOW_CLIENT)
+    private readonly inventory: InventoryFlowClient,
     private readonly cls: ClsService,
   ) {}
 
@@ -60,6 +71,39 @@ export class FlowGrpcClientsService {
         this.payment.cancelCharge(request, metadata, { deadline }),
       correlationId,
     );
+  }
+
+  refundCharge(
+    request: RefundChargeRequest,
+    correlationId?: string,
+  ): Promise<RefundChargeResponse> {
+    return this.call(
+      (metadata, deadline) =>
+        this.payment.refundCharge(request, metadata, { deadline }),
+      correlationId,
+    );
+  }
+
+  settleHold(
+    request: SettleHoldRequest,
+    correlationId?: string,
+  ): Promise<SettlementSnapshot> {
+    return this.call((metadata, deadline) => {
+      const key = serviceKeyFor('inventory');
+      if (key) metadata.set('x-booking-inventory-key', key);
+      return this.inventory.settleHold(request, metadata, { deadline });
+    }, correlationId);
+  }
+
+  releaseHold(
+    request: GetHoldRequest,
+    correlationId?: string,
+  ): Promise<HoldSnapshot> {
+    return this.call((metadata, deadline) => {
+      const key = serviceKeyFor('inventory');
+      if (key) metadata.set('x-booking-inventory-key', key);
+      return this.inventory.releaseHold(request, metadata, { deadline });
+    }, correlationId);
   }
 
   private call<T>(

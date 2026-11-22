@@ -64,14 +64,17 @@ function buildController(correlationId: string | undefined = 'corr-1') {
     releaseHold: vi.fn(),
     extendHold: vi.fn(),
   };
+  const settlement = { settle: vi.fn() };
   const cls = { get: vi.fn().mockReturnValue(correlationId) };
 
   return {
     controller: new SeatHoldGrpcController(
       core as never,
+      settlement as never,
       cls as never,
     ),
     core,
+    settlement,
     cls,
   };
 }
@@ -149,6 +152,26 @@ describe('SeatHoldGrpcController hold RPCs', () => {
     expect(core.getHold).toHaveBeenCalledWith(key, 'corr-def');
     expect(core.releaseHold).toHaveBeenCalledWith(key, 'corr-def');
     expect(core.extendHold).toHaveBeenCalledWith(key, 'corr-def');
+  });
+
+  it('delegates settlement without discarding its decision or seat metadata', async () => {
+    const { controller, settlement } = buildController(
+      'settlement-correlation',
+    );
+    const result = {
+      outcome: 'REALLOCATED',
+      holdId: snapshot.holdId,
+      legs: snapshot.legs,
+      assignments: snapshot.assignments,
+      serverNow: snapshot.serverNow,
+    };
+    settlement.settle.mockResolvedValue(result);
+    const key = { ownerId: OWNER_ID, bookingKey: BOOKING_KEY };
+    await expect(controller.settleHold(key)).resolves.toBe(result);
+    expect(settlement.settle).toHaveBeenCalledWith(
+      key,
+      'settlement-correlation',
+    );
   });
 
   it('maps SEAT_TAKEN to ABORTED with a machine-readable code', async () => {

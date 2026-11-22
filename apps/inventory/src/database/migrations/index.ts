@@ -9,6 +9,8 @@ import { AddTripTimetableVersion1794600000005 } from './1794600000005-add-trip-t
 import { AddTripStopTimes1794600000006 } from './1794600000006-add-trip-stop-times.js';
 import { AlignTripSchemaWithDesign1794600000007 } from './1794600000007-align-trip-schema-with-design.js';
 import { CreateHoldCore1794600000008 } from './1794600000008-create-hold-core.js';
+import { AddHoldStateSold1797100000001 } from './1797100000001-add-hold-state-sold.js';
+import { PersistHoldSettlementOutcome1797400000001 } from './1797400000001-persist-hold-settlement-outcome.js';
 
 // Keep migration timestamps unique; TypeORM keys migrations by name.
 export const migrations: (new () => MigrationInterface)[] = [
@@ -21,6 +23,8 @@ export const migrations: (new () => MigrationInterface)[] = [
   AddTripStopTimes1794600000006,
   AlignTripSchemaWithDesign1794600000007,
   CreateHoldCore1794600000008,
+  AddHoldStateSold1797100000001,
+  PersistHoldSettlementOutcome1797400000001,
 ];
 
 export const INVENTORY_MIGRATIONS = migrations;

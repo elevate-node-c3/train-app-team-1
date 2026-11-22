@@ -92,4 +92,60 @@ describe('StripeService', () => {
     ).resolves.toBeUndefined();
     expect(detach).not.toHaveBeenCalled();
   });
+
+  it('creates browser-confirmable intents with durable correlation and stable key, without server confirmation', async () => {
+    const stripeMock = (service as any).stripeClient;
+    const create = vi.fn().mockResolvedValue({
+      id: 'pi_1',
+      status: 'requires_confirmation',
+      client_secret: 'pi_1_secret_browser',
+      amount: 6955,
+      amount_received: 0,
+      currency: 'egp',
+      metadata: {},
+    });
+    stripeMock.paymentIntents = { create };
+    await service.createOrRetrievePaymentIntent({
+      bookingReference: accountId,
+      paymentReference: 'charge_1',
+      amountPiastres: 6955,
+      currency: 'EGP',
+      customerId: '',
+      paymentMethodId: '',
+      idempotencyKey: 'booking:key:charge',
+    });
+    expect(create).toHaveBeenCalledWith(
+      {
+        amount: 6955,
+        currency: 'egp',
+        metadata: { bookingReference: accountId, paymentReference: 'charge_1' },
+        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+      },
+      { idempotencyKey: 'booking:key:charge' },
+    );
+    expect(create.mock.calls[0][0]).not.toHaveProperty('confirm');
+  });
+
+  it.each(['succeeded', 'canceled', 'processing'])(
+    'never returns the secret for Stripe %s',
+    async (status) => {
+      const stripeMock = (service as any).stripeClient;
+      stripeMock.paymentIntents = {
+        retrieve: vi.fn().mockResolvedValue({
+          id: 'pi_1',
+          status,
+          client_secret: 'pi_1_secret_sensitive',
+          amount: 6955,
+          amount_received: 6955,
+          currency: 'egp',
+          metadata: {},
+        }),
+      };
+      expect(await service.retrievePaymentIntent('pi_1')).toMatchObject({
+        clientSecret: '',
+        status,
+        amountReceived: 6955,
+      });
+    },
+  );
 });

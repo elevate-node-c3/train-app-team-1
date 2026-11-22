@@ -10,6 +10,7 @@ import {
   type SignUpResponseDto,
   type VerifyEmailRequestDto,
   type VerifyEmailResponseDto,
+  type ResolveNotificationRecipientResponse,
 } from '@app/contracts';
 import { maskEmail } from '@app/common/logging/pii-redactor.js';
 import type { TransactionContext } from '@app/common/persistence/unit-of-work.port.js';
@@ -87,6 +88,14 @@ export class AccountsService {
     private readonly sessions: SessionIssuer,
     @Inject(OUTBOX) private readonly outbox: OutboxPort,
   ) {}
+
+  async resolveNotificationRecipient(
+    accountId: string,
+  ): Promise<ResolveNotificationRecipientResponse> {
+    return {
+      email: (await this.accounts.findNotificationEmail(accountId)) ?? '',
+    };
+  }
 
   async signUp(command: SignUpCommand): Promise<SignUpResponseDto> {
     const policy = passwordPolicyViolations(command.password);

@@ -8,6 +8,7 @@ import {
   CompleteProfileRequestBodyDto,
   DeletePassengerRequestBodyDto,
   ResolveHoldPassengersRequestBodyDto,
+  ResolveNotificationRecipientRequestBodyDto,
   SignInRequestBodyDto,
   SignOutRequestBodyDto,
   SignUpRequestBodyDto,
@@ -46,6 +47,19 @@ function issueKeys(details: ValidationIssueRef[]): string[] {
 }
 
 describe('identity request DTOs', () => {
+  it('accepts only a valid UUID for the private notification directory lookup', async () => {
+    const value = await accept<ResolveNotificationRecipientRequestBodyDto>(
+      { accountId: ACCOUNT_ID },
+      ResolveNotificationRecipientRequestBodyDto,
+    );
+    expect(value.accountId).toBe(ACCOUNT_ID);
+    const details = await refuse(
+      { accountId: 'invalid-account-id' },
+      ResolveNotificationRecipientRequestBodyDto,
+    );
+    expect(issueKeys(details)).toEqual(['ISSUE_MUST_BE_UUID']);
+  });
+
   describe('what the validators keep', () => {
     it('lets a bad National ID through to the validator that names it', async () => {
       // profile-validation.ts answers INVALID_NATIONAL_ID_CENTURY and friends;

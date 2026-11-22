@@ -8,13 +8,15 @@ import {
 import {
   PAYMENT_SERVICE_NAME,
   type CancelChargeResponse,
+  type RefundChargeResponse,
   type StartChargeResponse,
 } from '@app/contracts';
 import {
   CancelChargeRequestDto,
+  RefundChargeRequestDto,
   StartChargeRequestDto,
 } from './dto/charge-request.dto.js';
-import { PaymentDoubleService } from './payment-double.service.js';
+import { PaymentDoubleService } from './services/payment-double.service.js';
 
 @Controller()
 @UseInterceptors(GrpcCorrelationInterceptor)
@@ -39,6 +41,17 @@ export class PaymentGrpcController {
   ): Promise<CancelChargeResponse> {
     try {
       return await this.payment.cancel(request);
+    } catch (error: unknown) {
+      throw toRpcException(error);
+    }
+  }
+
+  @GrpcMethod(PAYMENT_SERVICE_NAME, 'RefundCharge')
+  async refundCharge(
+    request: RefundChargeRequestDto,
+  ): Promise<RefundChargeResponse> {
+    try {
+      return await this.payment.refund(request);
     } catch (error: unknown) {
       throw toRpcException(error);
     }

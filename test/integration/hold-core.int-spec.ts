@@ -13,7 +13,7 @@ import { TypeOrmOutboxRepository } from '@app/messaging';
 
 import { HoldCoreError } from '../../apps/inventory/src/modules/seat-hold/hold-core.errors.js';
 import { HoldCoreRepository } from '../../apps/inventory/src/modules/seat-hold/hold-core.repository.js';
-import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/hold-core.service.js';
+import { HoldCoreService } from '../../apps/inventory/src/modules/seat-hold/services/hold-core.service.js';
 import { HoldCreationGuard } from '../../apps/inventory/src/modules/seat-hold/hold-access.guard.js';
 import { SchemaReadinessGate } from '@app/common';
 import { SeatPlanRepository } from '../../apps/inventory/src/modules/seats/repositories/seat-plan.repository.js';

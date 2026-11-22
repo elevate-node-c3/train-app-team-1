@@ -17,6 +17,7 @@ import type {
   ResendVerificationRequestDto,
   ResetPasswordRequestDto,
   ResolveHoldPassengersRequest,
+  ResolveNotificationRecipientRequest,
   SignInRequestDto,
   SignOutRequestDto,
   SignUpRequestDto,
@@ -217,4 +218,9 @@ export class ResolveHoldPassengersRequestBodyDto implements ResolveHoldPassenger
   @IsArray()
   @IsUUID(undefined, { each: true })
   tripIds!: string[];
+}
+
+export class ResolveNotificationRecipientRequestBodyDto implements ResolveNotificationRecipientRequest {
+  @IsUUID()
+  accountId!: string;
 }
