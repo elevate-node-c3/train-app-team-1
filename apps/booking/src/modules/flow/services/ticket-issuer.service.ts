@@ -21,22 +21,26 @@ export class TicketIssuerService {
     const passengers = draft.passengerSnapshot ?? [];
     const settledSeats = draft.settledSeats ?? [];
     const tickets: TicketEntity[] = [];
-    let ticketSequence = 1;
 
     for (const passenger of passengers) {
       const seats = settledSeats.filter(
         (seat) => seat.passengerRef === passenger.passengerRef,
       );
       for (const seat of seats) {
+        // A per-call counter starting at 1 would collide on the
+        // globally-unique ticket_number the moment a second booking
+        // confirms; the sequence is unique across every booking ever issued.
+        const [{ n }]: { n: string }[] = await manager.query(
+          `SELECT nextval('ticket_number_seq')::text AS n`,
+        );
         const ticket = new TicketEntity();
         ticket.id = randomUUID();
         ticket.bookingReference = draft.id;
         ticket.passengerRef = seat.passengerRef;
         ticket.tripId = seat.tripId;
-        ticket.ticketNumber = `TKT-${ticketSequence}`;
+        ticket.ticketNumber = `TKT-${n}`;
         ticket.coachNumber = seat.coachNumber;
         ticket.seatNumber = seat.seatNumber;
-        ticketSequence += 1;
 
         await manager.query(
           `INSERT INTO ticket

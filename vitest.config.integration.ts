@@ -23,6 +23,7 @@ export default defineConfig({
       'test/integration/booking-confirmation-service.int-spec.ts',
       'test/integration/booking-flow-repository.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
+      'test/integration/ticket-issuer.int-spec.ts',
     ],
     // Shared database cleanup requires sequential test files.
     fileParallelism: false,
