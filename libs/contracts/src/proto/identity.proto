@@ -249,4 +249,5 @@ message ResolveNotificationRecipientRequest {
 
 message ResolveNotificationRecipientResponse {
   string email = 1; // Empty when no authoritative recipient exists.
+  string language = 2; // The account's stored language; '' with no recipient.
 }

@@ -16,6 +16,8 @@ describe('confirmation-events.factory', () => {
       payload: {
         bookingReference: 'booking-1',
         totalPiastres: 6955,
+        accountId: 'account-1',
+        bookingCode: 'K7MQ2X',
         tickets: [
           {
             ticketNumber: 'TKT-1',
@@ -23,6 +25,35 @@ describe('confirmation-events.factory', () => {
             tripId: 'trip-1',
             coachNumber: 1,
             seatNumber: '1A',
+            ticketId: 'ticket-1',
+            passengerName: 'Mona Ahmed',
+            trainNumber: 916,
+            travelClass: { en: 'Second Class AC', ar: 'الدرجة الثانية مكيفة' },
+            boarding: {
+              stationId: 'station-1',
+              name: { en: 'El Raml Station', ar: 'محطة الرمل' },
+              at: {
+                localDate: '2026-11-25',
+                localTime: '12:30',
+                utcOffset: '+02:00',
+                iso: '2026-11-25T12:30:00+02:00',
+                timeZone: 'Africa/Cairo',
+              },
+            },
+            alighting: {
+              stationId: 'station-2',
+              name: { en: 'Ramsis Station', ar: 'محطة رمسيس' },
+              at: {
+                localDate: '2026-11-25',
+                localTime: '16:00',
+                utcOffset: '+02:00',
+                iso: '2026-11-25T16:00:00+02:00',
+                timeZone: 'Africa/Cairo',
+              },
+            },
+            durationMinutes: 210,
+            farePiastres: 6500,
+            qr: 'header.payload.signature',
           },
         ],
       },

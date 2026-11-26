@@ -38,6 +38,7 @@ import { BookingFlowGrpcController } from './booking-flow.grpc.controller.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
 import { BookingConfirmationService } from './services/booking-confirmation.service.js';
 import { TicketIssuerService } from './services/ticket-issuer.service.js';
+import { TicketsModule } from '../tickets/tickets.module.js';
 import {
   PaymentSucceededConsumer,
   createPaymentSucceededSubscriptions,
@@ -76,6 +77,8 @@ export function paymentGrpcUrl(): string {
     MessagingModule,
     OutboxModule,
     BookingDraftModule,
+    // TA-108: the issuer signs each ticket's QR with the tickets' signer.
+    TicketsModule,
     ClientsModule.registerAsync([
       {
         name: CATALOG_GRPC_CLIENT,

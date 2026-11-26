@@ -9,6 +9,7 @@ export * from './correlation/correlation.constants.js';
 export * from './correlation/correlation.middleware.js';
 export * from './correlation/grpc-correlation.interceptor.js';
 export * from './envelope/messages.js';
+export * from './i18n/ticket-format.js';
 export * from './envelope/response.interceptor.js';
 export * from './envelope/http-exception.filter.js';
 export * from './envelope/validation-exception.factory.js';

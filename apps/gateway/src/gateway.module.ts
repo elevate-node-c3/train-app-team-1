@@ -17,6 +17,7 @@ import { IdentityModule } from './modules/identity/identity.module.js';
 import { OperationsModule } from './modules/operations/operations.module.js';
 import { BookingModule } from './modules/booking/booking.module.js';
 import { SavedCardsModule } from './modules/saved-cards/saved-cards.module.js';
+import { TicketsModule } from './modules/tickets/tickets.module.js';
 import { ServiceInfoController } from './service-info.controller.js';
 
 /** Wires infrastructure; feature modules own business providers. */
@@ -34,6 +35,7 @@ import { ServiceInfoController } from './service-info.controller.js';
     OperationsModule,
     BookingModule,
     SavedCardsModule,
+    TicketsModule,
   ],
   controllers: [ServiceInfoController],
   providers: [

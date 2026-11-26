@@ -97,5 +97,7 @@ export function createBookingOutcomeSubscriptions(
     EventFailureRouter,
     EventConsumerService,
   ],
+  // TA-108's confirmation email finds its recipient the same way.
+  exports: [NotificationRecipientService],
 })
 export class BookingOutcomesModule {}

@@ -31,7 +31,7 @@ describe('notification authoritative recipient transport', () => {
     const accountId = '11111111-1111-4111-8111-111111111111';
     const findOne = vi
       .fn()
-      .mockResolvedValue({ email: 'historic@example.com' });
+      .mockResolvedValue({ email: 'historic@example.com', language: 'en' });
     const repository = new AccountRepository({
       getRepository: () => ({ findOne }),
     } as never);
@@ -107,7 +107,7 @@ describe('notification authoritative recipient transport', () => {
       );
       expect(findOne).toHaveBeenCalledExactlyOnceWith({
         where: { id: accountId },
-        select: { email: true },
+        select: { email: true, language: true },
       });
       expect(travellers.upsertEmail).toHaveBeenCalledExactlyOnceWith(
         accountId,

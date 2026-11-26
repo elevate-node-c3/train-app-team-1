@@ -201,6 +201,12 @@ services:
       IDENTITY_GRPC_URL: ${IDENTITY_GRPC_URL:-identity:50051}
       BOOKING_INVENTORY_SERVICE_KEY: ${BOOKING_INVENTORY_SERVICE_KEY:-}
       BOOKING_IDENTITY_SERVICE_KEY: ${BOOKING_IDENTITY_SERVICE_KEY:-}
+      TICKET_SIGNING_KEY_ID: ${TICKET_SIGNING_KEY_ID:-ticket-dev-1}
+      TICKET_SIGNING_PRIVATE_KEY_FILE: /app/config/ticket-signing/dev-private.pem
+      TICKET_RETIRED_PUBLIC_KEYS: ${TICKET_RETIRED_PUBLIC_KEYS:-}
+    volumes:
+      # Only booking can sign tickets; conductors get the public key.
+      - ./config/ticket-signing/dev-private.pem:/app/config/ticket-signing/dev-private.pem:ro
 
   payment:
     <<: *service

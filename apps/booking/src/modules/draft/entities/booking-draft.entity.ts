@@ -279,6 +279,10 @@ export class BookingDraftEntity {
   @Column({ name: 'saga_attempts', type: 'integer', default: 0 })
   sagaAttempts!: number;
 
+  /** TA-108: the short reference printed on every ticket; set at issuance. */
+  @Column({ name: 'booking_code', type: 'varchar', length: 8, nullable: true })
+  bookingCode!: string | null;
+
   /** How many passengers the hold is for; the intent is the source. */
   get passengerCount(): number {
     return this.holdIntent?.passengerRefs.length ?? 0;

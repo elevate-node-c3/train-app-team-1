@@ -92,8 +92,10 @@ export class AccountsService {
   async resolveNotificationRecipient(
     accountId: string,
   ): Promise<ResolveNotificationRecipientResponse> {
+    const recipient = await this.accounts.findNotificationRecipient(accountId);
     return {
-      email: (await this.accounts.findNotificationEmail(accountId)) ?? '',
+      email: recipient?.email ?? '',
+      language: recipient?.language ?? '',
     };
   }
 

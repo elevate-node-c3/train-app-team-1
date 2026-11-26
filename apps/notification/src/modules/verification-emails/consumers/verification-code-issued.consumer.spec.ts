@@ -10,6 +10,7 @@ import {
 } from '@app/contracts';
 import { InvalidEventPayloadError } from '@app/messaging/event-errors.js';
 import type { EmailDeliveryRepository } from '../email-delivery.repository.js';
+import type { TravellerProfileRepository } from '../../profile-completed/traveller-profile.repository.js';
 import type { EmailDeliveryRecord } from '../email-delivery.types.js';
 import { NodemailerEmailSender, type OutboundEmail } from '../email-sender.js';
 import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.parser.js';
@@ -54,11 +55,13 @@ interface Harness {
   handler: VerificationCodeIssuedConsumer;
   sent: OutboundEmail[];
   recorded: EmailDeliveryRecord[];
+  languages: [string, string][];
 }
 
 function harness(options: { sendError?: Error } = {}): Harness {
   const sent: OutboundEmail[] = [];
   const recorded: EmailDeliveryRecord[] = [];
+  const languages: [string, string][] = [];
 
   const emails = {
     send: async (email: OutboundEmail) => {
@@ -72,10 +75,17 @@ function harness(options: { sendError?: Error } = {}): Harness {
     },
   } as unknown as EmailDeliveryRepository;
 
+  const travellers = {
+    recordLanguage: async (accountId: string, language: string) => {
+      languages.push([accountId, language]);
+    },
+  } as unknown as TravellerProfileRepository;
+
   return {
-    handler: new VerificationCodeIssuedConsumer(emails, deliveries),
+    handler: new VerificationCodeIssuedConsumer(emails, deliveries, travellers),
     sent,
     recorded,
+    languages,
   };
 }
 
@@ -226,6 +236,15 @@ describe('Verification-code issued consumer (BR-03, BR-54, BR-56, ADR-0003)', ()
       latencyMs: 2_000,
     });
     expect(JSON.stringify(recorded[0])).not.toContain(CODE);
+  });
+
+  it("records the account's stored language for its later emails (TA-108)", async () => {
+    const { handler, languages } = harness();
+    vi.setSystemTime(NOW.getTime() + 1_000);
+
+    await handler.handle(event({ language: 'ar' }));
+
+    expect(languages).toEqual([['22222222-2222-4222-8222-222222222222', 'ar']]);
   });
 
   it('renders Arabic for an Arabic account', async () => {

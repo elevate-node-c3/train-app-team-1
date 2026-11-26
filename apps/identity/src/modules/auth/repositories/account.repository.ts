@@ -54,11 +54,16 @@ export class AccountRepository {
       .findOne({ where: { id } });
   }
 
-  async findNotificationEmail(id: string): Promise<string | null> {
+  /** Only what an email needs: the address and the account's own language. */
+  async findNotificationRecipient(
+    id: string,
+  ): Promise<Pick<AccountEntity, 'email' | 'language'> | null> {
     const account = await this.dataSource
       .getRepository(AccountEntity)
-      .findOne({ where: { id }, select: { email: true } });
-    return account?.email ?? null;
+      .findOne({ where: { id }, select: { email: true, language: true } });
+    return account
+      ? { email: account.email, language: account.language }
+      : null;
   }
 
   async findByEmailForUpdate(

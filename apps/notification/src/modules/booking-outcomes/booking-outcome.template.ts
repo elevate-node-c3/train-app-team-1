@@ -48,7 +48,7 @@ export function renderBookingRefundedEmail(
   return { subject: 'Your booking was refunded in full', text, html };
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')

@@ -180,7 +180,10 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     findByEmail: async () => foundAccount,
     findById: async () => foundAccount,
-    findNotificationEmail: async () => foundAccount?.email ?? null,
+    findNotificationRecipient: async () =>
+      foundAccount
+        ? { email: foundAccount.email, language: foundAccount.language }
+        : null,
     findByEmailForUpdate: async (
       received: TransactionContext,
       email: string,
@@ -383,7 +386,7 @@ describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
     const h = harness({ account: account('active', 'historic@example.com') });
     await expect(
       h.service.resolveNotificationRecipient('account-1'),
-    ).resolves.toEqual({ email: 'historic@example.com' });
+    ).resolves.toEqual({ email: 'historic@example.com', language: 'ar' });
     expect(h.events()).toEqual([]);
   });
 
@@ -391,7 +394,7 @@ describe('AccountsService (ADR-0001, BR-02, BR-03, BR-05, BR-56)', () => {
     const h = harness({ account: null });
     await expect(
       h.service.resolveNotificationRecipient('account-1'),
-    ).resolves.toEqual({ email: '' });
+    ).resolves.toEqual({ email: '', language: '' });
   });
 
   beforeEach(() => {

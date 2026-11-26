@@ -16,6 +16,7 @@ export * from './identity/password-policy.js';
 export * from './inventory/inventory.grpc.js';
 export * from './inventory/seat-allocation.dto.js';
 export * from './booking/booking.grpc.js';
+export * from './booking/ticket.grpc.js';
 export * from './payment/payment.grpc.js';
 export * from './catalog/catalog.grpc.js';
 export * from './catalog/booking.grpc.js';

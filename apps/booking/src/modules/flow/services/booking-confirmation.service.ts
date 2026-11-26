@@ -14,6 +14,7 @@ import {
 import { FlowGrpcClientsService } from './flow-grpc-clients.service.js';
 import { TicketIssuerService } from './ticket-issuer.service.js';
 import { BookingFlowFault } from '../booking-flow-error.js';
+import { isIssued, toConfirmedTicket } from '../../tickets/ticket-view.js';
 
 /**
  * TA-107's saga: settle inventory's hold, then confirm with tickets or
@@ -123,6 +124,12 @@ export class BookingConfirmationService {
 
       const correlationId = draft.correlationId ?? draft.id;
       const occurredAt = new Date();
+      // The email is built from the event alone (TA-108), so every ticket it
+      // carries must be one issued with what it prints.
+      const issued = tickets.filter(isIssued);
+      if (issued.length !== tickets.length) {
+        throw new BookingFlowFault('A ticket was issued without its snapshot');
+      }
 
       await this.outbox.append(
         ctx,
@@ -133,13 +140,9 @@ export class BookingConfirmationService {
           payload: {
             bookingReference: draft.id,
             totalPiastres: draft.totalPiastres ?? 0,
-            tickets: tickets.map((ticket) => ({
-              ticketNumber: ticket.ticketNumber,
-              passengerRef: ticket.passengerRef,
-              tripId: ticket.tripId,
-              coachNumber: ticket.coachNumber,
-              seatNumber: ticket.seatNumber,
-            })),
+            tickets: issued.map(toConfirmedTicket),
+            accountId: draft.userId,
+            bookingCode: issued[0]?.snapshot.bookingCode ?? '',
           },
         }),
       );

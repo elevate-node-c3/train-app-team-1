@@ -35,6 +35,12 @@ import { HoldSettlementService } from '../../../apps/inventory/src/modules/seat-
 import { AvailabilityCountsRepository } from '../../../apps/inventory/src/modules/seats/repositories/availability-counts.repository.js';
 import { AvailabilityPublisher } from '../../../apps/inventory/src/modules/seats/services/availability-publisher.service.js';
 
+import {
+  TEST_MASKED_NATIONAL_ID,
+  TEST_TRAVEL_CLASS,
+  testQuotedLeg,
+  testTicketSigner,
+} from './ticket-fixture.js';
 import { BookingDraftEntity } from '../../../apps/booking/src/modules/draft/entities/booking-draft.entity.js';
 import { TicketEntity } from '../../../apps/booking/src/modules/flow/entities/ticket.entity.js';
 import { BookingFlowRepository } from '../../../apps/booking/src/modules/flow/booking-flow.repository.js';
@@ -158,7 +164,7 @@ export async function bookingSagaInstance(
   );
   const unitOfWork = new TypeOrmUnitOfWork(initializer);
   const outbox = new TypeOrmOutboxRepository(initializer);
-  const ticketIssuer = new TicketIssuerService();
+  const ticketIssuer = new TicketIssuerService(testTicketSigner());
   const confirmation = new BookingConfirmationService(
     repository,
     clients,
@@ -399,7 +405,7 @@ export async function aLiveHoldAwaitingPayment(
   const passengerSnapshot = passengers.map((ref) => ({
     passengerRef: ref,
     displayName: ref,
-    maskedNationalId: '***',
+    maskedNationalId: TEST_MASKED_NATIONAL_ID,
     identities: [
       {
         tripId: trip.tripId,
@@ -409,11 +415,14 @@ export async function aLiveHoldAwaitingPayment(
     ],
   }));
 
+  // A real draft has its class and quoted legs from the price lock (BR-30);
+  // the confirm step copies each ticket's snapshot from them (TA-108).
   await bookingSource.query(
     `INSERT INTO booking_draft
        (id, user_id, flow_state, status, total_piastres, payment_reference,
-         hold_id, correlation_id, passenger_snapshot, hold_intent, hold_snapshot)
-      VALUES ($1, $2, 'awaiting_payment', 'PENDING', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)`,
+         hold_id, correlation_id, passenger_snapshot, hold_intent, hold_snapshot,
+         travel_class, quoted_legs)
+      VALUES ($1, $2, 'awaiting_payment', 'PENDING', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb)`,
     [
       bookingId,
       ownerId,
@@ -424,6 +433,8 @@ export async function aLiveHoldAwaitingPayment(
       JSON.stringify(passengerSnapshot),
       JSON.stringify({ legs: [legInput], passengerRefs: passengers }),
       JSON.stringify(snapshot),
+      JSON.stringify(TEST_TRAVEL_CLASS),
+      JSON.stringify([testQuotedLeg(trip.tripId)]),
     ],
   );
 

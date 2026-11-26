@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
@@ -57,6 +58,7 @@ export default defineConfig({
       'test/integration/booking-flow-repository.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
+      'test/integration/tickets.int-spec.ts',
       // These need payment's own database URL, which only this tier sets.
       'test/integration/payment-charge-webhook.int-spec.ts',
       'test/integration/payment-intent.service.int-spec.ts',
@@ -86,6 +88,11 @@ export default defineConfig({
         'RABBITMQ_USER',
         'train_app',
       )}:${password('RABBITMQ_PASSWORD', 'train_app')}@${HOST}:${AMQP_PORT}`,
+      // The booking process these specs boot signs every ticket it issues
+      // (TA-108); a fresh key per run, so no key file is ever committed.
+      TICKET_SIGNING_PRIVATE_KEY: generateKeyPairSync('ed25519')
+        .privateKey.export({ type: 'pkcs8', format: 'pem' })
+        .toString(),
     },
   },
 });
