@@ -93,3 +93,46 @@ draft module's, so the hold has one caller.
 CATALOG_GRPC_URL   PAYMENT_GRPC_URL
 INVENTORY_GRPC_URL IDENTITY_GRPC_URL   (draft module)
 ```
+
+## Tickets (TA-108)
+
+The confirmation saga issues one ticket per passenger per leg; `modules/tickets`
+owns everything after that. Each ticket row carries its own `snapshot` — the
+passenger, the train, the class in plain words (both languages), the
+passenger's own boarding and alighting stations with their Cairo times, and the
+fare — copied once from what the draft locked at the quote. Nothing is read
+back from identity or catalog, so a renamed passenger or a republished
+timetable never reaches an issued ticket.
+
+| File | Holds |
+| --- | --- |
+| `ticket-snapshot.ts` | the snapshot and the QR's claims, built at issuance |
+| `services/ticket-signer.service.ts` | the only holder of the signing key |
+| `services/tickets.service.ts` | ownership (BR-09), what each ticket allows (BR-39), the conductor's check |
+| `tickets.repository.ts` | every read; one statement per page, never cached |
+| `ticket-view.ts` | the card, the shared view and the event's ticket |
+| `ticket-document.ts`, `ticket-pdf.ts`, `bidi-text.ts` | the printed ticket, English or Arabic (right to left) |
+
+**The QR** is a compact JWS over Ed25519, `typ: ticket-qr`, naming its key in
+`kid`. It carries the train, the boarding date at the passenger's own station,
+both stations, coach, seat, name and the last four National ID digits —
+booking never holds more of the ID than identity's mask. Conductors fetch the
+public keys from `GET /api/v1/ticket-verifications/keys` and verify offline. An
+offline check proves the QR is genuine, **not** that the ticket is still valid:
+a ticket cancelled after the scanner last synced still verifies offline.
+`POST /api/v1/ticket-verifications` is the online check, against the ticket's
+current row.
+
+**Share links** are the same kind of token, `typ: ticket-share`, naming one
+ticket and expiring when the passenger arrives. Booking re-reads the ticket on
+every open, so a cancellation ends the link at once.
+
+**Keys.** `npm run keys:generate` writes the development key that Compose
+mounts. To rotate, set a new `TICKET_SIGNING_KEY_ID` and private key, and list
+the old public key in `TICKET_RETIRED_PUBLIC_KEYS` for as long as tickets it
+signed may still be travelled on.
+
+```
+TICKET_SIGNING_KEY_ID              TICKET_SIGNING_PRIVATE_KEY(_FILE)
+TICKET_RETIRED_PUBLIC_KEYS         {"<old kid>":"<public PEM>"}
+```

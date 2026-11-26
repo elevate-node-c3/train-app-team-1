@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import type { SupportedLanguage } from '@app/contracts';
 import { TravellerProfileEntity } from './entities/traveller-profile.entity.js';
 
 @Injectable()
@@ -44,6 +45,22 @@ export class TravellerProfileRepository {
         updatedAt: now,
       })
       .orUpdate(['email', 'updated_at'], ['account_id'])
+      .execute();
+  }
+
+  /** The account's stored language, as identity last reported it. */
+  async recordLanguage(
+    accountId: string,
+    language: SupportedLanguage,
+    now: Date = new Date(),
+  ): Promise<void> {
+    await this.dataSource
+      .getRepository(TravellerProfileEntity)
+      .createQueryBuilder()
+      .insert()
+      .into(TravellerProfileEntity)
+      .values({ accountId, language, createdAt: now, updatedAt: now })
+      .orUpdate(['language', 'updated_at'], ['account_id'])
       .execute();
   }
 

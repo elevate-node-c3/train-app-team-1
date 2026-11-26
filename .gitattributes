@@ -10,3 +10,5 @@ Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.proto text eol=lf
+# Fonts embedded into ticket PDFs; never normalise their bytes.
+*.ttf binary

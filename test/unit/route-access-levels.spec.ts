@@ -23,6 +23,9 @@ const BR01_PUBLIC_ROUTES = [
   'POST /auth/forgot-password',
   'POST /auth/reset-password',
   'GET /profile/options',
+  // BR-39: a shared ticket opens without signing in; the signed, expiring
+  // token is the only credential, and booking re-checks the ticket each time.
+  'GET /shared-tickets/:token',
 ] as const;
 
 const HTTP_METHODS: Readonly<Record<number, string>> = {

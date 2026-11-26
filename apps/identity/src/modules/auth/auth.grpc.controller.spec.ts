@@ -343,7 +343,7 @@ describe('AuthGrpcController - Passengers', () => {
     const serviceKey = 'notification-identity-test-only-private-key';
     const request = { accountId: '11111111-1111-4111-8111-111111111111' };
 
-    it('round-trips the private wire contract with only an account id and email', () => {
+    it('round-trips the private wire contract with only an account id, email and language', () => {
       const definition = loadSync(getIdentityProtoPath(), { defaults: true })[
         'train.identity.v1.IdentityService'
       ] as grpc.ServiceDefinition;
@@ -354,7 +354,7 @@ describe('AuthGrpcController - Passengers', () => {
       expect(
         method.requestDeserialize(method.requestSerialize(request)),
       ).toEqual(request);
-      const response = { email: 'traveller@example.com' };
+      const response = { email: 'traveller@example.com', language: 'en' };
       expect(
         method.responseDeserialize(
           method.responseSerialize({
@@ -365,8 +365,10 @@ describe('AuthGrpcController - Passengers', () => {
         ),
       ).toEqual(response);
       expect(
-        method.responseDeserialize(method.responseSerialize({ email: '' })),
-      ).toEqual({ email: '' });
+        method.responseDeserialize(
+          method.responseSerialize({ email: '', language: '' }),
+        ),
+      ).toEqual({ email: '', language: '' });
     });
 
     it.each([
@@ -418,12 +420,13 @@ describe('AuthGrpcController - Passengers', () => {
         vi.stubEnv('NOTIFICATION_IDENTITY_SERVICE_KEY', serviceKey);
         const metadata = new grpc.Metadata();
         metadata.set('x-notification-identity-key', serviceKey);
+        const language = email ? 'en' : '';
         vi.mocked(mockAccounts.resolveNotificationRecipient!).mockResolvedValue(
-          { email },
+          { email, language },
         );
         await expect(
           controller.resolveNotificationRecipient(request, metadata),
-        ).resolves.toEqual({ email });
+        ).resolves.toEqual({ email, language });
         expect(mockAccounts.resolveNotificationRecipient).toHaveBeenCalledWith(
           request.accountId,
         );

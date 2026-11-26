@@ -11,26 +11,37 @@ import {
   closeBookingDataSource,
   truncateBooking,
 } from './support/booking-database.js';
+import {
+  TEST_MASKED_NATIONAL_ID,
+  TEST_TRAVEL_CLASS,
+  testQuotedLeg,
+  testTicketSigner,
+} from './support/ticket-fixture.js';
 
 let ds: DataSource;
 let unitOfWork: TypeOrmUnitOfWork;
 let issuer: TicketIssuerService;
 
 function draftFor(id: string): BookingDraftEntity {
+  const tripId = randomUUID();
   return Object.assign(new BookingDraftEntity(), {
     id,
+    userId: randomUUID(),
+    // Locked at the quote on every real draft; the ticket prints from them.
+    travelClass: TEST_TRAVEL_CLASS,
+    quotedLegs: [testQuotedLeg(tripId)],
     passengerSnapshot: [
       {
         passengerRef: 'p1',
         displayName: 'P1',
-        maskedNationalId: '***',
+        maskedNationalId: TEST_MASKED_NATIONAL_ID,
         identities: [],
       },
     ],
     settledSeats: [
       {
         passengerRef: 'p1',
-        tripId: randomUUID(),
+        tripId,
         coachNumber: 1,
         seatNumber: '1A',
       },
@@ -43,7 +54,7 @@ beforeEach(async () => {
   await truncateBooking(ds);
   const initializer = new DataSourceInitializer(ds);
   unitOfWork = new TypeOrmUnitOfWork(initializer);
-  issuer = new TicketIssuerService();
+  issuer = new TicketIssuerService(testTicketSigner());
 });
 
 afterAll(async () => {

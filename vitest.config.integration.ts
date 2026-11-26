@@ -25,6 +25,7 @@ export default defineConfig({
       'test/integration/booking-flow-repository.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
+      'test/integration/tickets.int-spec.ts',
       // These need payment's own database URL, which only the holds tier sets.
       'test/integration/payment-charge-webhook.int-spec.ts',
       'test/integration/payment-intent.service.int-spec.ts',

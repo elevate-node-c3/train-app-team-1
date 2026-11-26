@@ -52,7 +52,8 @@
       "entryFile": "main",
       "sourceRoot": "apps/booking/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/booking/tsconfig.app.json"
+        "tsConfigPath": "apps/booking/tsconfig.app.json",
+        "assets": ["assets/fonts/*"]
       }
     },
     "payment": {

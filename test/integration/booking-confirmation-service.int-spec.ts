@@ -25,6 +25,12 @@ import {
   closeBookingDataSource,
   truncateBooking,
 } from './support/booking-database.js';
+import {
+  TEST_MASKED_NATIONAL_ID,
+  TEST_TRAVEL_CLASS,
+  testQuotedLeg,
+  testTicketSigner,
+} from './support/ticket-fixture.js';
 
 const BOOKING = randomUUID();
 const OWNER = randomUUID();
@@ -63,7 +69,7 @@ async function given(props: {
   const passengerSnapshot = passengers.map((ref) => ({
     passengerRef: ref,
     displayName: ref,
-    maskedNationalId: '***',
+    maskedNationalId: TEST_MASKED_NATIONAL_ID,
     identities: [],
   }));
   const settledSeats = passengers.flatMap((ref, passengerIndex) =>
@@ -79,7 +85,8 @@ async function given(props: {
     `UPDATE booking_draft
         SET saga_step = $2, settlement_outcome = $3, seats_changed = $4,
             total_piastres = $5, passenger_snapshot = $6::jsonb,
-             settled_seats = $7::jsonb, hold_intent = $8::jsonb
+             settled_seats = $7::jsonb, hold_intent = $8::jsonb,
+             travel_class = $9::jsonb, quoted_legs = $10::jsonb
       WHERE id = $1`,
     [
       BOOKING,
@@ -93,6 +100,9 @@ async function given(props: {
         passengerRefs: passengers,
         legs: legs.map((tripId) => ({ tripId })),
       }),
+      // Locked at the quote on every real draft; tickets print from them.
+      JSON.stringify(TEST_TRAVEL_CLASS),
+      JSON.stringify(legs.map((tripId) => testQuotedLeg(tripId))),
     ],
   );
 }
@@ -156,7 +166,7 @@ beforeEach(async () => {
   const initializer = new DataSourceInitializer(ds);
   const unitOfWork = new TypeOrmUnitOfWork(initializer);
   const outbox = new TypeOrmOutboxRepository(initializer);
-  const ticketIssuer = new TicketIssuerService();
+  const ticketIssuer = new TicketIssuerService(testTicketSigner());
 
   inventory = { settleHold: vi.fn() };
   payment = {

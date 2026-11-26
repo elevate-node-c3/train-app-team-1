@@ -320,6 +320,10 @@ export const MESSAGE: Record<string, { ar: string; en: string }> = {
     ar: 'يجب الموافقة على الشروط والأحكام وسياسة الخصوصية قبل الدفع',
     en: 'Accept the Terms and Conditions and Privacy Policy before paying',
   },
+  [ErrorCode.TICKET_NOT_ACTIVE]: {
+    ar: 'هذا الإجراء غير متاح لتذكرة ملغاة أو انتهت رحلتها',
+    en: 'This action is not available for a cancelled or completed ticket',
+  },
 };
 
 /** Defaults to Arabic for missing, unsupported or wildcard Accept-Language. */

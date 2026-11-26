@@ -7,6 +7,7 @@ import {
   IDENTITY_SERVICE_NAME,
   type ResolveNotificationRecipientRequest,
   type ResolveNotificationRecipientResponse,
+  type SupportedLanguage,
 } from '@app/contracts';
 import { CORRELATION_ID_KEY } from '@app/common/correlation/correlation.constants.js';
 import { TravellerProfileRepository } from '../profile-completed/traveller-profile.repository.js';
@@ -36,6 +37,33 @@ export class NotificationRecipientService {
     if (traveller?.email) return traveller.email;
 
     // Historical registrations were already acknowledged before email was stored.
+    const { email } = await this.resolve(accountId);
+    await this.travellers.upsertEmail(accountId, email);
+    return email;
+  }
+
+  /**
+   * TA-108: the address and the account's own language -- never a request's.
+   * Both are normally on file; an account from before the language was
+   * recorded asks identity, which answers both, once.
+   */
+  async recipientFor(
+    accountId: string,
+  ): Promise<{ email: string; language: SupportedLanguage }> {
+    const traveller = await this.travellers.findByAccountId(accountId);
+    if (traveller?.email && traveller.language) {
+      return { email: traveller.email, language: traveller.language };
+    }
+
+    const recipient = await this.resolve(accountId);
+    await this.travellers.upsertEmail(accountId, recipient.email);
+    await this.travellers.recordLanguage(accountId, recipient.language);
+    return recipient;
+  }
+
+  private async resolve(
+    accountId: string,
+  ): Promise<{ email: string; language: SupportedLanguage }> {
     const key = notificationIdentityServiceKey();
     if (!key || key.length < 32) {
       throw new Error('Notification recipient lookup is not configured');
@@ -60,7 +88,10 @@ export class NotificationRecipientService {
     ) {
       throw new Error('Notification recipient is not available yet');
     }
-    await this.travellers.upsertEmail(accountId, result.email);
-    return result.email;
+    // Identity's own default, for an identity that predates the field.
+    return {
+      email: result.email,
+      language: result.language === 'en' ? 'en' : 'ar',
+    };
   }
 }

@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  StreamableFile,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -42,6 +43,9 @@ export class ResponseInterceptor<T> implements NestInterceptor<
 
     return next.handle().pipe(
       map((result: any) => {
+        // A file download is its own body; wrapping it would corrupt it.
+        if (result instanceof StreamableFile) return result;
+
         // Keep existing envelopes; only fill missing metadata.
         if (
           result &&

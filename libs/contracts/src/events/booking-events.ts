@@ -1,3 +1,4 @@
+import type { LocalizedName, TripEndpoint } from '../catalog/catalog.dto.js';
 import type { EventEnvelope } from './event-envelope.js';
 import { EVENT_TYPES } from './event-types.js';
 
@@ -62,12 +63,28 @@ export interface BookingConfirmedTicketV1 {
   tripId: string;
   coachNumber: number;
   seatNumber: string;
+  // Additive (TA-108): the ticket as issued, so the confirmation email never
+  // has to ask booking for it. Never the National ID, only the signed QR.
+  ticketId: string;
+  passengerName: string;
+  trainNumber: number;
+  travelClass: LocalizedName;
+  boarding: TripEndpoint;
+  alighting: TripEndpoint;
+  durationMinutes: number;
+  farePiastres: number;
+  /** The signed QR payload, exactly as the ticket prints it. */
+  qr: string;
 }
 
 export interface BookingConfirmedPayloadV1 {
   bookingReference: string;
   totalPiastres: number;
   tickets: BookingConfirmedTicketV1[];
+  /** Additive (TA-108): lets notification resolve the address and language. */
+  accountId: string;
+  /** Additive (TA-108): the short reference every ticket of this booking shares. */
+  bookingCode: string;
 }
 
 export const BOOKING_CONFIRMED_EVENT_TYPE = EVENT_TYPES.bookingConfirmed;

@@ -9,6 +9,7 @@ import { EmailDeliveryRepository } from '../email-delivery.repository.js';
 import { NodemailerEmailSender } from '../email-sender.js';
 import { parseVerificationCodeIssuedPayload } from '../verification-code-issued.parser.js';
 import { renderVerificationEmail } from '../verification-email.template.js';
+import { TravellerProfileRepository } from '../../profile-completed/traveller-profile.repository.js';
 
 /**
  * Send and record delivery before marking the event handled.
@@ -21,10 +22,15 @@ export class VerificationCodeIssuedConsumer implements EventHandlerPort {
   constructor(
     private readonly emails: NodemailerEmailSender,
     private readonly deliveries: EmailDeliveryRepository,
+    private readonly travellers: TravellerProfileRepository,
   ) {}
 
   async handle(envelope: EventEnvelope): Promise<EventHandlingResult> {
     const payload = parseVerificationCodeIssuedPayload(envelope);
+    // Every code carries the account's stored language, including after a
+    // pending account signs up again in another one; the booking
+    // confirmation email (TA-108) is written in it.
+    await this.travellers.recordLanguage(payload.accountId, payload.language);
     const delivery = {
       eventId: envelope.id,
       accountId: payload.accountId,

@@ -84,4 +84,8 @@ export enum ErrorCode {
   DUPLICATE_PASSENGER = 'DUPLICATE_PASSENGER',
   PASSENGER_ALREADY_BOOKED = 'PASSENGER_ALREADY_BOOKED',
   TERMS_REQUIRED = 'TERMS_REQUIRED',
+
+  // Tickets: a cancelled, voided or completed ticket cannot be shared,
+  // downloaded or shown as a QR (BR-39).
+  TICKET_NOT_ACTIVE = 'TICKET_NOT_ACTIVE',
 }

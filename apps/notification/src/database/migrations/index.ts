@@ -1,6 +1,7 @@
 import { CreateProcessedEventEmailDelivery1761314500000 } from './1761314500000-create-processed-event-email-delivery.js';
 import { CreateTravellerProfile1761314800000 } from './1761314800000-create-traveller-profile.js';
 import { AddTravellerProfileEmail1797300000001 } from './1797300000001-add-traveller-profile-email.js';
+import { AddTravellerProfileLanguage1797500000001 } from './1797500000001-add-traveller-profile-language.js';
 
 /**
  * Explicit ordering. TypeORM also sorts by the class-name timestamp, but an
@@ -10,10 +11,12 @@ export const migrations = [
   CreateProcessedEventEmailDelivery1761314500000,
   CreateTravellerProfile1761314800000,
   AddTravellerProfileEmail1797300000001,
+  AddTravellerProfileLanguage1797500000001,
 ];
 
 export {
   CreateProcessedEventEmailDelivery1761314500000,
   CreateTravellerProfile1761314800000,
   AddTravellerProfileEmail1797300000001,
+  AddTravellerProfileLanguage1797500000001,
 };

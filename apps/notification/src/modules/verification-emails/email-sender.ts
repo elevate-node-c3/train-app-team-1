@@ -9,11 +9,20 @@ import {
   type SmtpSettings,
 } from '../../config/smtp-settings.js';
 
+/** An inline image or file; `cid` lets the HTML show it as `cid:<cid>`. */
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+  cid?: string;
+}
+
 export interface OutboundEmail {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -47,6 +56,7 @@ export class NodemailerEmailSender implements OnModuleInit, OnModuleDestroy {
       subject: email.subject,
       text: email.text,
       ...(email.html ? { html: email.html } : {}),
+      ...(email.attachments?.length ? { attachments: email.attachments } : {}),
     });
   }
 

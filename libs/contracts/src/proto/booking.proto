@@ -116,3 +116,134 @@ message BookingResponse {
   bool seatsChanged = 15;          // a late payment forced a reallocation
   string clientSecret = 16;        // owner only, while awaiting payment
 }
+
+// ---------------------------------------------------------------------------
+// Tickets (TA-108). One ticket per passenger per leg, issued by the
+// confirmation saga with its own immutable snapshot of what is printed on it.
+// ---------------------------------------------------------------------------
+
+service TicketService {
+  // The traveller's own tickets; the owner is the caller the gateway signed on.
+  rpc ListPaidTickets (ListTicketsRequest) returns (TicketPage);
+  rpc ListCancelledTickets (ListTicketsRequest) returns (TicketPage);
+  rpc GetTicketQr (TicketRequest) returns (TicketQr);
+  rpc CreateShareLink (TicketRequest) returns (TicketShareLink);
+  rpc GetTicketPdf (TicketPdfRequest) returns (TicketPdf);
+  // Anyone holding the link; the token is the only credential.
+  rpc GetSharedTicket (SharedTicketRequest) returns (SharedTicket);
+  // Conductor only: the online check against the ticket's current state.
+  rpc VerifyTicket (VerifyTicketRequest) returns (TicketVerification);
+  // Conductor only: the public keys an offline scanner verifies QRs with.
+  rpc GetVerificationKeys (VerificationKeysRequest) returns (VerificationKeys);
+}
+
+message ListTicketsRequest {
+  int32 limit = 1;    // 0 means the default page size
+  string cursor = 2;  // '' for the first page; nextCursor of the previous one
+}
+
+message TicketRequest {
+  string ticketId = 1;
+}
+
+message TicketPdfRequest {
+  string ticketId = 1;
+  string language = 2;  // the request's language, resolved by the gateway
+}
+
+message SharedTicketRequest {
+  string token = 1;
+}
+
+message VerifyTicketRequest {
+  string qr = 1;  // the scanned QR payload, verbatim
+}
+
+message VerificationKeysRequest {}
+
+// What may be done with a ticket right now. Decided by booking, never the client.
+message TicketActions {
+  bool share = 1;
+  bool qr = 2;
+  bool download = 3;
+  bool cancel = 4;
+}
+
+// Everything a ticket card shows, from the ticket's own issued snapshot.
+message TicketCard {
+  string ticketId = 1;
+  string ticketNumber = 2;
+  string bookingReference = 3;
+  string bookingCode = 4;          // short, read aloud; shared by the booking's tickets
+  string passengerName = 5;
+  int32 trainNumber = 6;
+  LocalizedName trainType = 7;
+  TravelClass travelClass = 8;     // plain words, both languages (BR-22)
+  int32 coachNumber = 9;
+  string seatNumber = 10;
+  TripEndpoint boarding = 11;      // the passenger's own station and Cairo time
+  TripEndpoint alighting = 12;
+  int32 durationMinutes = 13;
+  int32 farePiastres = 14;         // this passenger on this leg
+  string currency = 15;
+  string status = 16;              // active | cancelled | voided
+  string statusReason = 17;        // '' unless cancelled or voided
+  string refundStatus = 18;        // '' until PAY-3 reports one
+  TicketActions allowedActions = 19;
+}
+
+message TicketPage {
+  repeated TicketCard tickets = 1;
+  string nextCursor = 2;  // '' on the last page
+}
+
+message TicketQr {
+  string payload = 1;   // the signed QR content, exactly as encoded in the image
+  string keyId = 2;
+  string image = 3;     // data:image/png;base64,...
+}
+
+message TicketShareLink {
+  string token = 1;
+  string expiresAt = 2;  // the arrival at the passenger's alighting station
+}
+
+message TicketPdf {
+  bytes content = 1;
+  string fileName = 2;
+}
+
+// Read-only, and never the National ID or the booking's other tickets.
+message SharedTicket {
+  string ticketNumber = 1;
+  string passengerName = 2;
+  int32 trainNumber = 3;
+  LocalizedName trainType = 4;
+  TravelClass travelClass = 5;
+  int32 coachNumber = 6;
+  string seatNumber = 7;
+  TripEndpoint boarding = 8;
+  TripEndpoint alighting = 9;
+  int32 durationMinutes = 10;
+  string expiresAt = 11;
+}
+
+message TicketVerification {
+  bool valid = 1;
+  // VALID | MALFORMED | INVALID_SIGNATURE | UNKNOWN_TICKET | CANCELLED | VOIDED
+  string result = 2;
+  string reason = 3;       // the cancellation or void reason, when there is one
+  TicketCard ticket = 4;   // present once the signature holds and the ticket is found
+}
+
+message VerificationKey {
+  string kid = 1;
+  string kty = 2;   // OKP
+  string crv = 3;   // Ed25519
+  string x = 4;     // base64url public key
+  string alg = 5;   // EdDSA
+}
+
+message VerificationKeys {
+  repeated VerificationKey keys = 1;
+}

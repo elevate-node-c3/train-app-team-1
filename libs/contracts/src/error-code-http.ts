@@ -76,4 +76,6 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.DUPLICATE_PASSENGER]: 422,
   [ErrorCode.TERMS_REQUIRED]: 422,
   [ErrorCode.PASSENGER_ALREADY_BOOKED]: 409,
+
+  [ErrorCode.TICKET_NOT_ACTIVE]: 409,
 };

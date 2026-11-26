@@ -119,3 +119,34 @@ describe('NotificationRecipientService', () => {
     expect(h.travellers.upsertEmail).not.toHaveBeenCalled();
   });
 });
+
+describe('NotificationRecipientService.recipientFor (TA-108)', () => {
+  it("answers from the account's recorded language, with no identity call", async () => {
+    const h = harness({ email: EMAIL });
+    (
+      h.travellers.findByAccountId as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ email: EMAIL, language: 'en' });
+
+    await expect(h.service.recipientFor(ACCOUNT)).resolves.toEqual({
+      email: EMAIL,
+      language: 'en',
+    });
+    expect(h.grpc.getService).not.toHaveBeenCalled();
+  });
+
+  it('asks identity once for an account recorded before its language was', async () => {
+    vi.stubEnv('NOTIFICATION_IDENTITY_SERVICE_KEY', KEY);
+    const h = harness({ email: EMAIL });
+    const recordLanguage = vi.fn().mockResolvedValue(undefined);
+    Object.assign(h.travellers, { recordLanguage });
+    h.client.resolveNotificationRecipient.mockReturnValue(
+      of({ email: EMAIL, language: 'ar' }),
+    );
+
+    await expect(h.service.recipientFor(ACCOUNT)).resolves.toEqual({
+      email: EMAIL,
+      language: 'ar',
+    });
+    expect(recordLanguage).toHaveBeenCalledExactlyOnceWith(ACCOUNT, 'ar');
+  });
+});
