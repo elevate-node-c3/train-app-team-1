@@ -1,6 +1,8 @@
-import type {
+﻿import type {
   BookingRefundedPayloadV1,
   BookingSeatsChangedPayloadV1,
+  SupportedLanguage,
+  TicketCancelledPayloadV1,
 } from '@app/contracts';
 
 export interface EmailContent {
@@ -46,6 +48,60 @@ export function renderBookingRefundedEmail(
     </div>
   `;
   return { subject: 'Your booking was refunded in full', text, html };
+}
+
+const COPY: Readonly<
+  Record<
+    SupportedLanguage,
+    {
+      subject: (code: string) => string;
+      intro: (code: string) => string;
+      seat: string;
+      coach: string;
+      seatLabel: string;
+      refund: string;
+    }
+  >
+> = {
+  en: {
+    subject: (code) => `Your ticket for booking ${code} was cancelled`,
+    intro: (code) =>
+      `Your ticket for booking ${code} has been cancelled and a refund has been requested.`,
+    seat: 'Seat',
+    coach: 'Coach',
+    seatLabel: 'seat',
+    refund: 'Refund requested',
+  },
+  ar: {
+    subject: (code) => 'هذه التذكرة ملغاة بالفعل',
+    intro: (code) => 'هذه التذكرة ملغاة بالفعل',
+    seat: 'هذه التذكرة ملغاة بالفعل',
+    coach: 'هذه التذكرة ملغاة بالفعل',
+    seatLabel: 'هذه التذكرة ملغاة بالفعل',
+    refund: 'هذه التذكرة ملغاة بالفعل',
+  },
+};
+
+export function renderTicketCancelledEmail(
+  payload: TicketCancelledPayloadV1,
+  language: SupportedLanguage,
+): EmailContent {
+  const amountEgp = (payload.refundPiastres / 100).toFixed(2);
+  const copy = COPY[language];
+  const text = [
+    copy.intro(payload.bookingReference),
+    '',
+    `${copy.seat}: ${copy.coach} ${payload.coachNumber}, ${copy.seatLabel} ${payload.seatNumber}`,
+    `${copy.refund}: ${amountEgp} EGP`,
+  ].join('\n');
+  const html = `
+    <div dir="${language === 'ar' ? 'rtl' : 'ltr'}" lang="${language}" style="text-align:${language === 'ar' ? 'right' : 'left'};font-family:Arial,Tahoma,sans-serif">
+      <p>${escapeHtml(copy.intro(payload.bookingReference))}</p>
+      <p>${escapeHtml(copy.seat)}: ${escapeHtml(copy.coach)} ${payload.coachNumber}, ${escapeHtml(copy.seatLabel)} ${escapeHtml(payload.seatNumber)}</p>
+      <p>${escapeHtml(copy.refund)}: <strong>${escapeHtml(amountEgp)} EGP</strong></p>
+    </div>
+  `;
+  return { subject: copy.subject(payload.bookingReference), text, html };
 }
 
 export function escapeHtml(value: string): string {

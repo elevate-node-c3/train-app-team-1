@@ -6,6 +6,8 @@ import {
   BOOKING_SEATS_CHANGED_EVENT_TYPE,
   BOOKING_SEATS_CHANGED_VERSION,
   IDENTITY_PACKAGE_NAME,
+  TICKET_CANCELLED_EVENT_TYPE,
+  TICKET_CANCELLED_VERSION,
   getIdentityProtoPath,
 } from '@app/contracts';
 import {
@@ -23,6 +25,7 @@ import { ProfileCompletedModule } from '../profile-completed/profile-completed.m
 import { NodemailerEmailSender } from '../verification-emails/email-sender.js';
 import { BookingRefundedConsumer } from './consumers/booking-refunded.consumer.js';
 import { SeatsChangedConsumer } from './consumers/seats-changed.consumer.js';
+import { TicketCancelledConsumer } from './consumers/ticket-cancelled.consumer.js';
 import {
   NOTIFICATION_IDENTITY_GRPC,
   NotificationRecipientService,
@@ -30,10 +33,12 @@ import {
 
 export const SEATS_CHANGED_QUEUE = 'notification.booking.seats-changed';
 export const BOOKING_REFUNDED_QUEUE = 'notification.booking.refunded';
+export const TICKET_CANCELLED_QUEUE = 'notification.ticket.cancelled';
 
 export function createBookingOutcomeSubscriptions(
   seatsChanged: SeatsChangedConsumer,
   refunded: BookingRefundedConsumer,
+  ticketCancelled: TicketCancelledConsumer,
 ): EventSubscription[] {
   return [
     {
@@ -48,6 +53,13 @@ export function createBookingOutcomeSubscriptions(
       version: BOOKING_REFUNDED_VERSION,
       queueName: BOOKING_REFUNDED_QUEUE,
       handler: refunded,
+      retryIndefinitely: true,
+    },
+    {
+      eventType: TICKET_CANCELLED_EVENT_TYPE,
+      version: TICKET_CANCELLED_VERSION,
+      queueName: TICKET_CANCELLED_QUEUE,
+      handler: ticketCancelled,
       retryIndefinitely: true,
     },
   ];
@@ -81,6 +93,7 @@ export function createBookingOutcomeSubscriptions(
   providers: [
     SeatsChangedConsumer,
     BookingRefundedConsumer,
+    TicketCancelledConsumer,
     NotificationRecipientService,
     NodemailerEmailSender,
     TypeOrmProcessedEventStore,
@@ -91,7 +104,7 @@ export function createBookingOutcomeSubscriptions(
     {
       provide: EVENT_SUBSCRIPTIONS,
       useFactory: createBookingOutcomeSubscriptions,
-      inject: [SeatsChangedConsumer, BookingRefundedConsumer],
+      inject: [SeatsChangedConsumer, BookingRefundedConsumer, TicketCancelledConsumer],
     },
     MessageRepublisher,
     EventFailureRouter,

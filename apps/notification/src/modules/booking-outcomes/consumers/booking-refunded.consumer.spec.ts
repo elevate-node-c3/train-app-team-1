@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope } from '@app/contracts';
 import { BookingRefundedConsumer } from './booking-refunded.consumer.js';
 import { SeatsChangedConsumer } from './seats-changed.consumer.js';
+import { TicketCancelledConsumer } from './ticket-cancelled.consumer.js';
 import { createBookingOutcomeSubscriptions } from '../booking-outcomes.module.js';
 
 const EVENT: EventEnvelope = {
@@ -79,8 +80,9 @@ describe('BookingRefundedConsumer', () => {
     const subscriptions = createBookingOutcomeSubscriptions(
       {} as SeatsChangedConsumer,
       {} as BookingRefundedConsumer,
+      {} as TicketCancelledConsumer,
     );
-    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions).toHaveLength(3);
     expect(
       subscriptions.every((subscription) => subscription.retryIndefinitely),
     ).toBe(true);
