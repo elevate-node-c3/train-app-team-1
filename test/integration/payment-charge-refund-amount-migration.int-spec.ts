@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DataSource } from 'typeorm';
 
+import { migrations } from '../../apps/payment/src/database/migrations/index.js';
 import {
   closePaymentDataSource,
   paymentDataSource,
@@ -38,6 +39,15 @@ function expectAbsent(columns: RefundAmountColumn[]): void {
   expect(columns).toEqual([]);
 }
 
+/** Later migrations may be last; undo until this spec's target is gone. */
+async function undoRefundAmountMigration(source: DataSource): Promise<void> {
+  for (let i = 0; i < migrations.length; i += 1) {
+    if (!(await refundAmountColumns(source)).length) return;
+    await source.undoLastMigration();
+  }
+  throw new Error('Could not undo the refund amount migration');
+}
+
 describe('TA-109 payment charge refund amount migration (real PostgreSQL)', () => {
   let source: DataSource;
 
@@ -52,7 +62,7 @@ describe('TA-109 payment charge refund amount migration (real PostgreSQL)', () =
   it('applies, rolls back, and reapplies cleanly', async () => {
     expectApplied(await refundAmountColumns(source));
 
-    await source.undoLastMigration();
+    await undoRefundAmountMigration(source);
     expectAbsent(await refundAmountColumns(source));
 
     await source.runMigrations();

@@ -19,6 +19,18 @@ export interface TicketCancelledPayloadV1 {
   paymentReference: string;
 }
 
+export const TICKET_CANCELLED_PAYLOAD_KEYS = [
+  'ticketId',
+  'bookingReference',
+  'passengerRef',
+  'tripId',
+  'coachNumber',
+  'seatNumber',
+  'accountId',
+  'refundPiastres',
+  'paymentReference',
+] as const satisfies readonly (keyof TicketCancelledPayloadV1)[];
+
 export type TicketCancelledEvent = EventEnvelope<
   typeof TICKET_CANCELLED_EVENT_TYPE,
   TicketCancelledPayloadV1
