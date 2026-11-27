@@ -56,6 +56,8 @@ describe('TicketCancelledConsumer', () => {
     expect(email.text).toContain('77.50 EGP');
     expect(email.text).toContain('booking-1');
     expect(email.html).toContain('dir="ltr"');
+    // regression: refund amount stays bold in English
+    expect(email.html).toContain('<strong>77.50 EGP</strong>');
   });
 
   it('renders the email in Arabic for an Arabic account', async () => {
@@ -75,9 +77,17 @@ describe('TicketCancelledConsumer', () => {
     const email = sender.send.mock.calls[0][0];
     expect(email.to).toBe('traveller@example.com');
     expect(sender.send).toHaveBeenCalledTimes(1);
+    expect(email.subject).toBe('تأكيد إلغاء التذكرة');
+    expect(email.text).toContain('تم إلغاء تذكرتك بنجاح. تجد أدناه تفاصيل التذكرة ومبلغ الاسترداد المطلوب.');
+    expect(email.text).toContain('رقم العربة: 3، رقم المقعد: 12');
+    expect(email.text).toContain('مبلغ الاسترداد المطلوب: 77.50 جنيه مصري');
     expect(email.html).toContain('dir="rtl"');
-    expect(email.text).toContain('77.50 EGP');
-    expect(email.subject).toMatch(/[\u0600-\u06FF]/);
+    expect(email.html).toContain('lang="ar"');
+    // regression: refund amount stays bold in Arabic
+    expect(email.html).toContain('<strong>77.50 جنيه مصري</strong>');
+    // old placeholder wording must be absent
+    expect(email.subject).not.toContain('هذه التذكرة ملغاة بالفعل');
+    expect(email.text).not.toContain('هذه التذكرة ملغاة بالفعل');
   });
 
   it('keeps recipient recovery retryable', async () => {

@@ -59,7 +59,8 @@ const COPY: Readonly<
       seat: string;
       coach: string;
       seatLabel: string;
-      refund: string;
+      refundLabel: string;
+      refundCurrency: string;
     }
   >
 > = {
@@ -70,15 +71,17 @@ const COPY: Readonly<
     seat: 'Seat',
     coach: 'Coach',
     seatLabel: 'seat',
-    refund: 'Refund requested',
+    refundLabel: 'Refund requested',
+    refundCurrency: 'EGP',
   },
   ar: {
-    subject: (code) => 'هذه التذكرة ملغاة بالفعل',
-    intro: (code) => 'هذه التذكرة ملغاة بالفعل',
-    seat: 'هذه التذكرة ملغاة بالفعل',
-    coach: 'هذه التذكرة ملغاة بالفعل',
-    seatLabel: 'هذه التذكرة ملغاة بالفعل',
-    refund: 'هذه التذكرة ملغاة بالفعل',
+    subject: (code) => `تأكيد إلغاء التذكرة`,
+    intro: (code) => `تم إلغاء تذكرتك بنجاح. تجد أدناه تفاصيل التذكرة ومبلغ الاسترداد المطلوب.`,
+    seat: 'رقم المقعد',
+    coach: 'رقم العربة',
+    seatLabel: 'رقم المقعد',
+    refundLabel: 'مبلغ الاسترداد المطلوب',
+    refundCurrency: 'جنيه مصري',
   },
 };
 
@@ -88,17 +91,22 @@ export function renderTicketCancelledEmail(
 ): EmailContent {
   const amountEgp = (payload.refundPiastres / 100).toFixed(2);
   const copy = COPY[language];
+  const seatLine =
+    language === 'ar'
+      ? `${copy.coach}: ${payload.coachNumber}، ${copy.seatLabel}: ${payload.seatNumber}`
+      : `${copy.seat}: ${copy.coach} ${payload.coachNumber}, ${copy.seatLabel} ${payload.seatNumber}`;
+  const refundText = `${copy.refundLabel}: ${amountEgp} ${copy.refundCurrency}`;
   const text = [
     copy.intro(payload.bookingReference),
     '',
-    `${copy.seat}: ${copy.coach} ${payload.coachNumber}, ${copy.seatLabel} ${payload.seatNumber}`,
-    `${copy.refund}: ${amountEgp} EGP`,
+    seatLine,
+    refundText,
   ].join('\n');
   const html = `
     <div dir="${language === 'ar' ? 'rtl' : 'ltr'}" lang="${language}" style="text-align:${language === 'ar' ? 'right' : 'left'};font-family:Arial,Tahoma,sans-serif">
       <p>${escapeHtml(copy.intro(payload.bookingReference))}</p>
-      <p>${escapeHtml(copy.seat)}: ${escapeHtml(copy.coach)} ${payload.coachNumber}, ${escapeHtml(copy.seatLabel)} ${escapeHtml(payload.seatNumber)}</p>
-      <p>${escapeHtml(copy.refund)}: <strong>${escapeHtml(amountEgp)} EGP</strong></p>
+      <p>${escapeHtml(seatLine)}</p>
+      <p>${escapeHtml(copy.refundLabel)}: <strong>${escapeHtml(amountEgp)} ${escapeHtml(copy.refundCurrency)}</strong></p>
     </div>
   `;
   return { subject: copy.subject(payload.bookingReference), text, html };
