@@ -74,6 +74,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
         if (
           status === HttpStatus.CONFLICT &&
+          code === ErrorCode.CANCELLATION_OUTCOME_CHANGED &&
           Object.hasOwn(response, 'preview')
         ) {
           preview = (response as Record<string, unknown>).preview;

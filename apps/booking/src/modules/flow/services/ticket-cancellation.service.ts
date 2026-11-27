@@ -115,6 +115,20 @@ export class TicketCancellationService {
         idempotencyKey: request.idempotencyKey,
       });
       if (!cancelled) {
+        // A concurrent winner committed between our replay lookup and the
+        // guarded UPDATE: re-read by key so the loser still returns the
+        // original response instead of a refusal.
+        const prior = await this.repository.findByIdempotencyKey(
+          request.ticketId,
+          request.idempotencyKey,
+        );
+        if (prior) {
+          return {
+            status:
+              prior.status === 'cancelled' ? 'CANCELLED' : 'ALREADY_CANCELLED',
+            refundPiastres: prior.refundPiastres ?? 0,
+          };
+        }
         throw new BookingFlowError(ErrorCode.TICKET_ALREADY_CANCELLED);
       }
 
