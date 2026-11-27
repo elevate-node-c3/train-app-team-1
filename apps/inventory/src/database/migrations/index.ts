@@ -11,6 +11,7 @@ import { AlignTripSchemaWithDesign1794600000007 } from './1794600000007-align-tr
 import { CreateHoldCore1794600000008 } from './1794600000008-create-hold-core.js';
 import { AddHoldStateSold1797100000001 } from './1797100000001-add-hold-state-sold.js';
 import { PersistHoldSettlementOutcome1797400000001 } from './1797400000001-persist-hold-settlement-outcome.js';
+import { AddInventorySeatOccupationReleasedState1797600000003 } from './1797600000003-add-inventory-seat-occupation-released-state.js';
 
 // Keep migration timestamps unique; TypeORM keys migrations by name.
 export const migrations: (new () => MigrationInterface)[] = [
@@ -25,6 +26,8 @@ export const migrations: (new () => MigrationInterface)[] = [
   CreateHoldCore1794600000008,
   AddHoldStateSold1797100000001,
   PersistHoldSettlementOutcome1797400000001,
+  // Last by design: undoLastMigration() targets this migration in its spec.
+  AddInventorySeatOccupationReleasedState1797600000003,
 ];
 
 export const INVENTORY_MIGRATIONS = migrations;

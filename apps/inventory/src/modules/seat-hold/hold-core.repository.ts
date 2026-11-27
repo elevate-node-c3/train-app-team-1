@@ -100,6 +100,15 @@ export type NewHold = {
   assignments: PersistedAssignment[];
 };
 
+/** Identifies one passenger's sold seat through the hold's booking receipt. */
+export type SoldSeatReleaseLookup = {
+  bookingReference: string;
+  passengerRef: string;
+  tripId: string;
+  coachNumber: number;
+  seatNumber: string;
+};
+
 interface HoldDbRow {
   id: string;
   bookingKey: string;
@@ -803,6 +812,52 @@ export class HoldCoreRepository {
          AND released_at IS NULL`,
       [holdId, now],
     );
+  }
+
+  /** Post-settlement occupations carry the hold id, not the ticket id. */
+  async findSoldOccupationId(
+    ctx: TransactionContext,
+    input: SoldSeatReleaseLookup,
+  ): Promise<string | null> {
+    const [row]: { id: string }[] = await managerOf(ctx).query(
+      `SELECT o.id
+         FROM seat_occupation o
+         JOIN seat_hold_group g ON g.id = o.hold_id
+         JOIN seat_hold_assignment a ON a.hold_id = g.id
+           AND a.trip_id = o.trip_id
+           AND a.trip_seat_id = o.trip_seat_id
+           AND a.passenger_ref = $2
+           AND a.coach_number = $3
+           AND a.seat_number = $4
+        WHERE g.booking_key = $1
+          AND o.trip_id = $5
+          AND o.state = 'sold'
+          AND o.released_at IS NULL
+        LIMIT 1`,
+      [
+        input.bookingReference,
+        input.passengerRef,
+        input.coachNumber,
+        input.seatNumber,
+        input.tripId,
+      ],
+    );
+    return row?.id ?? null;
+  }
+
+  /** Guard makes concurrent or repeated releases harmless. */
+  async releaseSoldOccupation(
+    ctx: TransactionContext,
+    occupationId: string,
+  ): Promise<boolean> {
+    const result: unknown[] = await managerOf(ctx).query(
+      `UPDATE seat_occupation
+          SET state = 'released', released_at = now(), updated_at = now()
+        WHERE id = $1 AND state = 'sold' AND released_at IS NULL
+        RETURNING id`,
+      [occupationId],
+    );
+    return rowCountOf(result) > 0;
   }
 
   /** Returns false when another transition already moved the head. */

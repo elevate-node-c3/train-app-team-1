@@ -15,7 +15,7 @@ import { TripSeatEntity } from './trip-seat.entity.js';
 @Index('idx_seat_occupation_hold', ['holdId'], {
   where: '"hold_id" IS NOT NULL',
 })
-@Check('chk_seat_occupation_state', `"state" IN ('held', 'sold')`)
+@Check('chk_seat_occupation_state', `"state" IN ('held', 'sold', 'released')`)
 @Check('chk_seat_occupation_segment', `NOT isempty("segment") AND lower("segment") >= 0`)
 @Check(
   'chk_seat_occupation_hold_expiry',
@@ -50,7 +50,7 @@ export class SeatOccupationEntity {
   segment!: string;
 
   @Column({ type: 'text' })
-  state!: 'held' | 'sold';
+  state!: 'held' | 'sold' | 'released';
 
   @Column({ name: 'hold_expires_at', type: 'timestamptz', nullable: true })
   holdExpiresAt!: Date | null;

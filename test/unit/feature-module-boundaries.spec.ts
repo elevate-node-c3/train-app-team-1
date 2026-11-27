@@ -424,7 +424,12 @@ describe('Feature module boundaries (§2.5)', () => {
       if (group === 'controllers' && !name.endsWith('.controller.ts')) {
         violations.push(`${file} must end with '.controller.ts'`);
       }
-      if (group === 'consumers' && !name.endsWith('.consumer.ts')) {
+      // Parsers sit beside their consumer so the envelope contract stays local.
+      if (
+        group === 'consumers' &&
+        !name.endsWith('.consumer.ts') &&
+        !name.endsWith('.parser.ts')
+      ) {
         violations.push(`${file} must end with '.consumer.ts'`);
       }
       if (group === 'listeners' && !name.endsWith('.event.listener.ts')) {
