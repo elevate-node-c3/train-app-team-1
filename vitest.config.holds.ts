@@ -64,6 +64,7 @@ export default defineConfig({
       'test/integration/ticket-cancelled-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
       'test/integration/ticket-cancellation-service.int-spec.ts',
+      'test/integration/ticket-cancellation-e2e.int-spec.ts',
       'test/integration/tickets.int-spec.ts',
       // These need payment's own database URL, which only this tier sets.
       'test/integration/payment-charge-refund-amount-migration.int-spec.ts',
