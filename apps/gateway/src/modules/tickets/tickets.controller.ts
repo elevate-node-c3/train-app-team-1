@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   HttpCode,
+  HttpException,
   HttpStatus,
   Param,
   Post,
@@ -13,19 +14,24 @@ import {
 import {
   Public,
   RateLimit,
+  requireIdempotencyKey,
   RequireAccess,
   RequireRole,
   resolveLanguage,
 } from '@app/common';
-import type {
-  SharedTicket,
-  TicketPage,
-  TicketQr,
-  TicketShareLink,
-  TicketVerification,
-  VerificationKeys,
+import {
+  ErrorCode,
+  type ConfirmTicketCancellationResponse,
+  type PreviewTicketCancellationResponse,
+  type SharedTicket,
+  type TicketPage,
+  type TicketQr,
+  type TicketShareLink,
+  type TicketVerification,
+  type VerificationKeys,
 } from '@app/contracts';
 
+import { ConfirmTicketCancellationDto } from './dto/ticket-cancellation.dto.js';
 import {
   ListTicketsQueryDto,
   SharedTicketParamDto,
@@ -101,6 +107,51 @@ export class TicketsController {
       disposition: `attachment; filename="${pdf.fileName}"`,
       length: pdf.content.length,
     });
+  }
+
+  /** The quote booking will recompute when the traveller confirms. */
+  @Get('tickets/:ticketId/cancellation-preview')
+  @RequireAccess('traveller')
+  cancellationPreview(
+    @Param() params: TicketIdParamDto,
+  ): Promise<PreviewTicketCancellationResponse> {
+    return this.tickets.previewCancellation(params.ticketId);
+  }
+
+  @Post('tickets/:ticketId/cancellation')
+  @RequireAccess('traveller')
+  @HttpCode(HttpStatus.OK)
+  async cancel(
+    @Param() params: TicketIdParamDto,
+    @Body() body: ConfirmTicketCancellationDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ): Promise<ConfirmTicketCancellationResponse> {
+    requireIdempotencyKey(idempotencyKey);
+
+    try {
+      return await this.tickets.confirmCancellation({
+        ticketId: params.ticketId,
+        tier: body.tier,
+        idempotencyKey: `ticket:${params.ticketId}:cancel`,
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof HttpException &&
+        (error.getResponse() as { code?: unknown })?.code ===
+          ErrorCode.CANCELLATION_OUTCOME_CHANGED
+      ) {
+        // The quote moved: send the new one with the refusal (BR-43).
+        const preview = await this.tickets.previewCancellation(params.ticketId);
+        throw new HttpException(
+          {
+            code: ErrorCode.CANCELLATION_OUTCOME_CHANGED,
+            preview,
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
   }
 
   /**

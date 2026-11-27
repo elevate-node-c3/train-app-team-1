@@ -53,6 +53,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let code: string = ErrorCode.INTERNAL_SERVER_ERROR;
     let details: ValidationErrorDetail[] | undefined;
     let retryAfterSeconds: number | undefined;
+    let preview: unknown;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -70,6 +71,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const retry = (response as Record<string, unknown>).retryAfterSeconds;
         if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) {
           retryAfterSeconds = Math.ceil(retry);
+        }
+        if (
+          status === HttpStatus.CONFLICT &&
+          Object.hasOwn(response, 'preview')
+        ) {
+          preview = (response as Record<string, unknown>).preview;
         }
       }
 
@@ -145,6 +152,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: localizedMessage,
         ...(details && details.length > 0 ? { details } : {}),
         ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+        ...(status === HttpStatus.CONFLICT && preview !== undefined
+          ? { preview }
+          : {}),
       },
       correlationId,
       timestamp: new Date().toISOString(),

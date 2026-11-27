@@ -1,7 +1,11 @@
 import type { CallOptions } from '@grpc/grpc-js';
 import type { Observable } from 'rxjs';
 import type {
+  ConfirmTicketCancellationRequest,
+  ConfirmTicketCancellationResponse,
   ListTicketsRequest,
+  PreviewTicketCancellationRequest,
+  PreviewTicketCancellationResponse,
   SharedTicket,
   SharedTicketRequest,
   TicketPage,
@@ -66,4 +70,16 @@ export interface TicketsGrpcClient {
     metadata?: unknown,
     options?: CallOptions,
   ): Observable<VerificationKeys>;
+
+  previewTicketCancellation(
+    data: PreviewTicketCancellationRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<PreviewTicketCancellationResponse>;
+
+  confirmTicketCancellation(
+    data: ConfirmTicketCancellationRequest,
+    metadata?: unknown,
+    options?: CallOptions,
+  ): Observable<ConfirmTicketCancellationResponse>;
 }

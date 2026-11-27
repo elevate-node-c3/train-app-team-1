@@ -506,6 +506,41 @@ describe('Envelope & i18n Translation System (BR-56, BR-57, D14, §2.4)', () => 
       },
     );
 
+    it('passes a fresh cancellation preview through on 409', () => {
+      const preview = {
+        allowed: true,
+        tier: 'HALF',
+        refundPiastres: 900,
+        code: '',
+      };
+      const body = renderError(
+        new HttpException(
+          { code: ErrorCode.CANCELLATION_OUTCOME_CHANGED, preview },
+          HttpStatus.CONFLICT,
+        ),
+        'en',
+      );
+
+      expect(body.error?.code).toBe(ErrorCode.CANCELLATION_OUTCOME_CHANGED);
+      expect(body.error?.preview).toEqual(preview);
+    });
+
+    it('never forwards a preview on a non-409 response', () => {
+      const body = renderError(
+        new HttpException(
+          {
+            code: ErrorCode.CANCELLATION_OUTCOME_CHANGED,
+            preview: { refundPiastres: 900 },
+          },
+          HttpStatus.BAD_REQUEST,
+        ),
+        'en',
+      );
+
+      expect(body.error?.preview).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain('refundPiastres');
+    });
+
     it.each(['ar', 'en'] as const)(
       'renders retryable decoded 503 instructions in %s, preserving retry seconds',
       (language) => {

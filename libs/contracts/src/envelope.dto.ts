@@ -27,6 +27,8 @@ export interface ApiErrorDetail {
   details?: ValidationErrorDetail[];
   /** Present on rate limits and retryable dependency failures. */
   retryAfterSeconds?: number;
+  /** A fresh quote handed back with a changed cancellation outcome. */
+  preview?: unknown;
 }
 
 export interface ApiResponse<T = unknown> {

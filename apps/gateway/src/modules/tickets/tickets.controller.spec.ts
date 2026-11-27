@@ -1,6 +1,7 @@
-import { StreamableFile } from '@nestjs/common';
+import { HttpException, HttpStatus, StreamableFile } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { ACCESS_LEVEL_KEY, STAFF_ROLE_KEY } from '@app/common';
+import { ErrorCode } from '@app/contracts';
 
 import { TicketsController } from './tickets.controller.js';
 import type { TicketsGrpcClientService } from './tickets.grpc.client.js';
@@ -67,15 +68,91 @@ describe('TicketsController', () => {
     ]);
   });
 
-  it.each(['paid', 'cancelled', 'qr', 'shareLink', 'pdf'] as const)(
-    'keeps %s to a signed-in traveller',
-    (method) => {
-      expect(accessOf(method)).toEqual({
-        level: 'traveller',
-        roles: undefined,
-      });
-    },
-  );
+  it('returns the cancellation preview body verbatim', async () => {
+    const quote = {
+      allowed: true,
+      tier: 'HALF' as const,
+      refundPiastres: 1250,
+      code: '',
+    };
+    const previewCancellation = vi.fn().mockResolvedValue(quote);
+    const controller = controllerWith({ previewCancellation });
+
+    const body = await controller.cancellationPreview({ ticketId: TICKET });
+
+    expect(previewCancellation).toHaveBeenCalledWith(TICKET);
+    expect(body).toBe(quote);
+  });
+
+  it('requires the header and forwards a derived cancellation key', async () => {
+    const confirmCancellation = vi
+      .fn()
+      .mockResolvedValue({ status: 'CANCELLED', refundPiastres: 1250 });
+    const controller = controllerWith({ confirmCancellation });
+
+    await expect(
+      controller.cancel({ ticketId: TICKET }, { tier: 'HALF' }, undefined),
+    ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    expect(confirmCancellation).not.toHaveBeenCalled();
+
+    await controller.cancel({ ticketId: TICKET }, { tier: 'HALF' }, 'any-key');
+
+    expect(confirmCancellation).toHaveBeenCalledWith({
+      ticketId: TICKET,
+      tier: 'HALF',
+      idempotencyKey: `ticket:${TICKET}:cancel`,
+    });
+  });
+
+  it('re-previews when the outcome changed before confirm', async () => {
+    const freshQuote = {
+      allowed: true,
+      tier: 'HALF' as const,
+      refundPiastres: 900,
+      code: '',
+    };
+    const previewCancellation = vi.fn().mockResolvedValue(freshQuote);
+    const confirmCancellation = vi
+      .fn()
+      .mockRejectedValue(
+        new HttpException(
+          { code: ErrorCode.CANCELLATION_OUTCOME_CHANGED },
+          HttpStatus.CONFLICT,
+        ),
+      );
+    const controller = controllerWith({
+      previewCancellation,
+      confirmCancellation,
+    });
+
+    const error = await controller
+      .cancel({ ticketId: TICKET }, { tier: 'FULL' }, 'any-key')
+      .catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      code: ErrorCode.CANCELLATION_OUTCOME_CHANGED,
+      preview: freshQuote,
+    });
+    expect(previewCancellation).toHaveBeenCalledTimes(1);
+    expect(previewCancellation).toHaveBeenCalledWith(TICKET);
+  });
+
+  it.each([
+    'paid',
+    'cancelled',
+    'qr',
+    'shareLink',
+    'pdf',
+    'cancellationPreview',
+    'cancel',
+  ] as const)('keeps %s to a signed-in traveller', (method) => {
+    expect(accessOf(method)).toEqual({
+      level: 'traveller',
+      roles: undefined,
+    });
+  });
 
   it('opens the shared ticket without signing in (BR-39)', () => {
     expect(accessOf('shared').level).toBe('public');

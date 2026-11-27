@@ -10,7 +10,10 @@ import {
 } from '@app/common';
 import {
   GRPC_STATUS,
+  type ConfirmTicketCancellationRequest,
+  type ConfirmTicketCancellationResponse,
   type ListTicketsRequest,
+  type PreviewTicketCancellationResponse,
   type SharedTicket,
   type TicketPage,
   type TicketPdf,
@@ -90,6 +93,22 @@ export class TicketsGrpcClientService {
   verificationKeys(): Promise<VerificationKeys> {
     return this.call((metadata, options) =>
       this.client.getVerificationKeys({}, metadata, options),
+    );
+  }
+
+  previewCancellation(
+    ticketId: string,
+  ): Promise<PreviewTicketCancellationResponse> {
+    return this.call((metadata, options) =>
+      this.client.previewTicketCancellation({ ticketId }, metadata, options),
+    );
+  }
+
+  confirmCancellation(
+    request: ConfirmTicketCancellationRequest,
+  ): Promise<ConfirmTicketCancellationResponse> {
+    return this.call((metadata, options) =>
+      this.client.confirmTicketCancellation(request, metadata, options),
     );
   }
 
