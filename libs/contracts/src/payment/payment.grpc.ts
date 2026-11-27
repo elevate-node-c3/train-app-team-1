@@ -36,14 +36,16 @@ export interface CancelChargeResponse {
 }
 
 /**
- * The whole locked total, booking fee included; never a partial amount.
- * TA-110 owns the server side; until it lands payment marks the charge refunded
- * without calling Stripe. These shapes are the contract and do not change.
+ * amountPiastres is booking's decision, e.g. one ticket's fare share (TA-109);
+ * payment never recalculates it. TA-110 owns the Stripe call; until then payment
+ * records the refund and returns a synthetic reference.
  */
 export interface RefundChargeRequest {
   bookingReference: string;
   paymentReference: string;
   idempotencyKey: string;
+  /** What booking decided to return, not the whole charge by default. */
+  amountPiastres: number;
 }
 
 /** status is REFUNDED, ALREADY_REFUNDED, or NOT_REFUNDABLE. */

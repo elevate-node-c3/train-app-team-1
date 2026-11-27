@@ -133,6 +133,11 @@ service TicketService {
   rpc GetSharedTicket (SharedTicketRequest) returns (SharedTicket);
   // Conductor only: the online check against the ticket's current state.
   rpc VerifyTicket (VerifyTicketRequest) returns (TicketVerification);
+  // Traveller's own ticket: show the refund tier before any money moves.
+  rpc PreviewTicketCancellation (PreviewTicketCancellationRequest) returns (PreviewTicketCancellationResponse);
+  // tier is the outcome the traveller accepted; booking recomputes it
+  // server-side and never trusts the caller's value.
+  rpc ConfirmTicketCancellation (ConfirmTicketCancellationRequest) returns (ConfirmTicketCancellationResponse);
   // Conductor only: the public keys an offline scanner verifies QRs with.
   rpc GetVerificationKeys (VerificationKeysRequest) returns (VerificationKeys);
 }
@@ -144,6 +149,29 @@ message ListTicketsRequest {
 
 message TicketRequest {
   string ticketId = 1;
+}
+
+message PreviewTicketCancellationRequest {
+  string ticketId = 1;
+}
+
+message PreviewTicketCancellationResponse {
+  bool allowed = 1;
+  string tier = 2;        // FULL | HALF | '' when not allowed
+  int32 refundPiastres = 3;
+  string code = 4;        // ErrorCode, '' when allowed
+}
+
+message ConfirmTicketCancellationRequest {
+  string ticketId = 1;
+  // The outcome the traveller accepted; booking recomputes it, never trusts it.
+  string tier = 2;
+  string idempotencyKey = 3;  // ticket:{ticketId}:cancel
+}
+
+message ConfirmTicketCancellationResponse {
+  string status = 1;      // CANCELLED | ALREADY_CANCELLED
+  int32 refundPiastres = 2;
 }
 
 message TicketPdfRequest {

@@ -21,6 +21,31 @@ export interface TicketRequest {
   ticketId: string;
 }
 
+export interface PreviewTicketCancellationRequest {
+  ticketId: string;
+}
+
+export interface PreviewTicketCancellationResponse {
+  allowed: boolean;
+  tier: 'FULL' | 'HALF' | '';
+  refundPiastres: number;
+  /** ErrorCode, '' when allowed. */
+  code: string;
+}
+
+/** tier is what the traveller accepted; booking recomputes it, never trusts it. */
+export interface ConfirmTicketCancellationRequest {
+  ticketId: string;
+  tier: 'FULL' | 'HALF';
+  /** ticket:{ticketId}:cancel */
+  idempotencyKey: string;
+}
+
+export interface ConfirmTicketCancellationResponse {
+  status: 'CANCELLED' | 'ALREADY_CANCELLED';
+  refundPiastres: number;
+}
+
 export interface TicketPdfRequest {
   ticketId: string;
   /** The request's language, resolved at the edge; not the account's. */

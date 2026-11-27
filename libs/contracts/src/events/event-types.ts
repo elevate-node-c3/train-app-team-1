@@ -28,6 +28,7 @@ export const EVENT_TYPES = {
   bookingConfirmed: 'booking.confirmed',
   bookingSeatsChanged: 'booking.seats-changed',
   bookingRefunded: 'booking.refunded',
+  ticketCancelled: 'ticket.cancelled',
   paymentSucceeded: 'payment.charge.succeeded',
   paymentFailed: 'payment.charge.failed',
 } as const;

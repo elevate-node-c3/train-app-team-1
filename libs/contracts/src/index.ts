@@ -34,3 +34,4 @@ export * from './events/trip-events.js';
 export * from './events/inventory-events.js';
 export * from './events/hold-events.js';
 export * from './events/payment-events.js';
+export * from './events/ticket-cancelled-event.js';

@@ -174,7 +174,8 @@ export class BookingConfirmationService {
     if (
       draft.chargeCancelled ||
       draft.settlementOutcome !== 'no_seats' ||
-      !draft.paymentReference
+      !draft.paymentReference ||
+      typeof draft.totalPiastres !== 'number'
     ) {
       throw new BookingFlowFault(
         'A refund requires a succeeded charge and a no-seats decision',
@@ -200,6 +201,7 @@ export class BookingConfirmationService {
         bookingReference: draft.id,
         paymentReference: draft.paymentReference ?? '',
         idempotencyKey: `booking:${draft.id}:refund`,
+        amountPiastres: draft.totalPiastres,
       },
       draft.correlationId ?? draft.id,
     );

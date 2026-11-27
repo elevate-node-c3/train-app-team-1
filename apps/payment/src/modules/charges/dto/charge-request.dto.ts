@@ -68,6 +68,11 @@ export class RefundChargeRequestDto implements RefundChargeRequest {
   @IsUUID()
   bookingReference!: string;
 
+  /** CHECK (amount_piastres > 0), and piastres are indivisible. */
+  @IsInt()
+  @Min(1)
+  amountPiastres!: number;
+
   @IsUUID()
   paymentReference!: string;
 
