@@ -59,6 +59,7 @@ export default defineConfig({
       'test/integration/booking-ticket-cancellation-migration.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
+      'test/integration/ticket-cancellation-service.int-spec.ts',
       'test/integration/tickets.int-spec.ts',
       // These need payment's own database URL, which only this tier sets.
       'test/integration/payment-charge-webhook.int-spec.ts',
