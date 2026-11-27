@@ -21,11 +21,10 @@ export class SoldSeatReleaseService {
     input: SoldSeatReleaseInput,
   ): Promise<'RELEASED' | 'ALREADY_RELEASED'> {
     return this.unitOfWork.withTransaction(async (ctx) => {
-      const occupationId = await this.repository.findSoldOccupationId(ctx, input);
-      if (!occupationId) return 'ALREADY_RELEASED';
-      return (await this.repository.releaseSoldOccupation(ctx, occupationId))
-        ? 'RELEASED'
-        : 'ALREADY_RELEASED';
+      const occupationIds = await this.repository.findSoldOccupationIds(ctx, input);
+      if (occupationIds.length === 0) return 'ALREADY_RELEASED';
+      const released = await this.repository.releaseSoldOccupations(ctx, occupationIds);
+      return released > 0 ? 'RELEASED' : 'ALREADY_RELEASED';
     });
   }
 }

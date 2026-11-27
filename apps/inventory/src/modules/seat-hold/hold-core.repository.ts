@@ -815,11 +815,16 @@ export class HoldCoreRepository {
   }
 
   /** Post-settlement occupations carry the hold id, not the ticket id. */
-  async findSoldOccupationId(
+  // A passenger occupies exactly one segment of a trip, so passenger_ref is the
+  // segment discriminator: two different passengers on the same physical seat
+  // (the multi-stop case) resolve to two different occupations. Releasing every
+  // matching row (rather than an arbitrary LIMIT 1) removes any dependence on
+  // row order if an invariant is ever violated.
+  async findSoldOccupationIds(
     ctx: TransactionContext,
     input: SoldSeatReleaseLookup,
-  ): Promise<string | null> {
-    const [row]: { id: string }[] = await managerOf(ctx).query(
+  ): Promise<string[]> {
+    const rows: { id: string }[] = await managerOf(ctx).query(
       `SELECT o.id
          FROM seat_occupation o
          JOIN seat_hold_group g ON g.id = o.hold_id
@@ -832,8 +837,7 @@ export class HoldCoreRepository {
         WHERE g.booking_key = $1
           AND o.trip_id = $5
           AND o.state = 'sold'
-          AND o.released_at IS NULL
-        LIMIT 1`,
+          AND o.released_at IS NULL`,
       [
         input.bookingReference,
         input.passengerRef,
@@ -842,22 +846,25 @@ export class HoldCoreRepository {
         input.tripId,
       ],
     );
-    return row?.id ?? null;
+    return rows.map((row) => row.id);
   }
 
   /** Guard makes concurrent or repeated releases harmless. */
-  async releaseSoldOccupation(
+  async releaseSoldOccupations(
     ctx: TransactionContext,
-    occupationId: string,
-  ): Promise<boolean> {
+    occupationIds: string[],
+  ): Promise<number> {
+    if (occupationIds.length === 0) return 0;
     const result: unknown[] = await managerOf(ctx).query(
       `UPDATE seat_occupation
           SET state = 'released', released_at = now(), updated_at = now()
-        WHERE id = $1 AND state = 'sold' AND released_at IS NULL
+        WHERE id = ANY($1::uuid[])
+          AND state = 'sold'
+          AND released_at IS NULL
         RETURNING id`,
-      [occupationId],
+      [occupationIds],
     );
-    return rowCountOf(result) > 0;
+    return rowCountOf(result);
   }
 
   /** Returns false when another transition already moved the head. */
