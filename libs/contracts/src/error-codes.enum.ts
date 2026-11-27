@@ -88,4 +88,7 @@ export enum ErrorCode {
   // Tickets: a cancelled, voided or completed ticket cannot be shared,
   // downloaded or shown as a QR (BR-39).
   TICKET_NOT_ACTIVE = 'TICKET_NOT_ACTIVE',
+  TICKET_ALREADY_CANCELLED = 'TICKET_ALREADY_CANCELLED',
+  CANCELLATION_WINDOW_CLOSED = 'CANCELLATION_WINDOW_CLOSED',
+  CANCELLATION_OUTCOME_CHANGED = 'CANCELLATION_OUTCOME_CHANGED',
 }

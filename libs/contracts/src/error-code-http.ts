@@ -78,4 +78,7 @@ export const HTTP_STATUS_BY_ERROR_CODE: Partial<Record<ErrorCode, number>> = {
   [ErrorCode.PASSENGER_ALREADY_BOOKED]: 409,
 
   [ErrorCode.TICKET_NOT_ACTIVE]: 409,
+  [ErrorCode.TICKET_ALREADY_CANCELLED]: 409,
+  [ErrorCode.CANCELLATION_WINDOW_CLOSED]: 409,
+  [ErrorCode.CANCELLATION_OUTCOME_CHANGED]: 409,
 };

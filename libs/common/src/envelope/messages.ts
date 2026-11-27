@@ -324,6 +324,18 @@ export const MESSAGE: Record<string, { ar: string; en: string }> = {
     ar: 'هذا الإجراء غير متاح لتذكرة ملغاة أو انتهت رحلتها',
     en: 'This action is not available for a cancelled or completed ticket',
   },
+  [ErrorCode.TICKET_ALREADY_CANCELLED]: {
+    ar: 'هذه التذكرة ملغاة بالفعل',
+    en: 'This ticket is already cancelled',
+  },
+  [ErrorCode.CANCELLATION_WINDOW_CLOSED]: {
+    ar: 'انتهى وقت إلغاء هذه التذكرة',
+    en: 'The cancellation window for this ticket has closed',
+  },
+  [ErrorCode.CANCELLATION_OUTCOME_CHANGED]: {
+    ar: 'تغيرت نسبة الاسترداد منذ آخر مرة تحققت منها، يرجى المراجعة والتأكيد مرة أخرى',
+    en: 'The refund amount changed since you last checked — review and confirm again',
+  },
 };
 
 /** Defaults to Arabic for missing, unsupported or wildcard Accept-Language. */

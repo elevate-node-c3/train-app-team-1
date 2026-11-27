@@ -34,4 +34,16 @@ describe('ErrorCode HTTP mapping', () => {
     ).toBe(422);
     expect(HTTP_STATUS_BY_ERROR_CODE[ErrorCode.NATIONAL_ID_LOCKED]).toBe(422);
   });
+
+  it('maps ticket cancellation refusals to 409', () => {
+    expect(
+      HTTP_STATUS_BY_ERROR_CODE[ErrorCode.TICKET_ALREADY_CANCELLED],
+    ).toBe(409);
+    expect(
+      HTTP_STATUS_BY_ERROR_CODE[ErrorCode.CANCELLATION_WINDOW_CLOSED],
+    ).toBe(409);
+    expect(
+      HTTP_STATUS_BY_ERROR_CODE[ErrorCode.CANCELLATION_OUTCOME_CHANGED],
+    ).toBe(409);
+  });
 });
