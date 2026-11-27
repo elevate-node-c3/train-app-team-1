@@ -96,4 +96,27 @@ export class TicketEntity {
 
   @Column({ name: 'status_changed_at', type: 'timestamptz', nullable: true })
   statusChangedAt!: Date | null;
+
+  // -------------------------------------------------------------------------
+  // TA-109: cancellation bookkeeping. Null until a ticket is cancelled.
+  // -------------------------------------------------------------------------
+
+  /** Only 'pending' is written here; TA-110 owns the refund lifecycle. */
+  @Column({
+    name: 'refund_status',
+    type: 'varchar',
+    length: 16,
+    nullable: true,
+  })
+  refundStatus!: 'pending' | null;
+
+  @Column({ name: 'refund_piastres', type: 'integer', nullable: true })
+  refundPiastres!: number | null;
+
+  @Column({
+    name: 'cancellation_idempotency_key',
+    type: 'text',
+    nullable: true,
+  })
+  cancellationIdempotencyKey!: string | null;
 }

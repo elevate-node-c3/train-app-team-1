@@ -56,6 +56,7 @@ export default defineConfig({
       'test/integration/booking-confirmation-recovery.int-spec.ts',
       'test/integration/booking-confirmation-service.int-spec.ts',
       'test/integration/booking-flow-repository.int-spec.ts',
+      'test/integration/booking-ticket-cancellation-migration.int-spec.ts',
       'test/integration/payment-succeeded-consumer.int-spec.ts',
       'test/integration/ticket-issuer.int-spec.ts',
       'test/integration/tickets.int-spec.ts',
