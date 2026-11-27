@@ -37,7 +37,10 @@ import { TicketEntity } from './entities/ticket.entity.js';
 import { BookingFlowGrpcController } from './booking-flow.grpc.controller.js';
 import { BookingFlowRepository } from './booking-flow.repository.js';
 import { BookingConfirmationService } from './services/booking-confirmation.service.js';
+import { TicketCancellationRepository } from './services/ticket-cancellation.repository.js';
+import { TicketCancellationService } from './services/ticket-cancellation.service.js';
 import { TicketIssuerService } from './services/ticket-issuer.service.js';
+import { TicketCancellationGrpcController } from './ticket-cancellation.grpc.controller.js';
 import { TicketsModule } from '../tickets/tickets.module.js';
 import {
   PaymentSucceededConsumer,
@@ -116,11 +119,13 @@ export function paymentGrpcUrl(): string {
       },
     ]),
   ],
-  controllers: [BookingFlowGrpcController],
+  controllers: [BookingFlowGrpcController, TicketCancellationGrpcController],
   providers: [
     BookingFlowRepository,
     BookingFlowService,
     BookingConfirmationService,
+    TicketCancellationRepository,
+    TicketCancellationService,
     TicketIssuerService,
     FlowGrpcClientsService,
     BookingFlowWorker,

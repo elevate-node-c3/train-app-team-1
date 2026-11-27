@@ -9,9 +9,13 @@ import {
   toTicketCard,
 } from './ticket-view.js';
 
+const HOUR_MS = 3_600_000;
 const BEFORE_DEPARTURE = new Date('2099-01-10T08:00:00+02:00');
 const ON_BOARD = new Date('2099-01-10T14:00:00+02:00');
 const AFTER_ARRIVAL = new Date('2099-01-11T08:00:00+02:00');
+const IN_ONE_HOUR = new Date(BEFORE_DEPARTURE.getTime() + HOUR_MS);
+const IN_THREE_HOURS = new Date(BEFORE_DEPARTURE.getTime() + 3 * HOUR_MS);
+const IN_SIX_HOURS = new Date(BEFORE_DEPARTURE.getTime() + 6 * HOUR_MS);
 
 describe('allowedActionsOf (BR-39)', () => {
   it('lets an upcoming ticket be shared, shown and downloaded', () => {
@@ -19,8 +23,7 @@ describe('allowedActionsOf (BR-39)', () => {
       share: true,
       qr: true,
       download: true,
-      // BOOK-4 (TA-109) owns cancellation; nothing advertises it yet.
-      cancel: false,
+      cancel: true,
     });
   });
 
@@ -48,6 +51,29 @@ describe('allowedActionsOf (BR-39)', () => {
       ).toEqual({ share: false, qr: false, download: false, cancel: false });
     },
   );
+
+  it('allows cancel for an active ticket more than 2 hours from boarding', () => {
+    const ticket = issuedTicket({
+      status: 'active',
+      departsAt: IN_THREE_HOURS,
+      arrivesAt: IN_SIX_HOURS,
+    });
+    expect(allowedActionsOf(ticket, BEFORE_DEPARTURE).cancel).toBe(true);
+  });
+
+  it('refuses cancel inside the 2-hour window', () => {
+    const ticket = issuedTicket({
+      status: 'active',
+      departsAt: IN_ONE_HOUR,
+      arrivesAt: IN_THREE_HOURS,
+    });
+    expect(allowedActionsOf(ticket, BEFORE_DEPARTURE).cancel).toBe(false);
+  });
+
+  it('refuses cancel for an already-cancelled ticket', () => {
+    const ticket = issuedTicket({ status: 'cancelled' });
+    expect(allowedActionsOf(ticket, BEFORE_DEPARTURE).cancel).toBe(false);
+  });
 });
 
 describe('toTicketCard', () => {
@@ -72,8 +98,16 @@ describe('toTicketCard', () => {
       status: 'active',
       statusReason: '',
       refundStatus: '',
-      allowedActions: { share: true, qr: true, download: true, cancel: false },
+      allowedActions: { share: true, qr: true, download: true, cancel: true },
     });
+  });
+
+  it('carries the refund status written by cancellation', () => {
+    const card = toTicketCard(
+      issuedTicket({ refundStatus: 'pending' }),
+      BEFORE_DEPARTURE,
+    );
+    expect(card.refundStatus).toBe('pending');
   });
 
   it('carries a cancellation reason', () => {

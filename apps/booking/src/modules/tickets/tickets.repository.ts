@@ -98,6 +98,8 @@ type TicketPageRow = {
   status: TicketStatus;
   status_reason: string | null;
   status_changed_at: Date | null;
+  refund_status: TicketEntity['refundStatus'];
+  refund_piastres: TicketEntity['refundPiastres'];
   bucket: number;
   sort_key: string;
 };
@@ -120,5 +122,7 @@ function ticketOf(row: TicketPageRow): TicketEntity {
     status: row.status,
     statusReason: row.status_reason,
     statusChangedAt: row.status_changed_at,
+    refundStatus: row.refund_status,
+    refundPiastres: row.refund_piastres,
   });
 }

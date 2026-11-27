@@ -10,6 +10,7 @@ import type {
   TicketSnapshot,
 } from '../flow/entities/ticket.entity.js';
 import { BOOKING_CURRENCY } from '../flow/booking-total.js';
+import { quoteCancellation } from '../flow/services/ticket-cancellation-policy.js';
 
 /** A ticket issued with its snapshot; older rows have nothing to print. */
 export type IssuedTicket = TicketEntity & {
@@ -58,21 +59,26 @@ export function allowedActionsOf(
   };
 }
 
-/**
- * Cancellation and its time tiers are BOOK-4's rules, not this module's.
- * TODO(TA-109): answer from BOOK-4's cancellation policy once it exists;
- * until then no ticket advertises a cancel the backend cannot perform.
- */
-function canCancel(_ticket: IssuedTicket, _now: Date): boolean {
-  return false;
+/** Cancellation uses BOOK-4's policy, with no delay or trip cancellation. */
+function canCancel(ticket: IssuedTicket, now: Date): boolean {
+  return (
+    ticket.status === 'active' &&
+    quoteCancellation({
+      departsAt: ticket.departsAt,
+      now,
+      farePiastres: ticket.snapshot.farePiastres,
+      delayMinutes: 0,
+      tripCancelled: false,
+    }).allowed
+  );
 }
 
 /**
  * Refund statuses are PAY-3's. TODO(TA-110): read them from PAY-3 once
- * booking learns them; nothing in booking records a refund for a ticket yet.
+ * booking learns them; only 'pending' is written this sprint.
  */
-function refundStatusOf(_ticket: IssuedTicket): string {
-  return '';
+function refundStatusOf(ticket: IssuedTicket): string {
+  return ticket.refundStatus ?? '';
 }
 
 export function toTicketCard(ticket: IssuedTicket, now: Date): TicketCard {
