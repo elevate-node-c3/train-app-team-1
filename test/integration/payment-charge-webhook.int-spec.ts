@@ -192,7 +192,7 @@ describe('payment schema', () => {
 
   it('refunds a succeeded charge without letting cancellation overwrite it', async () => {
     const charge = await givenCharge();
-    await charges.refundSucceeded(charge.id);
+    await charges.refundSucceeded(charge.id, 6955);
     expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
       'started',
     );
@@ -204,7 +204,7 @@ describe('payment schema', () => {
     expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
       'succeeded',
     );
-    await charges.refundSucceeded(charge.id);
+    await charges.refundSucceeded(charge.id, 6955);
     expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(
       'refunded',
     );
@@ -218,6 +218,7 @@ describe('payment schema', () => {
       bookingReference: charge.bookingReference,
       paymentReference: charge.id,
       idempotencyKey: `booking:${charge.bookingReference}:refund`,
+      amountPiastres: 6955,
     };
     const responses = await Promise.all([
       service.refund(request),
@@ -387,7 +388,7 @@ describe('payment schema', () => {
     );
     await service.record(succeededEvent());
     await service.processPending();
-    await charges.refundSucceeded(charge.id);
+    await charges.refundSucceeded(charge.id, 6955);
     await service.record({ ...succeededEvent(), id: 'evt_later_success' });
     await service.processPending();
     expect(await charges.findStatus(charge.id, charge.bookingReference)).toBe(

@@ -15,6 +15,9 @@ export class PaymentChargeEntity {
   @Column({ name: 'amount_piastres', type: 'integer' })
   amountPiastres!: number;
 
+  @Column({ name: 'refund_amount_piastres', type: 'integer', nullable: true })
+  refundAmountPiastres?: number | null;
+
   @Column({ type: 'varchar', length: 16 })
   currency!: string;
 

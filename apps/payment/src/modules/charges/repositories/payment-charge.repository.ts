@@ -303,10 +303,13 @@ export class PaymentChargeRepository {
     return charge?.status;
   }
 
-  async refundSucceeded(id: string): Promise<boolean> {
+  async refundSucceeded(
+    id: string,
+    amountPiastres: number,
+  ): Promise<boolean> {
     const result = await this.charges.update(
       { id, status: 'succeeded' },
-      { status: 'refunded' },
+      { status: 'refunded', refundAmountPiastres: amountPiastres },
     );
     return (result.affected ?? 0) > 0;
   }

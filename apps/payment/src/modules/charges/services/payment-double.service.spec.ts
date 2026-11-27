@@ -412,10 +412,11 @@ describe('PaymentDoubleService.refund', () => {
           ),
       ),
       refundSucceeded: vi.fn<PaymentChargeRepository['refundSucceeded']>(
-        async (id) => {
+        async (id, amount) => {
           const charge = charges.find((c) => c.id === id);
           if (charge?.status !== 'succeeded') return false;
           charge.status = 'refunded';
+          charge.refundAmountPiastres = amount;
           return true;
         },
       ),
@@ -427,24 +428,101 @@ describe('PaymentDoubleService.refund', () => {
     );
   });
 
-  const refundRequest = (overrides: { bookingReference?: string } = {}) => ({
+  const refundRequest = (
+    overrides: { bookingReference?: string; amountPiastres?: number } = {},
+  ) => ({
     bookingReference: overrides.bookingReference ?? BOOKING,
     paymentReference:
       overrides.bookingReference === STARTED_ONLY ? STARTED_CHARGE : CHARGE,
     idempotencyKey: `booking:${overrides.bookingReference ?? BOOKING}:refund`,
+    amountPiastres: overrides.amountPiastres ?? 6955,
   });
 
   it('refunds the whole locked total, booking fee included', async () => {
-    const result = await service.refund({
-      bookingReference: BOOKING,
-      paymentReference: CHARGE,
-      idempotencyKey: `booking:${BOOKING}:refund`,
+    const result = await service.refund(
+      refundRequest({ amountPiastres: 6955 }),
+    );
+    expect(result).toEqual({
+      status: 'REFUNDED',
+      refundReference: `refund_${CHARGE}`,
+      amountPiastres: 6955,
     });
-    expect(result.status).toBe('REFUNDED');
-    expect(result.amountPiastres).toBe(6955);
-    expect(charges.find((c) => c.id === CHARGE)?.status).toBe('refunded');
+    expect(charges.find((c) => c.id === CHARGE)).toMatchObject({
+      status: 'refunded',
+      refundAmountPiastres: 6955,
+    });
     expect(repository.findByReference).toHaveBeenCalledWith(CHARGE, BOOKING);
-    expect(repository.refundSucceeded).toHaveBeenCalledWith(CHARGE);
+    expect(repository.refundSucceeded).toHaveBeenCalledWith(CHARGE, 6955);
+  });
+
+  it('records the requested partial amount, not the full charge', async () => {
+    charges[0].amountPiastres = 20000;
+
+    const result = await service.refund(
+      refundRequest({ amountPiastres: 7750 }),
+    );
+
+    expect(result).toEqual({
+      status: 'REFUNDED',
+      refundReference: `refund_${CHARGE}`,
+      amountPiastres: 7750,
+    });
+    expect(charges.find((c) => c.id === CHARGE)?.refundAmountPiastres).toBe(
+      7750,
+    );
+    expect(repository.refundSucceeded).toHaveBeenCalledWith(CHARGE, 7750);
+  });
+
+  it('ALREADY_REFUNDED replay reports the originally recorded amount', async () => {
+    const first = await service.refund(refundRequest({ amountPiastres: 7750 }));
+    expect(first).toEqual({
+      status: 'REFUNDED',
+      refundReference: `refund_${CHARGE}`,
+      amountPiastres: 7750,
+    });
+
+    const replay = await service.refund(
+      refundRequest({ amountPiastres: 4000 }),
+    );
+    expect(replay).toEqual({
+      status: 'ALREADY_REFUNDED',
+      refundReference: `refund_${CHARGE}`,
+      amountPiastres: 7750,
+    });
+    expect(repository.refundSucceeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the concurrent winner\'s recorded amount to a loser asking for less', async () => {
+    const results = await Promise.all([
+      service.refund(refundRequest({ amountPiastres: 7750 })),
+      service.refund(refundRequest({ amountPiastres: 4000 })),
+    ]);
+    const winner = results.find((result) => result.status === 'REFUNDED');
+    const loser = results.find(
+      (result) => result.status === 'ALREADY_REFUNDED',
+    );
+
+    expect(winner?.amountPiastres).toBe(7750);
+    expect(loser?.amountPiastres).toBe(7750);
+    expect(charges.find((c) => c.id === CHARGE)?.refundAmountPiastres).toBe(
+      7750,
+    );
+  });
+
+  it('falls back to the whole amount for a charge refunded before the amount was recorded', async () => {
+    charges[0].status = 'refunded';
+    charges[0].refundAmountPiastres = null;
+
+    const result = await service.refund(
+      refundRequest({ amountPiastres: 4000 }),
+    );
+
+    expect(result).toEqual({
+      status: 'ALREADY_REFUNDED',
+      refundReference: `refund_${CHARGE}`,
+      amountPiastres: 6955,
+    });
+    expect(repository.refundSucceeded).not.toHaveBeenCalled();
   });
 
   it('is safe to call twice', async () => {
@@ -466,10 +544,10 @@ describe('PaymentDoubleService.refund', () => {
     expect(repository.refundSucceeded).not.toHaveBeenCalled();
   });
 
-  it('reports a concurrent winner as already refunded and returns the whole amount', async () => {
+  it('reports a concurrent winner as already refunded and returns the recorded amount', async () => {
     const results = await Promise.all([
-      service.refund(refundRequest()),
-      service.refund(refundRequest()),
+      service.refund(refundRequest({ amountPiastres: 6955 })),
+      service.refund(refundRequest({ amountPiastres: 6955 })),
     ]);
     expect(results.map((result) => result.status).sort()).toEqual([
       'ALREADY_REFUNDED',
@@ -478,6 +556,9 @@ describe('PaymentDoubleService.refund', () => {
     expect(results.every((result) => result.amountPiastres === 6955)).toBe(
       true,
     );
+    expect(
+      charges.find((c) => c.id === CHARGE)?.refundAmountPiastres,
+    ).toBe(6955);
     expect(results[0].refundReference).toBe(results[1].refundReference);
   });
 });

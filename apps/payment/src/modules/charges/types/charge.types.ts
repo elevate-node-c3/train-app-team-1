@@ -7,6 +7,7 @@ export type Charge = Pick<
   | 'bookingReference'
   | 'idempotencyKey'
   | 'amountPiastres'
+  | 'refundAmountPiastres'
   | 'currency'
   | 'status'
   | 'stripePaymentMethodId'

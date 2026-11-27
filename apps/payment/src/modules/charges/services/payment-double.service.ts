@@ -175,7 +175,7 @@ export class PaymentDoubleService {
       return {
         status: 'ALREADY_REFUNDED',
         refundReference,
-        amountPiastres: charge.amountPiastres,
+        amountPiastres: charge.refundAmountPiastres ?? charge.amountPiastres,
       };
     }
     if (charge.status !== 'succeeded') {
@@ -186,7 +186,9 @@ export class PaymentDoubleService {
       };
     }
 
-    if (!(await this.charges.refundSucceeded(charge.id))) {
+    if (
+      !(await this.charges.refundSucceeded(charge.id, request.amountPiastres))
+    ) {
       const current = await this.charges.findByReference(
         charge.id,
         charge.bookingReference,
@@ -195,7 +197,8 @@ export class PaymentDoubleService {
         return {
           status: 'ALREADY_REFUNDED',
           refundReference,
-          amountPiastres: current.amountPiastres,
+          amountPiastres:
+            current.refundAmountPiastres ?? current.amountPiastres,
         };
       }
       return {
@@ -208,7 +211,7 @@ export class PaymentDoubleService {
     return {
       status: 'REFUNDED',
       refundReference,
-      amountPiastres: charge.amountPiastres,
+      amountPiastres: request.amountPiastres,
     };
   }
 }
